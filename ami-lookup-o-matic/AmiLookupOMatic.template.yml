@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CloudFormation AMI-to-Region Map Maker"
+Resources:
+
+  # This Role is needed by the Lambda function:
+  TheRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "AmiLookup"
+      # This Role is assumable by Lambda functions only:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "lambda.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      # This Role allows Lambda functions to execute, and allows us to describe AMIs:        
+      ManagedPolicyArns:
+        - "arn:aws:iam::011673140073:policy/service-role/AWSLambdaBasicExecutionRole-5a6016af-7217-4cfd-9907-89edc3ac8463"
+        - "arn:aws:iam::011673140073:policy/service-role/AWSLambdaAMIExecutionRole-315ec1a2-7ad7-4038-bf9d-81ade6f79ebb"
+      # For some reason, I had to allow describe in two places:
+      Policies: 
+        - 
+          PolicyName: "inline"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "ec2:Describe*"
+                Resource: "*"
+
+  # Main Lambda Function:
+  LambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        S3Bucket: "kk-uploads" 
+        S3Key: "AmiLookupOMatic.js.zip"
+      Description: "sample"
+      FunctionName:  "jubjub"
+      Handler: "index.handler"
+      MemorySize: 128
+      Role: !GetAtt TheRole.Arn
+      Runtime: "nodejs4.3"
+      Timeout: 15
