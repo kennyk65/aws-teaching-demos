@@ -2,13 +2,15 @@
 <html>
 	<head>
 		<title>AMI Lookup-O-Matic</title>
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous"/>
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous"/>
-</head>		
-	<body>
-		<div  ng-app="main" ng-controller="Controller as ctrl" 
-		id="content" class="container">
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous"/>
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous"/>
 
+	    <!-- Custom styles for this template -->
+	    <link href="sticky-footer.css" rel="stylesheet"/>
+
+	</head>		
+	<body>
+		<div  ng-app="main" ng-controller="Controller as ctrl" id="content" class="container">
 
 			<div class="row">
 				<div class="col-xs-12 ">
@@ -17,7 +19,7 @@
 			</div>
 			<div class="row">
 				<div class="col-xs-offset-2 col-xs-8 ">
-					<p>This tool will help you build a Cloud Formation AMI <a target="_blank" href="http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/mappings-section-structure.html">mapping table</a>.  Simply provide an AMI and the Region in which it resides, and this tool will 1) quickly lookup matching AMIs in other regions, and 2) build a Cloud Formation mapping entry which you can place in your template.  Try it!</p>
+					<p>This tool builds region-to-AMI <a target="_blank" href="http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/mappings-section-structure.html">mapping tables</a> for AWS Cloud Formation templates.  Simply provide an AMI and the Region in which it resides, and this tool will 1) quickly lookup matching AMIs in other regions, and 2) build a Cloud Formation mapping entry which you can place in your template.  Try it!</p>
 				</div>
 			</div>
 
@@ -58,35 +60,42 @@
 				<div class="col-xs-offset-2 col-xs-8 ">
 					<p><strong>Caveats:</strong></p>
 					<ol>
-  						<li>Descriptions of AMIs in each region must match.</li>
-  						<li>Only public AMIs are visible to this tool (for now).</li>
-  						<li>Only JSON format supported (for now).</li>
+							<li>Descriptions of AMIs in each region must match.</li>
+							<li>Only public AMIs are visible to this tool (for now).</li>
+							<li>Only JSON format supported (for now).</li>
 					</ol>
 				</div>
 			</div>
 
 		</div>
+
+			<footer class="footer">
+				<div class="container ">
+					<p class="text-muted text-center">Code for this example can be found in <a href="https://github.com/kennyk65/aws-teaching-demos/tree/master/ami-lookup-o-matic" target="_blank">GitHub</a>.</p>
+			    </div>
+			</footer>
+
 	</body>
-		<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.8/angular.min.js"></script>
-    	<script >
-			angular.module('main', [])
-				.controller('Controller', function($scope, $http) {
-					this.ami="ami-5ec1673e";
-					this.region="us-west-2";
-					this.data;
-					this.regions=["us-east-1","us-east-2","us-west-1","us-west-2","ap-southeast-1","ap-southeast-2","ap-northeast-1","ap-northeast-2"];;
-					this.lookup = function() {
-	    				$http.get('https://nklwwii88e.execute-api.us-west-2.amazonaws.com/prod/regions/' 
-	    					+ this.region + 
-	    					'/amis/' 
-	    					+ this.ami + 
-	    					'/mappings').
-	        				then(function(response) {
-	            				$scope.response = response.data;
-	        				}
-	        			)
-        			};
-				}); 
- 		
-    	</script>
+	<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.8/angular.min.js"></script>
+	<script >
+		angular.module('main', [])
+			.controller('Controller', function($scope, $http) {
+				this.ami="ami-5ec1673e";
+				this.region="us-west-2";
+				this.data;
+				this.regions=["us-east-1","us-east-2","us-west-1","us-west-2","ap-southeast-1","ap-southeast-2","ap-northeast-1","ap-northeast-2"];;
+				this.lookup = function() {
+					$http.get('https://nklwwii88e.execute-api.us-west-2.amazonaws.com/prod/regions/' 
+						+ this.region + 
+						'/amis/' 
+						+ this.ami + 
+						'/mappings').
+	    				then(function(response) {
+	        				$scope.response = response.data;
+	    				}
+	    			)
+				};
+			}); 
+		
+	</script>
 </html>
