@@ -18,7 +18,7 @@
 				</div>
 			</div>
 			<div class="row">
-				<div class="col-xs-offset-2 col-xs-8 ">
+				<div class="col-xs-12 ">
 					<p>This tool builds region-to-AMI <a target="_blank" href="http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/mappings-section-structure.html">mapping tables</a> for AWS Cloud Formation templates.  Simply provide an AMI and the Region in which it resides, and this tool will 1) quickly lookup matching AMIs in other regions, and 2) build a Cloud Formation mapping entry which you can place in your template.  Try it!</p>
 				</div>
 			</div>
@@ -60,10 +60,15 @@
 				<div class="col-xs-offset-2 col-xs-8 ">
 					<p><strong>Caveats:</strong></p>
 					<ol>
-							<li>Descriptions of AMIs in each region must match.</li>
+							<li>AMIs in each region are matched by architecture, image-type, owner-alias, description, root-device-type, virtualization-type, and hypervisor attributes.</li>
 							<li>Only public AMIs are visible to this tool (for now).</li>
 							<li>Only JSON format supported (for now).</li>
 					</ol>
+
+
+
+
+
 				</div>
 			</div>
 
