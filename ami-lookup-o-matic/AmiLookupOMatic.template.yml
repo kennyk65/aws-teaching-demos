@@ -42,9 +42,90 @@ Resources:
         S3Bucket: "kk-uploads" 
         S3Key: "AmiLookupOMatic.js.zip"
       Description: "sample"
-      FunctionName:  "jubjub"
-      Handler: "index.handler"
+      FunctionName:  "AmiLookupOMatic"
+      Handler: "exports.handler"
       MemorySize: 128
       Role: !GetAtt TheRole.Arn
       Runtime: "nodejs4.3"
       Timeout: 15
+
+  # The API Gateway starts here:
+  TheRestApi: 
+    Type: "AWS::ApiGateway::RestApi"
+    Properties: 
+      Description: "A test API"
+      Name: "AmiMappingTableMaker"
+
+  # The Resources get pretty deep:  /regions/{region}/amis/{ami}/mappings
+  RegionResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref TheRestApi
+      ParentId: !GetAtt TheRestApi.RootResourceId
+      PathPart: "regions"
+
+  RegionValueResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref TheRestApi
+      ParentId: !Ref RegionResource
+      PathPart: "{region}"
+
+  AmiResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref TheRestApi
+      ParentId: !Ref RegionValueResource
+      PathPart: "amis"
+
+  AmiValueResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref TheRestApi
+      ParentId: !Ref AmiResource
+      PathPart: "{ami}"
+
+  MappingsResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref TheRestApi
+      ParentId: !Ref AmiValueResource
+      PathPart: "mappings"
+
+  # This controls what happens when you do a GET on /regions/{region}/amis/{ami}/mappings
+  # Call the Lambda specified by the insane-looking Uri below:
+  GetMethod: 
+    Type: "AWS::ApiGateway::Method"
+    Properties: 
+      RestApiId: !Ref TheRestApi
+      ResourceId: !Ref MappingsResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      Integration: 
+        Type: "AWS"
+        Uri:  !Join [ "" , [ "arn:aws:apigateway:", !Ref "AWS::Region", ":lambda:path/2015-03-31/functions/", !GetAtt LambdaFunction.Arn, "/invocations" ]]
+        IntegrationHttpMethod: "POST"  # MUST use POST to invoke Lambda function!
+        PassthroughBehavior: "NEVER"
+        RequestTemplates:
+          "application/json": "{\"ami\": \"$input.params('ami')\",\"region\": \"$input.params('region')\" }"
+        # IntegrationResponses:
+        #   - StatusCode: 200
+        #     ResponseParameters:  
+        #       "integration.response.header.Access-Control-Allow-Origin": "'*'"       
+
+##  TODO: LEFT OFF HERE.  Could not determine how to do CORS via Cloud Formation.  Via web there is
+## a big 'enable CORS ' button, but can't determine equivalent CF steps.
+
+  # ...and finally, a "deployment" and "stage" to make the API callable:
+  TheDeployment: 
+    Type: "AWS::ApiGateway::Deployment"
+    DependsOn: [ GetMethod ]
+    Properties:
+      RestApiId:  !Ref TheRestApi
+      StageName: "prod"  # Stage names can't be updated (apparently)
+
+  # TheStage:
+  #   Type: "AWS::ApiGateway::Stage"
+  #   Properties:
+  #     StageName: "Prod"
+  #     DeploymentId: !Ref TheDeployment
