@@ -1,0 +1,405 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# For input parameters, we'll need the key pair to use for the Bastion host, the private instances, 
+# and a CIDR range from where input can come into the Bastion host.
+Parameters:
+  BastionHostKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the
+      bastion host.
+  BastionSecurityCIDR:
+    Type: String
+    Description: The CIDR range to use to lock down security on the bastion host.
+    Default: 0.0.0.0/0
+  PrivateInstancesKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to instances
+      in private subnets.
+      
+      
+Mappings:
+  #  This is just the Amazon Linux AMI:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-1ecae776
+    us-west-1:
+      AMI: ami-d114f295
+    us-west-2:
+      AMI: ami-e7527ed7
+    eu-west-1:
+      AMI: ami-a10897d6
+    eu-central-1:
+      AMI: ami-a8221fb5
+    sa-east-1:
+      AMI: ami-b52890a8
+    ap-southeast-1:
+      AMI: ami-68d8e93a
+    ap-southeast-2:
+      AMI: ami-fd9cecc7
+    ap-northeast-1:
+      AMI: ami-cbf90ecb
+
+
+Resources:
+  # First, A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: Lab VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    DependsOn:
+    - VPC
+    - InternetGateway
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now some subnets, 2 public and 2 private:
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.20.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Public Subnet 2
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.50.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 1
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.60.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 2
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  # Here is a private route table:
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    DependsOn:
+    - NatInstanceWaitCondition    # We can't add this entry to the table until after the NAT is up and running!
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NATInstance
+
+  
+  # Attach the public subnets to public route tables, 
+  # and attach the private subnets to private route tables:    
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+      
+  # Here are some NACLs for the Private subnets.  
+  # Not sure if they are needed:    
+#  PrivateNetworkAcl:
+#    Type: AWS::EC2::NetworkAcl
+#    DependsOn: AttachGateway
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#      - Key: Network
+#        Value: Private
+
+#  PrivateNetworkAcl2:
+#    Type: AWS::EC2::NetworkAcl
+#    DependsOn: AttachGateway
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#      - Key: Network
+#        Value: Private ACL 2
+        
+  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
+  NATSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Enable internal access to the NAT device
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '1024'
+        CidrIp: !GetAtt VPC.CidrBlock
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: udp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+
+  # Here is a SecurityGroup for the Bastion server:
+  BastionServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for bastion server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: BastionServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: !Ref BastionSecurityCIDR    # Note how we reference an input parameter
+
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: !Join [ '', [ !GetAtt BastionServer.PrivateIp, "/0" ]]
+      
+  # This instance is our Bastion server
+  BastionServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
+      InstanceType: t2.micro                                          # Any size is fine
+      KeyName: !Ref BastionHostKeyName                                # Use the keypair from the input parameters
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        AssociatePublicIpAddress: 'true'                              # We will need a public IP address
+        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
+        GroupSet:
+        - Ref: BastionServerSecurityGroup                             # Attach the security group
+      Tags:
+      - Key: Name
+        Value: BastionServer
+      UserData:      #  Very simple userdata script.  Simply do a yum update when starting.
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          yum -y update
+            
+  # Create a NAT instance:    
+  NATInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
+      KeyName: !Ref BastionHostKeyName                                # We use the Key specified in input parameters
+      InstanceType: t2.small                                          # Any instance type is fine
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        SubnetId: !Ref PublicSubnet1                                  # Any public subnet is fine
+        AssociatePublicIpAddress: 'true'                              # We will definitely need a public IP address
+        GroupSet:
+        - Ref: NATSecurityGroup                                       # Plug in the security group
+      SourceDestCheck: 'false'                                        # NATs don't work if EC2 tries the match source addresses with destinations.
+      Tags:
+      - Key: Name
+        Value: NAT
+      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum -y update
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
+          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
+          /sbin/iptables-save > /etc/sysconfig/iptables
+          mkdir -p /etc/sysctl.d/
+          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.eth0.send_redirects = 0
+          NatConfFileMarker
+          /opt/aws/bin/cfn-signal -s true '${NatInstanceWaitHandle}'    
+
+    
+  # This WaitCondition helps us wait until the NAT is ready to handle traffic before creating other stuff.
+  # It waits for someone to call the wait handler, which we do from the end of the user data script.  
+  NatInstanceWaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: NATInstance
+    Properties:
+      Handle: !Ref NatInstanceWaitHandle
+      Timeout: '1800'
+
+  # This WaitHandle is critical.  The WaitCondition won't be satisfied until it is called.
+  # It is called from the last line of the user data script in the NAT instance.
+  NatInstanceWaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+
+
+  # Launch Configuration for our web server running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      KeyName: !Ref PrivateInstancesKeyName                           # We get the keypair name from the input parameters
+      InstanceType: t2.micro          # Any instance type will do
+      SecurityGroups:
+      - !Ref WebServerSecurityGroup   # Plug in the security group.
+      BlockDeviceMappings:
+      - DeviceName: "/dev/xvdf"
+        Ebs:
+          VolumeSize: '50'
+          VolumeType: gp2
+      UserData:      #  This code Installs a demo PHP app on a PHP server. Notice a different way to signal completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          state=0
+          yum -y update
+          yum -y install httpd php
+          chkconfig httpd on
+          /etc/init.d/httpd start
+          cd /var/www/html
+          wget https://d2lrzjb0vjvpn5.cloudfront.net/developing/v2.0/demos/ec2-info.zip
+          unzip ec2-info.zip
+          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: 
+    - NatInstanceWaitCondition
+#    - PrivateRoute1      # Route table must point to the running NAT for this to work.
+    Properties:
+      VPCZoneIdentifier:
+      - Ref: PrivateSubnet1
+      - Ref: PrivateSubnet2
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
+      MaxSize: 1
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      LoadBalancerNames: !Ref AppLoadBalancer
+      Tags:
+      - Key: ApplicationRole
+        Value: OurWebApp
+        PropagateAtLaunch: 'true'
+      - Key: Name
+        Value: AppServer
+        PropagateAtLaunch: 'true'
+    # This creation policy is more elegant than the clumsy wait condition shown earlier, but it only works on EC2
+    # and ASG/LaunchConfigurtions.  Essentially it says 'this resource is not really created until you get 1 signal back'.
+    # Best to make the number of signals match the minimum or desired capacity of the ASG.
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M
+        
+  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    DependsOn: WebServerSecurityGroup
+    Properties:
+      Listeners:
+      - LoadBalancerPort: '80'
+        InstancePort: '80'
+        Protocol: HTTP
+      SecurityGroups:
+      - Ref: WebServerSecurityGroup
+      Subnets:
+      - Ref: PublicSubnet1
+      - Ref: PublicSubnet2
+      HealthCheck:
+        Target: HTTP:80/ec2-info/index.php
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '10'
+        Timeout: '5'
+        
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  AppAutoScalingGroupName:
+    Description: Name of the Auto Scaling group
+    Value: !Ref AppAutoScalingGroup
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !GetAtt AppLoadBalancer.DNSName
