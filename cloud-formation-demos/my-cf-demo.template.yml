@@ -167,26 +167,6 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
       
-  # Here are some NACLs for the Private subnets.  
-  # Not sure if they are needed:    
-#  PrivateNetworkAcl:
-#    Type: AWS::EC2::NetworkAcl
-#    DependsOn: AttachGateway
-#    Properties:
-#      VpcId: !Ref VPC
-#      Tags:
-#      - Key: Network
-#        Value: Private
-
-#  PrivateNetworkAcl2:
-#    Type: AWS::EC2::NetworkAcl
-#    DependsOn: AttachGateway
-#    Properties:
-#      VpcId: !Ref VPC
-#      Tags:
-#      - Key: Network
-#        Value: Private ACL 2
-        
   # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
   NATSecurityGroup:
     Type: AWS::EC2::SecurityGroup
