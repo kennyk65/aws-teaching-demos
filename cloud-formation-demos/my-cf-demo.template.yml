@@ -312,7 +312,7 @@ Resources:
         Ebs:
           VolumeSize: '50'
           VolumeType: gp2
-      UserData:      #  This code Installs a demo PHP app on a PHP server. Notice a different way to signal completion:
+      UserData:      #  This code downloads and runs a Spring Boot web app on port 80. Notice a different way to signal completion:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum update -y
