@@ -310,7 +310,7 @@ Resources:
     DependsOn: NATInstance
     Properties:
       Handle: !Ref NatInstanceWaitHandle
-      Timeout: '1800'
+      Timeout: 300    # 5 minutes
 
   # This WaitHandle is critical.  The WaitCondition won't be satisfied until it is called.
   # It is called from the last line of the user data script in the NAT instance.
@@ -335,14 +335,9 @@ Resources:
       UserData:      #  This code Installs a demo PHP app on a PHP server. Notice a different way to signal completion:
         Fn::Base64: !Sub |
           #!/bin/bash
-          state=0
-          yum -y update
-          yum -y install httpd php
-          chkconfig httpd on
-          /etc/init.d/httpd start
-          cd /var/www/html
-          wget https://d2lrzjb0vjvpn5.cloudfront.net/developing/v2.0/demos/ec2-info.zip
-          unzip ec2-info.zip
+          yum update -y
+          wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -358,7 +353,8 @@ Resources:
       MaxSize: 1
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
-      LoadBalancerNames: !Ref AppLoadBalancer
+      LoadBalancerNames: 
+      - Ref: AppLoadBalancer
       Tags:
       - Key: ApplicationRole
         Value: OurWebApp
@@ -389,7 +385,7 @@ Resources:
       - Ref: PublicSubnet1
       - Ref: PublicSubnet2
       HealthCheck:
-        Target: HTTP:80/ec2-info/index.php
+        Target: HTTP:80/
         HealthyThreshold: '3'
         UnhealthyThreshold: '5'
         Interval: '10'
