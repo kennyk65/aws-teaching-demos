@@ -60,9 +60,6 @@ Resources:
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     # Notice how you can't attach an IGW to a VPC unless both are created:
-    DependsOn:
-    - VPC
-    - InternetGateway
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
@@ -70,7 +67,6 @@ Resources:
   # Now some subnets, 2 public and 2 private:
   PublicSubnet1:
     Type: AWS::EC2::Subnet
-    DependsOn: AttachGateway
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.1.10.0/24
@@ -80,7 +76,6 @@ Resources:
         Value: Public Subnet 1
   PublicSubnet2:
     Type: AWS::EC2::Subnet
-    DependsOn: AttachGateway
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.1.20.0/24
@@ -90,7 +85,6 @@ Resources:
         Value: Public Subnet 2
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
-    DependsOn: AttachGateway
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.1.50.0/24
@@ -100,7 +94,6 @@ Resources:
         Value: Private Subnet 1
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
-    DependsOn: AttachGateway
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.1.60.0/24
@@ -112,14 +105,14 @@ Resources:
   # Some route tables for our subnets:        
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
-    DependsOn: AttachGateway
     Properties:
       VpcId: !Ref VPC
       Tags:
       - Key: Name
         Value: Public
-  PublicRoute1:
+  PublicRoute1:   # Public route table has direct routing to IGW:
     Type: AWS::EC2::Route
+    DependsOn: AttachGateway
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
@@ -128,15 +121,15 @@ Resources:
   # Here is a private route table:
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
-    DependsOn: AttachGateway
     Properties:
       VpcId: !Ref VPC
       Tags:
       - Key: Name
         Value: Private
-  PrivateRoute1:
+  PrivateRoute1:                  # Private route table can access web via NAT (created below)
     Type: AWS::EC2::Route
-    DependsOn:
+    DependsOn: 
+    - AttachGateway
     - NatInstanceWaitCondition    # We can't add this entry to the table until after the NAT is up and running!
     Properties:
       RouteTableId: !Ref PrivateRouteTable
@@ -312,18 +305,17 @@ Resources:
         Ebs:
           VolumeSize: '50'
           VolumeType: gp2
-      UserData:      #  This code downloads and runs a Spring Boot web app on port 80. Notice a different way to signal completion:
+      UserData:      #  This code Installs a demo PHP app on a PHP server. Notice a different way to signal completion:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum update -y
           wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
-          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: 
     - NatInstanceWaitCondition
-#    - PrivateRoute1      # Route table must point to the running NAT for this to work.
     Properties:
       VPCZoneIdentifier:
       - Ref: PrivateSubnet1
@@ -348,12 +340,11 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT5M
+        Timeout: PT10M
         
   # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
   AppLoadBalancer:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
-    DependsOn: WebServerSecurityGroup
     Properties:
       Listeners:
       - LoadBalancerPort: '80'
