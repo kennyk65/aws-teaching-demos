@@ -303,7 +303,7 @@ Resources:
       BlockDeviceMappings:
       - DeviceName: "/dev/xvdf"
         Ebs:
-          VolumeSize: '50'
+          VolumeSize: '25'
           VolumeType: gp2
       UserData:      #  This code Installs a demo PHP app on a PHP server. Notice a different way to signal completion:
         Fn::Base64: !Sub |
@@ -322,7 +322,8 @@ Resources:
       - Ref: PrivateSubnet2
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
-      MaxSize: 1
+      MaxSize: 3
+      DesiredCapacity: 2
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       LoadBalancerNames: 
