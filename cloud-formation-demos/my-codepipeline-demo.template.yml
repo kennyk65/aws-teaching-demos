@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  CodePipelineBucketPrefix:
+    Description: CodePipeline needs a utility bucket.  Specify the prefix for the bucket name
+    Type: String
+    Default: codepipeline-
+
+  GitHubRepository:
+    Type: String
+    Default:  kennyk65/aws-cloudbuild-demo/master
+    Description:  The owner / repository / branch that you want to pull from.
+
+  GitHubOAuthToken:
+    Type: String
+    Default: bb61bd6e25ed254c713031da225704e389ee3657
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+
+Resources:
+
+  # This Role allows CodeBuild to do certain things on our behalf.
+  # See the policy for the interesting stuff:
+  CodeBuildRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: CodeBuildRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "codebuild.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Role allows CodePipeline to make certain things on our behalf:
+  # See the policy for the interesting stuff:
+  CodePipelineRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: CodePipelineRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "codepipeline.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the CodeBuildRole.
+  # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodeBuildPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: CodeBuildPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:*
+            - s3:*
+            - codebuild:*
+          Resource: "*"
+      Roles: 
+        -  !Ref CodeBuildRole
+
+  # This Policy is attached to the CodePipelineRole.
+  # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodePipelinePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: CodePipelinePolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
+          # codebuild probably does not need to be wide open like this, and the logs should only need
+          # to create the stream, group, and log events.
+          Action: 
+            - s3:*
+            - codebuild:*
+            - logs:*
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref CodePipelineRole
+
+  # General Bucket where CodePipeline will store things:
+  S3:
+    Type: "AWS::S3::Bucket"
+    Properties: 
+      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region", "-", !Ref "AWS::AccountId"]]
+
+  # The CodeBuild project that will be referenced in the CodePipeline below.
+  # Fortunately, its configuration is quite small because it is part of a larger
+  # Pipeline, so no need for details on Source and Artifacts.  Most of the details
+  # on how to to the build itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
+  MyBuild:
+    Type: "AWS::CodeBuild::Project"
+    Properties: 
+      Name: MyBuild
+      Description: Demo of CodeBuild with CodeDeploy pipeline.
+      Source:
+        Type: CODEPIPELINE
+      Artifacts:
+        Type: CODEPIPELINE       
+      Environment:
+        Type: "LINUX_CONTAINER"
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8
+        PrivilegedMode: false
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+
+
+  # This is the CodePipeline with its stages:
+  MyPipe:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: MyPipe
+      ArtifactStore: 
+        Location: !Ref S3
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref CodePipelineRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Stages: 
+        # Stage 1:  Get the source from GitHub:
+        - Name: Source
+          Actions: 
+            - Name: SourceAction
+              RunOrder: 1
+              ActionTypeId: 
+                Category: Source
+                Owner: ThirdParty       
+                Provider: GitHub        
+                Version: 1              # Don't know the purpose of 'version'
+              Configuration: 
+                Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
+                Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
+                Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
+                PollForSourceChanges: true   # Don't know if/how to control frequency
+                OAuthToken: "bb61bd6e25ed254c713031da225704e389ee3657"     # Public repository, Don't know why AWS needs this
+              OutputArtifacts: 
+                - Name: TheSourceCode
+        # Stage 2:  Build using CodeBuild:
+        - Name: Build
+          Actions: 
+            - Name: Build
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheSourceCode       # Duh, the output from the previous step.
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                  # Don't know the purpose of 'version'
+              Configuration:
+                ProjectName:  !Ref MyBuild  # See the CodeBuild definition above.       
+              OutputArtifacts: 
+                - Name: TheArtifact
+
+
+
+
+
