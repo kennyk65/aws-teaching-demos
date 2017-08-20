@@ -12,7 +12,7 @@ Parameters:
 
   GitHubOAuthToken:
     Type: String
-    Default: bb61bd6e25ed254c713031da225704e389ee3657
+    Default: bb61bd6e25ed254c713031da225704e 389ee3657
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
 Resources:
@@ -139,7 +139,7 @@ Resources:
                 Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
                 Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
                 PollForSourceChanges: true   # Don't know if/how to control frequency
-                OAuthToken: "bb61bd6e25ed254c713031da225704e389ee3657"     # Public repository, Don't know why AWS needs this
+                OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
               OutputArtifacts: 
                 - Name: TheSourceCode
         # Stage 2:  Build using CodeBuild:
