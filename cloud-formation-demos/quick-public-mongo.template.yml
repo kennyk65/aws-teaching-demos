@@ -1,0 +1,119 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+      
+#  This CloudFormation Template provisions a MongoDB server.
+#  Specifically, a VPC with a single public subnet with a publicly-available MongoDB server within.
+#  WARNING: This will only run in us-east-1, and running this costs real money, so delete it when done.
+
+Parameters:
+  AMI:
+    Type: String
+    Default: ami-cdf7f4a7
+    Description: The AMI can be found be searching for mongodb-service-broker-lab in the EC2 Dashboard. Must be in the N. Virginia region. Make sure you search under Public Images.
+
+  MongoDBKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the MongoDB instance.  Create this key in the EC2 area of AWS.
+
+Resources:
+  # First, A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: Mongo VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now a public subnet:
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  # Attach the public subnets to public route tables, 
+  # and attach the private subnets to private route tables:    
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+      
+  # A security group for our MongoDB instance.
+  # Ingress via SSH port 22 from anywhere.
+  # Ingress via TCP port 27017 from anywhere.
+  # WARNING - This is a pretty wide-open security group.
+  MongoSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Enable external access to MongoDB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '27017'
+        CidrIp: 0.0.0.0/0
+
+      
+  # This instance is our MongoDB server
+  MongoDBServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref "AMI"
+      InstanceType: t2.large                                  # Any size is fine
+      KeyName: !Ref MongoDBKeyName                            # Use the keypair from the input parameters
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        AssociatePublicIpAddress: 'true'                      # We will need a public IP address
+        SubnetId: !Ref PublicSubnet1                          # We should sit in a public subnet.  Either one is fine.
+        GroupSet:
+        - Ref: MongoSecurityGroup                             # Attach the security group
+      Tags:
+      - Key: Name
+        Value: MongoDBServer
+            
+       
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  MongoDBServerPublicIPAddress:
+    Description: The public IP address of your MongoDB server.
+    Value: !GetAtt MongoDBServer.PublicIp
