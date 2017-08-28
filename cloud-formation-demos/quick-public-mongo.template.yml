@@ -3,6 +3,16 @@ AWSTemplateFormatVersion: '2010-09-09'
       
 #  This CloudFormation Template provisions a MongoDB server.
 #  Specifically, a VPC with a single public subnet with a publicly-available MongoDB server within.
+#
+#  INSTRUCTIONS:
+#  1. Sign into AWS Management Console.  Set region to us-east-1, Virginia.
+#  2. Go to CloudFormation.  Create Stack.  Upload this template.
+#  3. Name your stack anything. Double-check the AMI value as it may change in the future.
+#  4. Select a keypair from the list and ensure you have the private key.  If list is empty, or if you lost the private key, go to EC2 service and create/download one, then return here.
+#  5. Take defaults on all other settings and create.  
+#  6. Your mongoDB should be ready in a few minutes.  Find the stack outputs to obtain the Public IP address.
+#  7. When finished, delete this stack; it will clean up all created resources.
+#
 #  WARNING: This will only run in us-east-1, and running this costs real money, so delete it when done.
 
 Parameters:
@@ -16,7 +26,8 @@ Parameters:
     Description: The name of the private key file to use for SSH/RDP access to the MongoDB instance.  Create this key in the EC2 area of AWS.
 
 Resources:
-  # First, A VPC:
+  # First, A VPC.  We could use the default VPC 
+  # but who knows what changes people have made on their accounts:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -38,7 +49,7 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # Now a public subnet:
+  # Now a public subnet.  Any availability zone will do:
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -49,7 +60,7 @@ Resources:
       - Key: Name
         Value: Public Subnet 1
         
-  # Some route tables for our subnets:        
+  # A route table plus route to make our public subnet public:        
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -65,21 +76,21 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
       
-  # Attach the public subnets to public route tables, 
-  # and attach the private subnets to private route tables:    
+
+  # Attach the public subnets to public route table:    
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet1
       RouteTableId: !Ref PublicRouteTable
       
+
   # A security group for our MongoDB instance.
   # Ingress via SSH port 22 from anywhere.
   # Ingress via TCP port 27017 from anywhere.
   # WARNING - This is a pretty wide-open security group.
   MongoSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    DependsOn: AttachGateway
     Properties:
       GroupDescription: Enable external access to MongoDB
       VpcId: !Ref VPC
@@ -97,22 +108,24 @@ Resources:
   # This instance is our MongoDB server
   MongoDBServer:
     Type: AWS::EC2::Instance
+    DependsOn: PublicSubnet1RouteTableAssociation
     Properties:
       ImageId: !Ref "AMI"
-      InstanceType: t2.large                                  # Any size is fine
-      KeyName: !Ref MongoDBKeyName                            # Use the keypair from the input parameters
+      InstanceType: t2.large                    # Any size is fine
+      KeyName: !Ref MongoDBKeyName              # Use the keypair from the input parameters
       NetworkInterfaces:
       - DeviceIndex: '0'
-        AssociatePublicIpAddress: 'true'                      # We will need a public IP address
-        SubnetId: !Ref PublicSubnet1                          # We should sit in a public subnet.  Either one is fine.
+        AssociatePublicIpAddress: 'true'        # We will need a public IP address
+        SubnetId: !Ref PublicSubnet1            # We should sit in a public subnet.  Either one is fine.
         GroupSet:
-        - Ref: MongoSecurityGroup                             # Attach the security group
+        - Ref: MongoSecurityGroup               # Attach the security group
       Tags:
       - Key: Name
         Value: MongoDBServer
             
        
-# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+# Finally, what we should see when we are all done.  
+# The public IP of the MongoDB server is needed for MONGODB_HOST
 Outputs:
   MongoDBServerPublicIPAddress:
     Description: The public IP address of your MongoDB server.
