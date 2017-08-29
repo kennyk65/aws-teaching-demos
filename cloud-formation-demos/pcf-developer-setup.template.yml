@@ -1,8 +1,8 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
       
-#  This CloudFormation Template provisions a MongoDB server.
-#  Specifically, a VPC with a single public subnet with a publicly-available MongoDB server within.
+#  This CloudFormation Template provisions a MongoDB server and / or a Jenkins server.
+#  Specifically, a VPC with a single public subnet with a publicly-available MongoDB server / Jenkins server within.
 #
 #  INSTRUCTIONS:
 #  1. Sign into AWS Management Console.  Set region to us-east-1, Virginia.
