@@ -7,11 +7,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 #  INSTRUCTIONS:
 #  1. Sign into AWS Management Console.  Set region to us-east-1, Virginia.
 #  2. Go to CloudFormation.  Create Stack.  Upload this template.
-#  3. Name your stack anything. Double-check the AMI value as it may change in the future.
-#  4. Select a keypair from the list and ensure you have the private key.  If list is empty, or if you lost the private key, go to EC2 service and create/download one, then return here.
-#  5. Take defaults on all other settings and create.  
-#  6. Your mongoDB should be ready in a few minutes.  Find the stack outputs to obtain the Public IP address.
-#  7. When finished, delete this stack; it will clean up all created resources.
+#  3. Name your stack anything. Select if you want the MongoDB or Jenkins instance (or both)
+#  4. Double-check the AMI values as these may change in the future.
+#  5. Select a keypair from the list and ensure you have the private key.  If list is empty, or if you lost the private key, go to EC2 service and create/download one, then return here.
+#  6. Take defaults on all other settings and create.  
+#  7. Your mongoDB / Jenkins instances should be ready in a few minutes.  Find the stack outputs to obtain the Public IP addresses.
+#  8. When finished, delete this stack; it will clean up all created resources.
 #
 #  WARNING: This will only run in us-east-1, and running this costs real money, so delete it when done.
 
@@ -35,8 +36,8 @@ Parameters:
 
   MongoAMI:
     Type: String
-    Default: ami-cdf7f4a7
-    Description: The AMI can be found be searching for mongodb-service-broker-lab in the EC2 Dashboard. Must be in the N. Virginia region. Make sure you search under Public Images.
+    Default: ami-ee2694f8
+    Description: The AMI can be found be searching for mongodb-service-broker-lab in the EC2 Dashboard (ami-cdf7f4a7). Must be in the N. Virginia region. Make sure you search under Public Images.
 
   PrivateKeyName:
     Type: AWS::EC2::KeyPair::KeyName
@@ -65,7 +66,6 @@ Resources:
     DependsOn: VPC
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
-    # Notice how you can't attach an IGW to a VPC unless both are created:
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
@@ -151,7 +151,7 @@ Resources:
   # This instance is our MongoDB server
   MongoDBServer:
     Type: AWS::EC2::Instance
-    Condition: MakeMongoInstance
+    Condition: MakeMongoInstance                # Only create if requested
     DependsOn: PublicSubnet1RouteTableAssociation
     Properties:
       ImageId: !Ref MongoAMI
@@ -171,7 +171,7 @@ Resources:
   # This instance is our Jenkins server
   JenkinsServer:
     Type: AWS::EC2::Instance
-    Condition: MakeJenkinsInstance
+    Condition: MakeJenkinsInstance              # Only create if requested
     DependsOn: PublicSubnet1RouteTableAssociation
     Properties:
       ImageId: !Ref JenkinsAMI
@@ -186,7 +186,10 @@ Resources:
       Tags:
       - Key: Name
         Value: JenkinsServer
-            
+      UserData:                                 #  Launch Jenkins on initial launch.
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          service jenkins start
        
 # Finally, what we should see when we are all done.  
 # The public IP of the MongoDB server is needed for MONGODB_HOST
