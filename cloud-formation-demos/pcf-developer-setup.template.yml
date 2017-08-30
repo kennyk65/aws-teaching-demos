@@ -29,23 +29,36 @@ Parameters:
     Default: Yes
     Description: Do you want to create a Jenkins Instance or not?
 
+  CreateNumberOfStudentInstances:
+    Type: Number
+    MinValue: 0
+    MaxValue: 20 
+    Default: 0
+    Description: How many student instances do you want to create?
+
   JenkinsAMI:
     Type: String
     Default: ami-4cf7e126
-    Description: The AMI can be found be searching for jenkins-continuous-delivery-lab in the EC2 Dashboard. Must be in the N. Virginia region. Make sure you search under Public Images.
+    Description: AMI to use for Jenkins.  Must be in N. Virginia.  The AMI can be found be searching communitiy AMIs for "jenkins-continuous-delivery-lab" in the EC2 Instance Launch wizard. 
 
   MongoAMI:
     Type: String
     Default: ami-ee2694f8
-    Description: The AMI can be found be searching for mongodb-service-broker-lab in the EC2 Dashboard (ami-cdf7f4a7). Must be in the N. Virginia region. Make sure you search under Public Images.
+    Description: AMI to use for MongoDB.  Must be in N. Virginia.  The AMI can be found searching communitiy AMIs for "mongodb-service-broker-lab" in the EC2 Instance Launch wizard (ami-cdf7f4a7). 
+
+  StudentInstanceAMI:
+    Type: String
+    Default: ami-775a221d
+    Description: AMI to use for the student instances.  Must be in N. Virginia.  The AMI can be found by searching communitiy AMIs for "WinServer08STS” in the EC2 Instance Launch wizard .  Select the AMI with the greatest version number appended to the AMI Name
 
   PrivateKeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Description: The name of the private key file to use for SSH/RDP access to the MongoDB / Jenkins instances.  Create this key in the EC2 area of AWS.
+    Description: The name of the private key file to use for SSH/RDP access to the MongoDB / Jenkins / Student instances.  Create this key in the EC2 area of AWS.
 
 Conditions:
   MakeJenkinsInstance: !Equals [ !Ref CreateJenkins, Yes ]
   MakeMongoInstance: !Equals [ !Ref CreateMongoDB, Yes ]
+  MakeStudentInstances: !Not [ !Equals [ !Ref CreateNumberOfStudentInstances, 0 ]]
 
 Resources:
   # First, A VPC.  We could use the default VPC 
@@ -148,6 +161,22 @@ Resources:
         CidrIp: 0.0.0.0/0
 
 
+  # A security group for our student instances.
+  # Ingress via SSH port 3389 from anywhere.
+  # WARNING - This is a pretty wide-open security group.
+  StudentInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: MakeStudentInstances
+    Properties:
+      GroupDescription: Enable external access to student instances
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3389
+        ToPort: 3389
+        CidrIp: 0.0.0.0/0
+
+
   # This instance is our MongoDB server
   MongoDBServer:
     Type: AWS::EC2::Instance
@@ -191,6 +220,37 @@ Resources:
           #!/bin/bash -ex
           service jenkins start
        
+
+  # Launch Configuration for our student instance, if any:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Condition: MakeStudentInstances             # Only create if requested
+    Properties:
+      ImageId: !Ref StudentInstanceAMI
+      KeyName: !Ref PrivateKeyName              # Student share same key - easier to administer and only for class duration.
+      InstanceType: t2.medium                   # Any instance type will do
+      AssociatePublicIpAddress: true
+      SecurityGroups:
+      - !Ref StudentInstanceSecurityGroup       # Plug in the security group.
+
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: MakeStudentInstances             # Only create if requested
+    DependsOn: PublicSubnet1RouteTableAssociation
+    Properties:
+      VPCZoneIdentifier:
+      - Ref: PublicSubnet1                                  # One AZ is fine
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 1                                            # This only makes sense with the Condition in place.       
+      MaxSize: !Ref CreateNumberOfStudentInstances
+      DesiredCapacity: !Ref CreateNumberOfStudentInstances  # Create requested #
+      Tags:
+      - Key: Name
+        Value: StudentInstance
+        PropagateAtLaunch: 'true'
+
+
 # Finally, what we should see when we are all done.  
 # The public IP of the MongoDB server is needed for MONGODB_HOST
 Outputs:
