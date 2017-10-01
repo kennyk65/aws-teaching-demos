@@ -1,10 +1,8 @@
-package com.example.producer;
+package com.example.util;
 
 // Copyright 2017 Amazon Web Services, Inc. or its affiliates. All rights reserved.
 
 import java.util.Random;
-
-import com.example.util.SensorRecord;
 
 //	Generates Sensor Readings.:
 public class SensorReadingGenerator {

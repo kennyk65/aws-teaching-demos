@@ -9,6 +9,7 @@ import com.amazonaws.services.kinesis.producer.KinesisProducer;
 import com.amazonaws.services.kinesis.producer.KinesisProducerConfiguration;
 import com.amazonaws.services.kinesis.producer.UserRecordResult;
 import com.example.creator.StreamCreator;
+import com.example.util.SensorReadingGenerator;
 import com.example.util.SensorRecord;
 import com.example.util.Utils;
 import com.google.common.util.concurrent.FutureCallback;
@@ -26,14 +27,13 @@ public class SensorReadingsProducer {
 	public static final String STREAM_NAME = StreamCreator.STREAM_NAME;
 	public static final Region REGION = Utils.getRegion();
 	public static final int TOTAL_NUM_EVENTS = 200;
-	private final Random RANDOM = new Random();
-	private static SensorReadingsProducer sensorReadingsProducer = null;
+	private static SensorReadingsProducer producer = null;
 	private int successCounter = 0;
 
 	
 	public static void main(String[] args) {
-		sensorReadingsProducer = getSensorReadingsProducer();
-		sensorReadingsProducer.addDataToStream();
+		producer = new SensorReadingsProducer();
+		producer.addDataToStream();
 	}
 
 	private void addDataToStream() {
@@ -58,7 +58,7 @@ public class SensorReadingsProducer {
 		};
 
 		for (int readingCounter = 0; readingCounter < TOTAL_NUM_EVENTS; readingCounter++) {
-			sensorRecord = generateData(readingCounter);
+			sensorRecord = SensorReadingGenerator.generateData(readingCounter);
 			ListenableFuture<UserRecordResult> future = 
 				kinesisProducer.addUserRecord(
 					STREAM_NAME, 
@@ -66,13 +66,6 @@ public class SensorReadingsProducer {
 					sensorRecord.toByteBuffer());
 			Futures.addCallback(future, myCallback);
 		}
-	}
-
-	public static SensorReadingsProducer getSensorReadingsProducer() {
-		if (sensorReadingsProducer == null) {
-			sensorReadingsProducer = new SensorReadingsProducer();
-		}
-		return sensorReadingsProducer;
 	}
 
 	public int getSuccessCounter() {
@@ -94,35 +87,5 @@ public class SensorReadingsProducer {
 		return new KinesisProducer(config);
 	}
 
-	// Generates sensor data. DO NOT MODIFY THIS METHOD
-	public SensorRecord generateData(int readingCounter) {
-		return new SensorRecord(getSensorId(readingCounter), getRandomTemperature(readingCounter));
-
-	}
-
-	private String getSensorId(int readingCounter) {
-		String sensorId = null;
-		String[] sensorIds = { "A12345", "Z09876" };
-
-		if (readingCounter % 2 == 0) {
-			sensorId = sensorIds[0];
-		} else {
-			sensorId = sensorIds[1];
-		}
-
-		return sensorId;
-	}
-
-	private int getRandomTemperature(int readingCounter) {
-		int temperature = 0;
-		int randomNumber = RANDOM.nextInt(10);
-
-		if (readingCounter > 100 && readingCounter < 150 && readingCounter % 2 == 0) {
-			temperature = randomNumber + 50;
-		} else {
-			temperature = randomNumber + 30;
-		}
-		return temperature;
-	}
 
 }

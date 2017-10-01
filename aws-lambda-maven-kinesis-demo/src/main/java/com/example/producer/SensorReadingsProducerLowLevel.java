@@ -11,6 +11,7 @@ import com.amazonaws.services.kinesis.producer.KinesisProducer;
 import com.amazonaws.services.kinesis.producer.KinesisProducerConfiguration;
 import com.amazonaws.services.kinesis.producer.UserRecordResult;
 import com.example.creator.StreamCreator;
+import com.example.util.SensorReadingGenerator;
 import com.example.util.SensorRecord;
 import com.example.util.Utils;
 import com.google.common.util.concurrent.FutureCallback;
