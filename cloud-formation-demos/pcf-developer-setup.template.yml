@@ -53,7 +53,7 @@ Parameters:
 
   PrivateKeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Description: The name of the private key file to use for SSH/RDP access to the MongoDB / Jenkins / Student instances.  Create this key in the EC2 area of AWS.
+    Description: The name of the private key file to use for SSH access to the MongoDB / Jenkins instances.  Create this key in the EC2 area of AWS.
 
 Conditions:
   MakeJenkinsInstance: !Equals [ !Ref CreateJenkins, Yes ]
@@ -263,3 +263,15 @@ Outputs:
     Condition: MakeMongoInstance
     Description: The public IP address of your MongoDB server.
     Value: !GetAtt MongoDBServer.PublicIp
+
+  StudentInstanceCredentials:
+    Condition: MakeStudentInstances
+    Description: Credentials for logging into student windows instances
+    Value: Username=Administrator, Password=KeepItSimple123
+
+  StudentInstanceIPAddresses:
+    Condition: MakeStudentInstances
+    Description: IP Addresses for student instances
+    Value: Go To EC2, list instances, find all "StudentInstance" instances, note Public IP addresses
+
+
