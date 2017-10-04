@@ -1,0 +1,226 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  EC2InstanceKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the
+      EC2 Istance host.
+
+  S3BucketName:
+    Type: String
+    Description: Unique name of the S3 Bucker.  Must start with "webapp-".
+    Default: webapp-
+      
+      
+Mappings:
+  #  This is just the Amazon Linux AMI:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-1ecae776
+    us-west-1:
+      AMI: ami-d114f295
+    us-west-2:
+      AMI: ami-e7527ed7
+    eu-west-1:
+      AMI: ami-a10897d6
+    eu-central-1:
+      AMI: ami-a8221fb5
+    sa-east-1:
+      AMI: ami-b52890a8
+    ap-southeast-1:
+      AMI: ami-68d8e93a
+    ap-southeast-2:
+      AMI: ami-fd9cecc7
+    ap-northeast-1:
+      AMI: ami-cbf90ecb
+
+
+Resources:
+
+  # S3 Bucket:
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties: 
+      BucketName: !Ref S3BucketName
+
+  # DynamoDB Table:
+  DynamoDBTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: AWS-Services
+      AttributeDefinitions: 
+        - AttributeName: "Category"
+          AttributeType: "S"
+        - AttributeName: "Name"
+          AttributeType: "S"
+      KeySchema: 
+        - AttributeName: "Category"
+          KeyType: "HASH"
+        - AttributeName: "Name"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+
+  # IAM Role for EC2 Instance:
+  WebServerRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: WebServerRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Path: "/"
+
+  # Instance Profile, associating Role with Instance:
+  TheInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      InstanceProfileName: TheInstanceProfile  
+      Roles:
+        - !Ref WebServerRole
+
+  # First, A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.200.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: Lab VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now a public subnet:
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.200.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+
+  
+  # Attach the public subnet to public route table:    
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+      
+
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      
+  # This instance is our Web server
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
+      InstanceType: t2.micro                                          # Any size is fine
+      KeyName: !Ref EC2InstanceKeyName                                # Use the keypair from the input parameters
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        AssociatePublicIpAddress: 'true'                              # We will need a public IP address
+        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
+        GroupSet:
+        - Ref: WebServerSecurityGroup                                 # Attach the security group
+      Tags:
+      - Key: Name
+        Value: WebServer
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Install Apache Web Server and PHP
+          yum remove -y httpd php
+          yum install -y httpd24 php56
+          # Download Lab files
+          wget https://us-west-2-aws-training.s3.amazonaws.com/awsu-ilt/AWS-100-ARC/v5.2/lab-1-webapp/scripts/lab1src.zip
+          unzip lab1src.zip -d /tmp/
+          mv /tmp/lab1src/*.php /var/www/html/
+          # Download and install the AWS SDK for PHP
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.15.9/aws.zip
+          unzip aws -d /var/www/html
+          # Determine Region
+          REGION=${AWS::Region}
+          echo Region is $REGION
+          # Copy files to Amazon S3 bucket with name webapp-*
+          #BUCKET=aws s3api list-buckets --query "Buckets[?starts_with(Name, 'webapp-')].Name | [0]" --output text
+          BUCKET=${S3BucketName}
+          aws s3 cp /tmp/lab1src/jquery/ s3://$BUCKET/jquery/ --recursive --acl public-read --region $REGION
+          aws s3 cp /tmp/lab1src/images/ s3://$BUCKET/images/ --recursive --acl public-read --region $REGION
+          aws s3 ls s3://$BUCKET/ --region $REGION --recursive
+          # Configure Region and Bucket to use
+          sed -i "2s/%region%/$REGION/g" /var/www/html/*.php
+          sed -i "3s/%bucket%/$BUCKET/g" /var/www/html/*.php
+          # Copy data into DynamoDB table
+          aws dynamodb batch-write-item --request-items file:///tmp/lab1src/scripts/services1.json --region $REGION
+          aws dynamodb batch-write-item --request-items file:///tmp/lab1src/scripts/services2.json --region $REGION
+          aws dynamodb batch-write-item --request-items file:///tmp/lab1src/scripts/services3.json --region $REGION
+          # Turn on web server
+          chkconfig httpd on
+          service httpd start
+      IamInstanceProfile: !Ref TheInstanceProfile
+
+                
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  EC2PublicIP:
+    Description: Public IP Address of the web server
+    Value: !GetAtt WebServer.PublicIp
