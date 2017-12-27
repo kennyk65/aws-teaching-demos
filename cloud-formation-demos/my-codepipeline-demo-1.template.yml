@@ -1,8 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 # This is a simple codepipeline demo that does very little beyond what the CodeBuild demo did.
-# It is a bit more sophisticated because it separates the source, build, and testing.
-# to make things fun, the build phase is two separate actions in parallel: one does tests and the other packaging.
+# It is a bit more complex with codepipeline involved, but ultimately more flexible too.
 
 # TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
