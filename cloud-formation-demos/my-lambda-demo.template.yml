@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Simple Lambda demo.
+
+Resources:
+
+  # This is a simple inline NodeJS "hello world" style Lambda function.
+  MyLambda:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      FunctionName: MyLambda
+      Description: Example Lambda from CloudFormation
+      MemorySize: 128
+      Timeout: 4
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: nodejs6.10
+      Handler: index.justatest
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+          console.log('Loading function');
+          exports.justatest = (event, context, callback) => {
+              //console.log('Received event:', JSON.stringify(event, null, 2));
+              console.log('value1 =', event.key1);
+              console.log('value2 =', event.key2);
+              console.log('value3 =', event.key3);
+              callback(null, event.key1);  // Echo back the first key value
+              //callback('Something went wrong');
+          };        
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: BasicLambdaRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
