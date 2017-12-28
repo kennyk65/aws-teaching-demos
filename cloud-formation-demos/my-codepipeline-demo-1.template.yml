@@ -4,8 +4,8 @@ AWSTemplateFormatVersion: 2010-09-09
 # It is a bit more complex with codepipeline involved, but ultimately more flexible too.
 
 # TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
-# To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
-# Put a '0' on the front of the value you see here.
+# To make a GitHub OAuthToken, go to GitHub / Settings / Developer Settings / Personal Access Tokens
+# Put a '0' on the front of the default value you see here.
 
 
 Parameters:

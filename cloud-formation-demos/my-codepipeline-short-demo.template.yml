@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
-# Put a '9' on the front
+# Put a '0' on the front of the default value you see here.
 
 Metadata: 
   AWS::CloudFormation::Interface: 
@@ -37,7 +37,7 @@ Parameters:
 
   GitHubOAuthToken:
     Type: String
-    Default:  c5194a2ada94acc7743b7e263132ba0ce1be944
+    Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
   MaxSize:

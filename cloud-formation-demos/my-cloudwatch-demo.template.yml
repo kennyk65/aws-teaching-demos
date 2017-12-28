@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template sets up a CloudWatch custom metric demo.
+
+Parameters:
+
+  Prefix:
+    Description: Unique prefix of the environment
+    Type: String
+    Default: kk-cwdemo
+
+  S3Bucket:
+    Description: Bucket containing the existing WAR file.  Must be in same region as this stack.
+    Type: String
+    Default: kk-uploads-oregon
+
+  S3Object:
+    Description: Object key of the CloudWatch Demo WAR file in the S3 bucket
+    Type: String
+    Default: spring-cloud-aws-cloudwatch-demo-1.war
+
+
+Resources:
+
+  # This Role is given to the ElasticBeanstalk environment:
+  BeanstalkServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: BeanstalkServiceRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: "elasticbeanstalk.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the BeanstalkServiceRole.
+  BeanstalkServicePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: BeanstalkServicePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          # I'm not sure exactly what permissions are needed here.  Docs are nearly impossible.
+          Action: 
+            - elasticbeanstalk:*
+            - elasticloadbalancing:Describe*
+            - ec2:Describe*
+            - ec2:Get*
+            - ec2:Associate*
+            - logs:*
+            - s3:*
+            - autoscaling:*   
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref BeanstalkServiceRole
+
+  # This Role is given to the EC2 instance(s) run by ElasticBeanstalk:
+  BeanstalkAppRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: BeanstalkAppRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the BeanstalkAppRole, and eventually the EC2 instances.
+  BeanstalkAppPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: BeanstalkAppPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          # Permission requirements vary from app to app, but everyone needs cloudwatch logs.
+          Action: 
+            - logs:CreateLogStream
+            - logs:GetLogEvents
+            - logs:PutLogEvents
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+            - logs:PutRetentionPolicy
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref BeanstalkAppRole
+
+  # Beanstalk starts here.
+  MyBeanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: CloudWatchDemo
+
+  # How to get the code:
+  MyVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName: !Ref MyBeanstalkApplication
+      Description: v1
+      SourceBundle:
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Object
+
+  # How to run the code:
+  EBEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref MyBeanstalkApplication
+      VersionLabel: !Ref MyVersion
+      EnvironmentName: Production
+      CNAMEPrefix: !Ref Prefix
+      SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
+      OptionSettings: 
+        - Namespace: aws:elasticbeanstalk:application
+          OptionName: "Application Healthcheck URL"
+          Value: /health
+
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !Ref BeanstalkServiceRole        # What is the ElasticBeanstalk service allowed to do?
+        
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref MyBeanstalkInstanceProfile  # What is my EC2 instance allowed to do?
+
+
+  # Attaches the role to the instance:
+  MyBeanstalkInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Roles:
+      - !Ref BeanstalkAppRole 
+      InstanceProfileName: MyBeanstalkInstanceProfile
+
+Outputs:
+  ProductionURL:
+    Value: !GetAtt EBEnvironment.EndpointURL
