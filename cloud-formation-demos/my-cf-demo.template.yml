@@ -23,6 +23,8 @@ Mappings:
   AmazonLinuxAMI:
     us-east-1:
       AMI: ami-1ecae776
+    us-east-2:
+      AMI: ami-15e9c770      
     us-west-1:
       AMI: ami-d114f295
     us-west-2:
