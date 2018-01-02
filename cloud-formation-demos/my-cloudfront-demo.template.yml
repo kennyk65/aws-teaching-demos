@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# S3 bucket, set for website, fronted by CloudFront
+# You must copy in your own desired content into the bucket.
+# WARNING:  CloudFront distributions take about 20 minutes to create / update.
+
+Parameters:
+
+  WebsiteSuffix:
+    Description: Suffix to be placed on the website bucket.
+    Type: String
+    Default: demonstration
+
+Resources:
+
+  # Bucket for website:
+  S3:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Join [ "", ["website-", !Ref WebsiteSuffix]]
+      # AccessControl: PublicRead     # Do not use AccessControl (old), use BucketPolicy (new)
+      WebsiteConfiguration:
+        ErrorDocument: error.html
+        IndexDocument: index.html
+
+
+  # Contents of the bucket are publicly gettable:
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties: 
+      Bucket: !Ref S3
+      PolicyDocument: 
+        Statement: 
+          - Effect: "Allow"                                   #  Allow...
+            Principal: "*"                                      #  ...anyone anywhere...
+            Action:                                               # ...to perform GetObject on...
+              - s3:GetObject
+            Resource: !Join [ "", ["arn:aws:s3:::", !Ref S3, "/*" ]]  #  ...any object in this S3 bucket.
+
+  CloudFront:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig: 
+        Comment: Pointing at S3 Bucket
+        Enabled: true
+        PriceClass: PriceClass_100    # Cheapest
+        DefaultRootObject: index.html
+
+        Origins:
+        - Id: S3Bucket
+          DomainName: !GetAtt S3.DomainName   # Might need to be "WebsiteURL"
+          CustomOriginConfig:                 # Ironically, you use CustomOriginConfig instead of S3OriginConfig unless you want to fool with OriginAccessIdentities
+            OriginProtocolPolicy: https-only  #  http-only, match-viewer, https-only
+
+        # CacheBehavior:
+        # - PathPattern: web/*.html
+        #   TargetOriginId: S3Bucket
+        #   DefaultTTL: 0
+        #   ForwardedValues:
+        #     QueryString: true
+        #   ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
+
+        DefaultCacheBehavior:                 # Probably don't need this.
+          TargetOriginId: S3Bucket
+          DefaultTTL: 0
+          ForwardedValues:
+            QueryString: true
+          ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
+
+# "removeBucket": {
+#         "Type": "Custom::cli2cloudformation",
+#         "Properties": {
+#           "ServiceToken": "arn:aws:lambda:eu-west-1:123456789000:function:custom-lambda-name",
+#           "CliCommandDelete": "aws s3 rb s3://bucket-name --force",
+#         }
+# }
+
+Outputs:
+  TheURL:
+    Value: !Join [ "", ["https://", !GetAtt CloudFront.DomainName ]]
+
