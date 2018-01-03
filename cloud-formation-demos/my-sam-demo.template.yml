@@ -69,7 +69,7 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
             Service: "lambda.amazonaws.com"
           Action: "sts:AssumeRole"
@@ -97,7 +97,7 @@ Outputs:
 
   # They don't give you the URL, you have to EARN it.
   # This output depends on the names of the SAM-generated resources.  
-  # If they change the names this code won't work:
+  # If they change the generated resource names, this code won't work:
   RestAPIProdStageURL:
     Value: !Join
       - ''
