@@ -16,6 +16,11 @@ Parameters:
     Default: lambda-helloworld.js.zip
     Description: key of your Zipped Lamda function code.
 
+  LambdaHandler:
+    Type: String
+    Default: lambda-helloworld.justatest
+    Description: Handler of your Lambda function.  Usually something like "index.handler".
+
   Runtime:
     Type: String
     Default: nodejs6.10
@@ -42,7 +47,7 @@ Resources:
       Timeout: 4
       Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
       Runtime: !Ref Runtime
-      Handler: lambda-helloworld.justatest    # must match filename regardless of what AWS docs say.
+      Handler: !Ref LambdaHandler
       CodeUri: 
         Bucket: !Ref LambdaCodeBucket
         Key: !Ref LambdaCodeKey
@@ -86,5 +91,20 @@ Resources:
             - s3:putObject
           Resource: "*"
       Roles: 
-        -  !Ref LambdaFunctionRole   
+        -  !Ref LambdaFunctionRole
 
+Outputs:
+
+  # They don't give you the URL, you have to EARN it.
+  # This output depends on the names of the SAM-generated resources.  
+  # If they change the names this code won't work:
+  RestAPIProdStageURL:
+    Value: !Join
+      - ''
+      - - https://
+        - !Ref ServerlessRestApi
+        - '.execute-api.'
+        - !Ref 'AWS::Region'
+        - '.amazonaws.com/'
+        - !Ref ServerlessRestApiProdStage 
+    Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
