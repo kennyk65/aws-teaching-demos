@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template replicates what is produced by students in the AWS Architecting 5.2 Lab 1.
+# It is a little web app with images from S3 and data content in DynamoDB.
+# The only difference to the actual lab is that the UserData is adjusted a bit to determine region and bucket a bit differently.
+Parameters:
+  TheBucketName:
+    Description: The bucket (in the same region) to hold images.  
+    Type: String
+    Default: webapp-sample-bucket
+
+Mappings:
+  #  This is just the Amazon Linux AMI:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-1ecae776
+    us-east-2:
+      AMI: ami-15e9c770      
+    us-west-1:
+      AMI: ami-d114f295
+    us-west-2:
+      AMI: ami-e7527ed7
+    eu-west-1:
+      AMI: ami-a10897d6
+    eu-central-1:
+      AMI: ami-a8221fb5
+    sa-east-1:
+      AMI: ami-b52890a8
+    ap-southeast-1:
+      AMI: ami-68d8e93a
+    ap-southeast-2:
+      AMI: ami-fd9cecc7
+    ap-northeast-1:
+      AMI: ami-cbf90ecb
+
+Resources:
+
+  # A bucket for the website's images:
+  TheS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref TheBucketName
+
+  Dynamo:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AWS-Services
+      KeySchema:         
+        - AttributeName: Category
+          KeyType: HASH
+        - AttributeName: Name
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: Category
+          AttributeType: S
+        - AttributeName: Name
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+
+  # This Role allows the EC2 Instance to make S3 and DynamoDB calls.
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      # RoleName: WebServerRole  # Delete and recreate goes faster when you don't have a name collision on role.
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+
+  # A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.200.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: Lab VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # subnet:
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.200.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+        
+  # Route table for our subnet:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  # Attach :    
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+        
+  
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      
+  # This instance is our Web server
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
+      InstanceType: t2.micro                                          # Any size is fine
+      IamInstanceProfile: !Ref InstanceProf
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        AssociatePublicIpAddress: 'true'                              # We will need a public IP address
+        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
+        GroupSet:
+        - Ref: WebServerSecurityGroup                             # Attach the security group
+      Tags:
+      - Key: Name
+        Value: WebServer
+      UserData:      
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Install Apache Web Server and PHP
+          yum remove -y httpd php
+          yum install -y httpd24 php56
+          # Download Lab files
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/AWS-100-ARC/v5.2.10/lab-1-webapp/scripts/lab1src.zip
+          unzip lab1src.zip -d /tmp/
+          mv /tmp/lab1src/*.php /var/www/html/
+          # Download and install the AWS SDK for PHP
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.15.9/aws.zip
+          unzip aws -d /var/www/html
+          # Copy files to Amazon S3 bucket with name webapp-*
+          BUCKET=${TheS3Bucket}
+          echo Bucket is: $BUCKET 
+          # Determine Region
+          REGION=`aws s3api get-bucket-location --bucket $BUCKET --output text`
+          echo Region is: $REGION 
+          aws s3 cp /tmp/lab1src/jquery/ s3://$BUCKET/jquery/ --recursive --acl public-read --region $REGION
+          aws s3 cp /tmp/lab1src/images/ s3://$BUCKET/images/ --recursive --acl public-read --region $REGION
+          aws s3 ls s3://$BUCKET/ --region $REGION --recursive
+          # Configure Region and Bucket to use
+          sed -i "2s/%region%/$REGION/g" /var/www/html/*.php
+          sed -i "3s/%bucket%/$BUCKET/g" /var/www/html/*.php
+          # Copy data into DynamoDB table
+          aws dynamodb batch-write-item --request-items file:///tmp/lab1src/scripts/services1.json --region $REGION
+          aws dynamodb batch-write-item --request-items file:///tmp/lab1src/scripts/services2.json --region $REGION
+          aws dynamodb batch-write-item --request-items file:///tmp/lab1src/scripts/services3.json --region $REGION
+          # Turn on web server
+          chkconfig httpd on
+          service httpd start
+
+  InstanceProf:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles: 
+        - !Ref InstanceRole 
+
+
+Outputs:
+  DnsName:
+    Description: web server
+    Value: !Join ['', ["http://", !GetAtt  WebServer.PublicDnsName ]]
+
+  IPAddress:
+    Description: IP Address of web server
+    Value: !Join ['', ["http://", !GetAtt  WebServer.PublicIp ]]
+
+
+
