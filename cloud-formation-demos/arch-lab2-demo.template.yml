@@ -210,7 +210,7 @@ Resources:
         Ebs:
           VolumeSize: '25'
           VolumeType: gp2
-      UserData:      #  This code download a PHP app. Notice a different way to signal completion:
+      UserData:      #  This code download a PHP app. Notice how the last line signals completion:
         Fn::Base64: !Sub |
           #!/bin/bash
           sudo yum -y update
@@ -223,6 +223,8 @@ Resources:
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: 
+    - MyNAT
     Properties:
       VPCZoneIdentifier:
       - Ref: PrivateSubnet1
