@@ -26,7 +26,7 @@ public class SensorReadingsProducer {
 
 	public static final String STREAM_NAME = StreamCreator.STREAM_NAME;
 	public static final Region REGION = Utils.getRegion();
-	public static final int TOTAL_NUM_EVENTS = 200;
+	public static final int TOTAL_NUM_EVENTS = 500;
 	private static SensorReadingsProducer producer = null;
 	private int successCounter = 0;
 

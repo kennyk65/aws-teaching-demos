@@ -21,7 +21,8 @@ public class LambdaRequestHandler implements RequestHandler<KinesisEvent,String>
 	public String handleRequest(KinesisEvent event, Context context) {
 		
     	LambdaLogger logger = context.getLogger();
-    	logger.log("Start of Function, input: " + event);
+    	int numberOfRecords = event.getRecords()==null?0:event.getRecords().size();
+    	logger.log("Start of Function, " + numberOfRecords + " input records");
 
 		
 		for ( KinesisEventRecord ker : event.getRecords()) {
@@ -29,10 +30,8 @@ public class LambdaRequestHandler implements RequestHandler<KinesisEvent,String>
 		}
 
     	logger.log("End of Function, " + 
-    			context.getRemainingTimeInMillis() + 
-    			", millisecond of time remaining, " +
-    			Runtime.getRuntime().freeMemory() + 
-    			" memory free\n");
+    			context.getRemainingTimeInMillis() + ", millisecond of time remaining, " +
+    			Runtime.getRuntime().freeMemory() + " memory free\n");
     	return "";
 	}
 

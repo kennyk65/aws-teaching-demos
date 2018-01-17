@@ -5,7 +5,7 @@
   <artifactId>lambda-kinesis-demo</artifactId>
   <name>lambda-kinesis-demo</name>
   <version>1</version>
-  <description>Simple Maven project for packaging and deploying a Lambda function.</description>
+  <description>Simple Maven project for packaging and deploying a Lambda kinesis consumer.</description>
   <build>
     <plugins>
       <plugin>
@@ -42,7 +42,7 @@
       <dependency>
         <groupId>com.amazonaws</groupId>
         <artifactId>aws-java-sdk-bom</artifactId>
-        <version>1.11.106</version>
+        <version>1.11.205</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
