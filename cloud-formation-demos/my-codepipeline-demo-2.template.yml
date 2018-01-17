@@ -1,34 +1,19 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-# TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
-# To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
-# Put a '0' on the front of the default value you see here.
+# This is a simple codepipeline demo that does very little beyond what the CodeBuild demo did.
+# It is a bit more sophisticated because it separates the source, build, and testing.
+# to make things fun, the build phase is two separate actions in parallel: one does tests and the other packaging.
 
-Metadata: 
-  AWS::CloudFormation::Interface: 
-    ParameterGroups: 
-      - Label: 
-          default: "Code Build Pipeline"
-        Parameters: 
-          - GitHubRepository
-          - GitHubOAuthToken
-          - CodePipelineBucketPrefix
-      - Label: 
-          default: "Network Configuration"
-        Parameters: 
-          - VpcId
-          - SubnetIds
-      - Label: 
-          default: "ECS Cluster"
-        Parameters: 
-          - MaxSize
-          - DesiredCapacity
+# TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
+# To make a GitHub OAuthToken, go to GitHub / Settings / Developer Settings / Personal Access Tokens
+# Put a '0' on the front of the value you see here.
+
 
 Parameters:
   CodePipelineBucketPrefix:
-    Description: CodePipeline needs a utility bucket.  Specify the prefix for the bucket name
+    Description: CodePipeline needs a utility bucket for its internal use.  Specify the prefix for the bucket name
     Type: String
-    Default: codepipeline-
+    Default: codepipeline-kk-
 
   GitHubRepository:
     Type: String
@@ -40,45 +25,10 @@ Parameters:
     Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
-  MaxSize:
+  OutputS3BucketAndPrefix:
+    Description: Existing S3 Bucket (and optional folder/prefix) where you want to place output artifacts
     Type: String
-    Default: 1
-    Description: Maximum number of ECS instances.
-
-  DesiredCapacity:
-    Type: String
-    Default: 1
-    Description: Desired number of ECS instances.
-
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: Select a VPC that allows instances access to the Internet.
-
-  SubnetIds:
-    Type: List<AWS::EC2::Subnet::Id>
-    Description: Select at least two public subnets in your selected VPC.
-
-Mappings:
-  #  This is just the Amazon Linux AMI:
-  AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-1ecae776
-    us-west-1:
-      AMI: ami-d114f295
-    us-west-2:
-      AMI: ami-e7527ed7
-    eu-west-1:
-      AMI: ami-a10897d6
-    eu-central-1:
-      AMI: ami-a8221fb5
-    sa-east-1:
-      AMI: ami-b52890a8
-    ap-southeast-1:
-      AMI: ami-68d8e93a
-    ap-southeast-2:
-      AMI: ami-fd9cecc7
-    ap-northeast-1:
-      AMI: ami-cbf90ecb
+    Default: kk-uploads-oregon/build-output
 
 
 Resources:
@@ -122,8 +72,11 @@ Resources:
         Statement: 
           Effect: Allow
           Action: 
-            - logs:*
-            - s3:*
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - s3:getObject
             - codebuild:*
           Resource: "*"
       Roles: 
@@ -143,9 +96,12 @@ Resources:
           # codebuild probably does not need to be wide open like this, and the logs should only need
           # to create the stream, group, and log events.
           Action: 
-            - s3:*
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - s3:getObject
             - codebuild:*
-            - logs:*
           Resource: 
             - "*"
       Roles: 
@@ -155,29 +111,73 @@ Resources:
   S3:
     Type: "AWS::S3::Bucket"
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region", "-", !Ref "AWS::AccountId"]]
+      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
 
-  # The CodeBuild project that will be referenced in the CodePipeline below.
-  # Fortunately, its configuration is quite small because it is part of a larger
-  # Pipeline, so no need for details on Source and Artifacts.  Most of the details
-  # on how to to the build itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
+
+  # This CodeBuild project runs packaging only, tests are separate.
+  # This is a Java / Maven build.  Most of the details on how to to the build 
+  # itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
   MyBuild:
     Type: "AWS::CodeBuild::Project"
     Properties: 
       Name: MyBuild
       Description: Demo of CodeBuild with CodeDeploy pipeline.
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
       Source:
         Type: CODEPIPELINE
-      Artifacts:
-        Type: CODEPIPELINE       
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
+            # The output file is identified by its name only (getting rid of 'target' on the path), which means it will 
+            # show up later in the S3 bucket with just its name and no pathing.
+            phases:
+              build:
+                commands:
+                  - echo Build started on `date`
+                  - mvn package -DskipTests
+                  - echo Build finished on `date`
+              post_build:
+                commands:
+                  - echo Copying WAR file to S3
+                  - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
+            artifacts:
+              files:
+                - target/spring-cloud-aws-environment-demo-1.war
+              discard-paths: yes
       Environment:
         Type: "LINUX_CONTAINER"
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/java:openjdk-8
-        PrivilegedMode: false
+      Artifacts:    
+        Type: CODEPIPELINE
+
+  # This CodeBuild project runs unit tests only.  
+  # The intent is to run parallel to the packaging to decrease build duration.
+  MyTests:
+    Type: "AWS::CodeBuild::Project"
+    Properties: 
+      Name: MyTests
+      Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
-
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs the maven tests only.  No output.
+            phases:
+              build:
+                commands:
+                  - echo Testing started on `date`
+                  - mvn test
+                  - echo Testing finished on `date`
+      Environment:
+        Type: "LINUX_CONTAINER"
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8
+      Artifacts:    
+        Type: CODEPIPELINE
 
   # This is the CodePipeline with its stages:
   MyPipe:
@@ -190,6 +190,7 @@ Resources:
       RestartExecutionOnUpdate: true
       RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref CodePipelineRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
       Stages: 
+
         # Stage 1:  Get the source from GitHub:
         - Name: Source
           Actions: 
@@ -208,9 +209,11 @@ Resources:
                 OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
               OutputArtifacts: 
                 - Name: TheSourceCode
-        # Stage 2:  Build using CodeBuild:
+
+        # Stage 2:  Build using CodeBuild / Maven, Test in parallel using CodeBuild / Maven:
         - Name: Build
-          Actions: 
+          Actions:
+            # This runs a Maven build which packages the WAR.  Test are run in the parallel action below: 
             - Name: Build
               RunOrder: 1
               InputArtifacts: 
@@ -223,4 +226,30 @@ Resources:
               Configuration:
                 ProjectName:  !Ref MyBuild  # See the CodeBuild definition above.       
               OutputArtifacts: 
-                - Name: TheArtifact
+                - Name: TheArtifact  
+
+            # This runs a Maven build featuring only the unit tests.  No output:   
+            - Name: UnitTest
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheSourceCode       
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                  
+              Configuration:
+                ProjectName:  !Ref MyTests  # See the CodeBuild definition above.       
+
+Outputs:
+  CodeBuild:
+    Value: !Ref MyPipe
+  IamRole:
+    Value: !Ref CodeBuildRole  
+
+
+
+
+
+
+

@@ -1,23 +1,22 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 
-# For input parameters, we'll need the key pair to use for the Bastion host, the private instances, 
-# and a CIDR range from where input can come into the Bastion host.
+# This demo build a simple stack running 4 instances of a "blue" version of an app.
+# Build the stack, and when it is running, change to the "green" version and watch the update.   
+      
 Parameters:
-  BastionHostKeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: The name of the private key file to use for SSH/RDP access to the
-      bastion host.
-  BastionSecurityCIDR:
+  
+  S3Bucket:
     Type: String
-    Description: The CIDR range to use to lock down security on the bastion host.
-    Default: 0.0.0.0/0
-  PrivateInstancesKeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: The name of the private key file to use for SSH/RDP access to instances
-      in private subnets.
-      
-      
+    Default: kk-uploads-oregon
+    Description: Location of the blue and green WAR files.
+
+  WARFile:
+    Type: String
+    Default: zero-downtime-blue.war
+    Description: Object key (optional prefix) of WAR file to run as a webserver.
+
+
 Mappings:
   #  This is just the Amazon Linux AMI:
   AmazonLinuxAMI:
@@ -132,7 +131,6 @@ Resources:
     Type: AWS::EC2::Route
     DependsOn: 
     - AttachGateway
-    - NatInstanceWaitCondition    # We can't add this entry to the table until after the NAT is up and running!
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
@@ -184,25 +182,8 @@ Resources:
         ToPort: '65535'
         CidrIp: 0.0.0.0/0
 
-  # Here is a SecurityGroup for the Bastion server:
-  BastionServerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    DependsOn: AttachGateway
-    Properties:
-      GroupDescription: Security Group for bastion server
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: BastionServerSecurityGroup
-      - Key: ResourceGroup
-        Value: CloudFormationResource
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
-        CidrIp: !Ref BastionSecurityCIDR    # Note how we reference an input parameter
 
-  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  # Security Group for the web server.  Allow HTTP from anywhere:
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     DependsOn: AttachGateway
@@ -212,45 +193,18 @@ Resources:
       Tags:
       - Key: Name
         Value: WebServerSecurityGroup
-      - Key: ResourceGroup
-        Value: CloudFormationResource
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: '80'
         ToPort: '80'
         CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
-        CidrIp: !Join [ '', [ !GetAtt BastionServer.PrivateIp, "/0" ]]
       
-  # This instance is our Bastion server
-  BastionServer:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
-      InstanceType: t2.micro                                          # Any size is fine
-      KeyName: !Ref BastionHostKeyName                                # Use the keypair from the input parameters
-      NetworkInterfaces:
-      - DeviceIndex: '0'
-        AssociatePublicIpAddress: 'true'                              # We will need a public IP address
-        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
-        GroupSet:
-        - Ref: BastionServerSecurityGroup                             # Attach the security group
-      Tags:
-      - Key: Name
-        Value: BastionServer
-      UserData:      #  Very simple userdata script.  Simply do a yum update when starting.
-        Fn::Base64: !Sub |
-          #!/bin/bash -ex
-          yum -y update
             
-  # Create a NAT instance:    
+  # Create a NAT instance.  I could use a gateway instead but this is fine:    
   NATInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
-      KeyName: !Ref BastionHostKeyName                                # We use the Key specified in input parameters
       InstanceType: t2.small                                          # Any instance type is fine
       NetworkInterfaces:
       - DeviceIndex: '0'
@@ -275,30 +229,17 @@ Resources:
           net.ipv4.ip_forward = 1
           net.ipv4.conf.eth0.send_redirects = 0
           NatConfFileMarker
-          /opt/aws/bin/cfn-signal -s true '${NatInstanceWaitHandle}'    
-
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NATInstance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M     # 5 minutes
     
-  # This WaitCondition helps us wait until the NAT is ready to handle traffic before creating other stuff.
-  # It waits for someone to call the wait handler, which we do from the end of the user data script.  
-  NatInstanceWaitCondition:
-    Type: AWS::CloudFormation::WaitCondition
-    DependsOn: NATInstance
-    Properties:
-      Handle: !Ref NatInstanceWaitHandle
-      Timeout: 300    # 5 minutes
-
-  # This WaitHandle is critical.  The WaitCondition won't be satisfied until it is called.
-  # It is called from the last line of the user data script in the NAT instance.
-  NatInstanceWaitHandle:
-    Type: AWS::CloudFormation::WaitConditionHandle
-
 
   # Launch Configuration for our web server running within an ASG:            
   LaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
-      KeyName: !Ref PrivateInstancesKeyName                           # We get the keypair name from the input parameters
       InstanceType: t2.micro          # Any instance type will do
       SecurityGroups:
       - !Ref WebServerSecurityGroup   # Plug in the security group.
@@ -307,45 +248,47 @@ Resources:
         Ebs:
           VolumeSize: '25'
           VolumeType: gp2
-      UserData:      #  This code Installs a Spring Boot app. Notice a different way to signal completion:
+      UserData:      #  This code Installs the "blue" version of our code:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum update -y
           yum install java-1.8.0 -y
-          yum remove java-1.7.0-openjdk -y         
-          wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          yum remove java-1.7.0-openjdk -y    
+          java -version     
+          wget https://${S3Bucket}.s3.amazonaws.com/${WARFile}
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
+          sudo java -jar ${WARFile} --server.port=80        
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: 
-    - NatInstanceWaitCondition
+    - NATInstance
     Properties:
       VPCZoneIdentifier:
       - Ref: PrivateSubnet1
       - Ref: PrivateSubnet2
       LaunchConfigurationName: !Ref LaunchConfig
-      MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
-      MaxSize: 3
-      DesiredCapacity: 1
+      MinSize: 4        
+      MaxSize: 6
+      DesiredCapacity: 4
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       LoadBalancerNames: 
       - Ref: AppLoadBalancer
       Tags:
-      - Key: ApplicationRole
-        Value: OurWebApp
-        PropagateAtLaunch: 'true'
       - Key: Name
-        Value: AppServer
+        Value: WebServer
         PropagateAtLaunch: 'true'
-    # This creation policy is more elegant than the clumsy wait condition shown earlier, but it only works on EC2
-    # and ASG/LaunchConfigurtions.  Essentially it says 'this resource is not really created until you get 1 signal back'.
-    # Best to make the number of signals match the minimum or desired capacity of the ASG.
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT10M
+        Timeout: PT5M # 5 minutes to download and launch the Spring app - more than enough.
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 2
+        MinInstancesInService: 4              # Have CF add two before removing 2         
+#        MinSuccessfulInstancesPercent: 50    # Requires precision with resource signals that I don't want to mess with right now.
+        WaitOnResourceSignals: true           # It takes a few minutes to download and install, so don't shift traffic until ready.
+        PauseTime: PT5M                       # We'll wait up to 5 minutes for new instances to get ready.
         
   # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
   AppLoadBalancer:
@@ -374,4 +317,4 @@ Outputs:
     Value: !Ref AppAutoScalingGroup
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !GetAtt AppLoadBalancer.DNSName
+    Value: !Join ['', ["http://", !GetAtt [AppLoadBalancer, DNSName]]]

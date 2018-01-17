@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Simple CodeBuild demo.
+# Source needs to come from a public github repo of your choice.  buildspec.yml should exist.
+# The build is assumed to be some kind of Java, so it uses the (hard-coded) jdk 8 image.
+# Output goes to a prefix in an S3 bucket
+# Much of the work involves setup of the role / policy, so you have to allow this when you run.
+# TODO:  Can't figure out how to setup a CodeBuild webhook via CloudFormation.  Easy on screen.
+
+Parameters:
+
+  InputGitHubRepo:
+    Description: Existing public GitHub repository with buildspec.yml
+    Type: String
+    Default: https://github.com/kennyk65/aws-cloudbuild-demo.git
+
+  OutputS3Bucket:
+    Description: Existing S3 Bucket where you want to place output artifacts
+    Type: String
+    Default: kk-uploads-oregon
+
+  OutputS3Prefix:
+    Description: Folder within your S3 Bucket where you want to place output artifacts
+    Type: String
+    Default: build-output
+
+
+Resources:
+
+  # This Role allows CodeBuild to do certain things on our behalf.
+  # See the policy for the interesting stuff:
+  CodeBuildRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: CodeBuildRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "codebuild.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+
+  # This Policy is attached to the CodeBuildRole.
+  # CodeBuild is allowed upload on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodeBuildPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: CodeBuildPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - codebuild:*
+          Resource: "*"
+      Roles: 
+        -  !Ref CodeBuildRole   # Attach to CodeBuildRole.
+
+
+  # The CodeBuild project will obtain source from the given GitHub repository.
+  # This is a Java Maven build, so the openjdk 8 is fine.
+  # Most of the details on how to to the build itself is in the 
+  # project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
+  MyBuild:
+    Type: "AWS::CodeBuild::Project"
+    Properties: 
+      Name: DemoBuild
+      Description: Demo of CodeBuild with CodeDeploy pipeline.
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Source:
+        Type: GITHUB
+        Location: !Ref InputGitHubRepo
+        #  TODO - WEBHOOK???
+      Environment:
+        Type: "LINUX_CONTAINER"
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8
+      Artifacts:
+        Type: S3
+        Name: !Ref OutputS3Prefix
+        Location: !Ref OutputS3Bucket
+
+Outputs:
+  CodeBuild:
+    Value: !Ref MyBuild
+  IamRole:
+    Value: !Ref CodeBuildRole  
+  S3Bucket:
+    Value: !Ref OutputS3Bucket
