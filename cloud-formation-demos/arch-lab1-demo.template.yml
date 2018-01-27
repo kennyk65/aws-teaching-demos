@@ -183,7 +183,7 @@ Resources:
           BUCKET=${TheS3Bucket}
           echo Bucket is: $BUCKET 
           # Determine Region
-          REGION=`aws s3api get-bucket-location --bucket $BUCKET --output text`
+          REGION=${AWS::Region}
           echo Region is: $REGION 
           aws s3 cp /tmp/lab1src/jquery/ s3://$BUCKET/jquery/ --recursive --acl public-read --region $REGION
           aws s3 cp /tmp/lab1src/images/ s3://$BUCKET/images/ --recursive --acl public-read --region $REGION
