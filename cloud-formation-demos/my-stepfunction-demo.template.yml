@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Simple Step-Function demo.
+# The step function calls 4 separate lambda functions in sequence to piece together 
+# the words to the Beatles "A Day In the Life" song - featuring Ringo.
+
+Resources:
+
+  MyStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Beatles-StateMachine
+      DefinitionString: !Sub |-
+        {
+          "StartAt": "First",
+          "States": {
+            "First": {
+              "Type": "Task",
+              "Resource": "${ADayInTheLife1.Arn}",
+              "Next": "Second"
+            },
+            "Second": {
+              "Type": "Task",
+              "Resource": "${ADayInTheLife2.Arn}",
+              "Next": "Third"
+            },
+            "Third": {
+              "Type": "Task",
+              "Resource": "${ADayInTheLife3.Arn}",
+              "Next": "Fourth"
+            },    
+            "Fourth": {
+              "Type": "Task",
+              "Resource": "${ADayInTheLife4.Arn}",
+              "End": true
+            }
+          }
+        }        
+      RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref StepFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+
+  # Now, some simple Lambda functions.  Each one simply adds to the words of a Beatles' song:
+  ADayInTheLife1:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      FunctionName: ADayInTheLife1
+      Description: Part of a StepFunction demo
+      MemorySize: 128
+      Timeout: 4
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: nodejs6.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+          console.log('Loading function');
+          exports.handler = (event, context, callback) => {
+              console.log('Received event:', JSON.stringify(event, null, 2));
+              // Take any input, append our words, and return:
+              var comment = event.Comment ;
+              comment = { 
+                "Comment": comment + "Woke up.  Fell out of bed.  Dragged a comb accross my head.  " ,
+              }
+              console.log('Returning:', comment);
+              callback(null, comment);
+          };          
+
+
+  ADayInTheLife2:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      FunctionName: ADayInTheLife2
+      Description: Part of a StepFunction demo
+      MemorySize: 128
+      Timeout: 4
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: nodejs6.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+          console.log('Loading function');
+          exports.handler = (event, context, callback) => {
+              console.log('Received event:', JSON.stringify(event, null, 2));
+              // Take any input, append our words, and return:
+              var comment = event.Comment ;
+              comment = { 
+                "Comment": comment + "Found my way downstairs and drank a cup.  And looking up, I noticed I was late...  " ,
+              }
+              console.log('Returning:', comment);
+              callback(null, comment);
+          };          
+
+
+  ADayInTheLife3:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      FunctionName: ADayInTheLife3
+      Description: Part of a StepFunction demo
+      MemorySize: 128
+      Timeout: 4
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: nodejs6.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+          console.log('Loading function');
+          exports.handler = (event, context, callback) => {
+              console.log('Received event:', JSON.stringify(event, null, 2));
+              // Take any input, append our words, and return:
+              var comment = event.Comment ;
+              comment = { 
+                "Comment": comment + "Found my coat, and grabbed my hat.  Made the bus, in seconds-flat.  " ,
+              }
+              console.log('Returning:', comment);
+              callback(null, comment);
+          };          
+
+
+  ADayInTheLife4:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      FunctionName: ADayInTheLife4
+      Description: Part of a StepFunction demo
+      MemorySize: 128
+      Timeout: 4
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: nodejs6.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+          console.log('Loading function');
+          exports.handler = (event, context, callback) => {
+              console.log('Received event:', JSON.stringify(event, null, 2));
+              // Take any input, append our words, and return:
+              var comment = event.Comment ;
+              comment = { 
+                "Comment": comment + "Found my way upstairs and had a smoke.  And somebody spoke, and I went into a dream...  " ,
+              }
+              console.log('Returning:', comment);
+              callback(null, comment);
+          };          
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
+  StepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: !Join [ "", [ "states.", !Ref "AWS::Region", ".amazonaws.com" ] ]
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the StepFunctionRole.
+  # Basic permissions to call Lambda.
+  StepFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: StepFunctionPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - lambda:InvokeFunction
+          Resource: "*"
+      Roles: 
+        -  !Ref StepFunctionRole   
+
