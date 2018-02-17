@@ -9,6 +9,7 @@ import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.regions.Region;
 import com.amazonaws.services.kinesis.AmazonKinesisClient;
+import com.amazonaws.services.kinesis.AmazonKinesisClientBuilder;
 import com.amazonaws.services.kinesis.model.ResourceInUseException;
 import com.example.util.Utils;
 
@@ -47,7 +48,6 @@ public class StreamCreator {
 							+ "For example, if no network connection is available, the client won't be able to connect to AWS to execute a request and will throw an AmazonClientException.",
 					e);
 		}
-
 		kinesis = new AmazonKinesisClient(credentials).withRegion(REGION);
 	}
 

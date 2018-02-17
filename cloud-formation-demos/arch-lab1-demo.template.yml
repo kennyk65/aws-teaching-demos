@@ -119,7 +119,7 @@ Resources:
         Value: Public
   PublicRoute1:   # Public route table has direct routing to IGW:
     Type: AWS::EC2::Route
-    DependsOn: AttachGateway
+    DependsOn: AttachGateway    # Do not attempt until the IGW is attached to the VPC
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
@@ -132,7 +132,7 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
         
   
-  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  # Security Group for the web server.  Allow HTTP from anywhere:
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     DependsOn: AttachGateway
@@ -156,13 +156,13 @@ Resources:
     Properties:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
       InstanceType: t2.micro                                          # Any size is fine
-      IamInstanceProfile: !Ref InstanceProf
+      IamInstanceProfile: !Ref InstanceProf                           # Attach the role to allow S3 and Dynamo calls
       NetworkInterfaces:
       - DeviceIndex: '0'
         AssociatePublicIpAddress: 'true'                              # We will need a public IP address
-        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
+        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.
         GroupSet:
-        - Ref: WebServerSecurityGroup                             # Attach the security group
+        - Ref: WebServerSecurityGroup                                 # Attach the security group
       Tags:
       - Key: Name
         Value: WebServer
@@ -172,7 +172,7 @@ Resources:
           # Install Apache Web Server and PHP
           yum remove -y httpd php
           yum install -y httpd24 php56
-          # Download Lab files
+          # Download Lab files, unzip, and move to Apache Server folder
           wget https://us-west-2-tcprod.s3.amazonaws.com/courses/AWS-100-ARC/v5.2.10/lab-1-webapp/scripts/lab1src.zip
           unzip lab1src.zip -d /tmp/
           mv /tmp/lab1src/*.php /var/www/html/
@@ -183,7 +183,7 @@ Resources:
           BUCKET=${TheS3Bucket}
           echo Bucket is: $BUCKET 
           # Determine Region
-          REGION=`aws s3api get-bucket-location --bucket $BUCKET --output text`
+          REGION=${AWS::Region}
           echo Region is: $REGION 
           aws s3 cp /tmp/lab1src/jquery/ s3://$BUCKET/jquery/ --recursive --acl public-read --region $REGION
           aws s3 cp /tmp/lab1src/images/ s3://$BUCKET/images/ --recursive --acl public-read --region $REGION
@@ -198,6 +198,7 @@ Resources:
           # Turn on web server
           chkconfig httpd on
           service httpd start
+          # Probably should use a creation policy to signal completion, but Im lazy
 
   InstanceProf:
     Type: AWS::IAM::InstanceProfile

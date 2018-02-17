@@ -55,7 +55,8 @@
 		<dependency>
 			<groupId>com.amazonaws</groupId>
 			<artifactId>amazon-kinesis-producer</artifactId>
-			<version>0.12.5</version>
+			<!-- <version>0.12.5</version> Doesn't work in win64. -->
+			<version>0.10.2</version>
 		</dependency>
 
 		<!-- Lambda dependencies are SEPARATE from the rest of the SDK, ugh! -->
