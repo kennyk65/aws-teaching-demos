@@ -34,7 +34,7 @@ Resources:
   BeanstalkServiceRole:
     Type: "AWS::IAM::Role"
     Properties: 
-      RoleName: BeanstalkServiceRole  
+      RoleName: BeanstalkRollingServiceRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -47,7 +47,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkServicePolicy
+      PolicyName: BeanstalkRollingServicePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -71,7 +71,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkAppRole  
+      RoleName: BeanstalkRollingAppRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -84,7 +84,7 @@ Resources:
   BeanstalkAppPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkAppPolicy
+      PolicyName: BeanstalkRollingAppPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -132,7 +132,7 @@ Resources:
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
       VersionLabel: !Ref BlueVersion
-      EnvironmentName: Production
+      EnvironmentName: Rolling
       CNAMEPrefix: !Ref Prefix
       SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
       OptionSettings: 
@@ -169,9 +169,9 @@ Resources:
   MyBeanstalkInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
     Properties: 
+      InstanceProfileName: RollingBeanstalkInstanceProfile
       Roles:
       - !Ref BeanstalkAppRole 
-      InstanceProfileName: MyBeanstalkInstanceProfile
 
 Outputs:
   ProductionURL:

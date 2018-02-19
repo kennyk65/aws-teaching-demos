@@ -26,7 +26,7 @@ Resources:
   BeanstalkServiceRole:
     Type: "AWS::IAM::Role"
     Properties: 
-      RoleName: BeanstalkServiceRole  
+      RoleName: CloudWatchBeanstalkServiceRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -39,7 +39,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkServicePolicy
+      PolicyName: CloudWatchBeanstalkServicePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -63,7 +63,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkAppRole  
+      RoleName: CloudWatchBeanstalkAppRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -76,7 +76,7 @@ Resources:
   BeanstalkAppPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkAppPolicy
+      PolicyName: CloudWatchBeanstalkAppPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -137,9 +137,9 @@ Resources:
   MyBeanstalkInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
     Properties: 
+      InstanceProfileName: CloudWatchBeanstalkInstanceProfile
       Roles:
       - !Ref BeanstalkAppRole 
-      InstanceProfileName: MyBeanstalkInstanceProfile
 
 Outputs:
   ProductionURL:
