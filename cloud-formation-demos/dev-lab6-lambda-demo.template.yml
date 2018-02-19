@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template replicates what is produced by students in the AWS Dev Lab 6.
+# Some Test files:
+#   http://us-west-2-aws-training.s3.amazonaws.com/awsu-ilt/AWS-100-DEV/v2.1/binaries/input/lab-6-lambda/DrugAdverseEvents_September.txt
+#   http://us-west-2-aws-training.s3.amazonaws.com/awsu-ilt/AWS-100-DEV/v2.1/binaries/input/lab-6-lambda/DrugAdverseEvents_October.txt
+# WARNING - Stack delete can't complete if S3 buckets are not empty.  Clean them out manually.
+
+
+Parameters:
+  TheInputBucketName:
+    Description: The bucket (in the same region) for INPUT.  Must be globally unique.
+    Type: String
+    Default: the-input-bucket    
+
+  TheOutputBucketName:
+    Description: The bucket (in the same region) for OUTPUT.  Must be globally unique.
+    Type: String
+    Default: the-output-bucket
+
+Resources:
+
+  S3InputBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref TheInputBucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+        - Event: s3:ObjectCreated:*
+          Function: !GetAtt MyLambda.Arn 
+
+  S3OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref TheOutputBucketName
+
+
+  # This is a simple inline NodeJS "hello world" style Lambda function.
+  MyLambda:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      FunctionName: LambdaTransformerCF
+      Description: Lambda triggered by S3 upload.
+      MemorySize: 128
+      Timeout: 4
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: nodejs6.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          var AWS = require('aws-sdk');
+          var util = require('util');
+          var s3 = new AWS.S3();
+          //  Main lambda function handler, the Lambda function starts HERE!
+          exports.handler = function(event, context, callback) {
+            console.log("Starting function...");
+            var srcBucket = event.Records[0].s3.bucket.name;
+            var srcKey    = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, ' '));
+            //
+            // STUDENT TODO-01: enter the name of the OUTput bucket:
+            //
+            var dstBucket = "${TheOutputBucketName}";
+            //
+            //  Download file from input bucket:
+            //
+            function getObject(inBucket,inKey){
+              //
+              // STUDENT TODO-02: Retrieve object from the input S3 bucket 
+              // by specifying params Bucket as inBucket and Key as inKey.
+              //
+              params = {
+                 Bucket: inBucket,
+                 Key: inKey
+              };
+              console.log("Reading " + inBucket + "/" + inKey);
+              s3.getObject(params, getObjectCallback);
+            }
+            //
+            //  Handle the result of the getObject call:
+            //
+            function getObjectCallback(err, data) {
+                if (err) {
+                console.log(err);
+                callback("Error getting " + srcBucket + "/" + srcKey + ". Make sure they exist and your bucket is in the same region as this function.");
+                } else {
+                console.log("transforming...");
+                var originalString = data.Body.toString();
+                //  STUDENT TODO-03: Call the transformText function 
+                //  with the originalString variable as parameter. 
+                //  Return the results to a transformedString variable.
+                var transformedString = transformText(originalString);
+                var transformedObject = new Buffer(transformedString);
+                //  STUDENT TODO-04: Upload the transformed file to the output S3 bucket 
+                //  by specifying the Bucket (dstBucket), the Key (srcKey), 
+                //  and the Body (transformedObject) as parameters.
+                console.log("Uploading " + dstBucket + "/" + srcKey);
+                var params2 = {
+                  Bucket: dstBucket,
+                  Key: srcKey,
+                  Body: transformedObject
+                };
+                s3.putObject(params2, putObjectCallback);
+                }
+            }
+            //
+            //This function will convert a CSV string into a JSON string.
+            //
+            function transformText(str) {
+              var lines = str.split("\n")
+              headers = lines.shift().split(",")
+              var json = []
+              for (var x = 0; x < lines.length; x++) {
+                if(lines[x].length > 0) {
+                  items = lines[x].split(",")
+                  var obj = {}
+                  for (var i in items) {
+                    obj.comment = "DataTransformer JSON";
+                    obj[headers[i]] = items[i];
+                  }
+                  json.push(obj)
+                }
+              }
+              return JSON.stringify(json);
+            }
+            //
+            //  Handle the result of the putObject call:
+            //
+            function putObjectCallback(err, data) {
+                if (err) {
+                console.log(err);
+                callback("Error putting " + dstBucket + "/" + srcKey + ". Make sure this bucket exists and is in the same region as this function.");
+                } else {
+                console.log("Sucessfully uploaded " + dstBucket + "/" + srcKey);
+                callback(null, "Sucessfully processed " + dstBucket + "/" + srcKey);
+                }
+            }
+            //
+            // Sanity check: validate that source and destination are different buckets.
+            //
+            if (srcBucket == dstBucket) {
+              callback('Destination bucket must not match source bucket.');
+              return;
+            }
+            getObject(srcBucket,srcKey);
+          };
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: LambdaS3Role  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - s3:getObject
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
+  # Allows the S3 Bucket to invoke the Lambda function.
+  BucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref MyLambda
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::${TheInputBucketName}"
