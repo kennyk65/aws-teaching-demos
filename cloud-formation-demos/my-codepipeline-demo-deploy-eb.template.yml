@@ -1,0 +1,394 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This is a simple codepipeline demo that does very little beyond what the CodeBuild demo did.
+# It is a bit more sophisticated because it separates the source, build, and testing.
+# to make things fun, the build phase is two separate actions in parallel: one does tests and the other packaging.
+
+# TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
+# To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
+# The default value you see here will work only if you prepend it with a '0'.
+
+
+Parameters:
+  CodePipelineBucketPrefix:
+    Description: CodePipeline needs a utility bucket for its internal use.  Specify the prefix for the bucket name
+    Type: String
+    Default: codepipeline-kk-
+
+  GitHubRepository:
+    Type: String
+    Default:  kennyk65/aws-cloudbuild-demo/master
+    Description:  The owner / repository / branch that you want to pull from.
+
+  GitHubOAuthToken:
+    Type: String
+    Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+
+  OutputS3BucketAndPrefix:
+    Description: Existing S3 Bucket (and optional folder/prefix) where you want to place output artifacts
+    Type: String
+    Default: kk-uploads-oregon/build-output
+
+
+Resources:
+
+  # This Role allows CodeBuild to do certain things on our behalf.
+  # See the policy for the interesting stuff:
+  CodeBuildRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: CodeBuildRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "codebuild.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the CodeBuildRole.
+  # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodeBuildPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: CodeBuildPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - s3:getObject
+            - codebuild:*
+          Resource: "*"
+      Roles: 
+        -  !Ref CodeBuildRole
+
+  # This Role allows CodePipeline to make certain things on our behalf:
+  # See the policy for the interesting stuff:
+  CodePipelineRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: CodePipelineRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "codepipeline.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the CodePipelineRole.
+  # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodePipelinePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: CodePipelinePolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
+          # codebuild probably does not need to be wide open like this, and the logs should only need
+          # to create the stream, group, and log events.
+          # The real issue came when trying to deploy to elastic beanstalk.  The error would only go away with *.
+          Action: 
+            # - logs:CreateLogGroup
+            # - logs:CreateLogStream
+            # - logs:PutLogEvents
+            # - s3:putObject
+            # - s3:getObject
+            # - codebuild:*
+            # - elasticbeanstalk:*
+            - "*"
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref CodePipelineRole
+
+  # This Role is given to the ElasticBeanstalk environment:
+  BeanstalkServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      RoleName: BeanstalkServiceRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: "elasticbeanstalk.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the BeanstalkServiceRole.
+  BeanstalkServicePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: BeanstalkServicePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          # I'm not sure exactly what permissions are needed here.  Docs are nearly impossible.
+          Action: 
+            - elasticbeanstalk:*
+            - elasticloadbalancing:Describe*
+            - ec2:Describe*
+            - ec2:Get*
+            - ec2:Associate*
+            - logs:*
+            - s3:*
+            - autoscaling:*   
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref BeanstalkServiceRole
+
+  # # This Role is given to the EC2 instance(s) run by ElasticBeanstalk:
+  # BeanstalkAppRole:
+  #   Type: AWS::IAM::Role
+  #   Properties: 
+  #     RoleName: BeanstalkAppRole  
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement: 
+  #         Effect: Allow
+  #         Principal:
+  #           Service: ec2.amazonaws.com
+  #         Action: sts:AssumeRole
+
+  # # This Policy is attached to the BeanstalkAppRole.
+  # BeanstalkAppPolicy:
+  #   Type: AWS::IAM::Policy
+  #   Properties: 
+  #     PolicyName: BeanstalkAppPolicy
+  #     PolicyDocument: 
+  #       Version: 2012-10-17
+  #       Statement: 
+  #         Effect: Allow
+  #         # I'm not sure exactly what permissions are needed here.
+  #         Action: 
+  #           - logs:CreateLogStream
+  #           - logs:GetLogEvents
+  #           - logs:PutLogEvents
+  #           - logs:DescribeLogGroups
+  #           - logs:DescribeLogStreams
+  #           - logs:PutRetentionPolicy
+  #         Resource: 
+  #           - "*"
+  #     Roles: 
+  #       -  !Ref BeanstalkAppRole
+
+  # General Bucket where CodePipeline will store things:
+  S3:
+    Type: "AWS::S3::Bucket"
+    Properties: 
+      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+
+
+  # This CodeBuild project runs packaging only, tests are separate.
+  # This is a Java / Maven build.  Most of the details on how to to the build 
+  # itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
+  MyBuild:
+    Type: "AWS::CodeBuild::Project"
+    Properties: 
+      Name: MyBuild
+      Description: Demo of CodeBuild with CodeDeploy pipeline.
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
+            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
+            # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
+            phases:
+              build:
+                commands:
+                  - echo Build started on `date`
+                  - mvn package -DskipTests
+                  - echo Build finished on `date`
+              post_build:
+                commands:
+                  - echo Copying WAR file to S3
+                  - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
+                  - echo $CODEBUILD_SRC_DIR
+            artifacts:
+              files:
+                - '**/*'
+              base-directory: 'target/spring-cloud-aws-environment-demo-1'
+            # THE PROBLEM I HAD is that codepipeline Zips the output artifacts, so it is a WAR within a ZIP.  
+            # ElasticBeanstalk doesn't know how to deploy this, and there is no way to make code pipeline stop its zipping.
+            # So a suggestion on the forum https://forums.aws.amazon.com/thread.jspa?threadID=244614 is to upload the unzipped folder produced by Maven before it makes the WAR.
+            # So the ZIP file contains the same contents of the WAR.  When EB gets it, it unzips it an deploys it without issue - go figure.
+            
+      Environment:
+        Type: "LINUX_CONTAINER"
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8
+      Artifacts:    
+        Type: CODEPIPELINE
+
+  # This CodeBuild project runs unit tests only.  
+  # The intent is to run parallel to the packaging to decrease build duration.
+  MyTests:
+    Type: "AWS::CodeBuild::Project"
+    Properties: 
+      Name: MyTests
+      Description: Demo of CodeBuild with CodeDeploy pipeline.
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs the maven tests only.  No output.
+            phases:
+              build:
+                commands:
+                  - echo Testing started on `date`
+                  - mvn test
+                  - echo Testing finished on `date`
+      Environment:
+        Type: "LINUX_CONTAINER"
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8
+      Artifacts:    
+        Type: CODEPIPELINE
+
+  # This is the CodePipeline with its stages:
+  MyPipe:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: MyPipe
+      ArtifactStore: 
+        Location: !Ref S3
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref CodePipelineRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Stages: 
+
+        # Stage 1:  Get the source from GitHub:
+        - Name: Source
+          Actions: 
+            - Name: SourceAction
+              RunOrder: 1
+              ActionTypeId: 
+                Category: Source
+                Owner: ThirdParty       
+                Provider: GitHub        
+                Version: 1              # Required, meaningless and must be 1, go figure.
+              Configuration: 
+                Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
+                Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
+                Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
+                PollForSourceChanges: true   # Don't know if/how to control frequency
+                OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
+              OutputArtifacts: 
+                - Name: TheSourceCode
+
+        # Stage 2:  Build using CodeBuild / Maven, Test in parallel using CodeBuild / Maven:
+        - Name: Build
+          Actions:
+            # This runs a Maven build which packages the WAR.  Test are run in the parallel action below: 
+            - Name: Build
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheSourceCode       # Duh, the output from the previous step.
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                  # Required, meaningless and must be 1.
+              Configuration:
+                ProjectName:  !Ref MyBuild  # See the CodeBuild definition above.       
+              OutputArtifacts: 
+                - Name: TheArtifact  
+
+            # This runs a Maven build featuring only the unit tests.  No output:   
+            - Name: UnitTest
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheSourceCode       
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                  
+              Configuration:
+                ProjectName:  !Ref MyTests  # See the CodeBuild definition above.       
+
+        # Stage 3:  Deploy on ElasticBeanstalk:
+        - Name: Deploy
+          Actions:
+            # This Deploys on ElasticBeanstalk so we can quickly smoke-test the running app: 
+            - Name: Deploy
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheArtifact         # Duh, the output from the previous step.
+              ActionTypeId: 
+                Category: Deploy
+                Owner: AWS       
+                Provider: ElasticBeanstalk        
+                Version: 1                  # Don't know the purpose of 'version'
+              Configuration:
+                ApplicationName:  !Ref MyBeanstalkApplication  # See the EB definition below.       
+                EnvironmentName:  !Ref MyBeanstalkEnvironment  # See the EB definition below.       
+ 
+
+  MyBeanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: TestApplication
+      Description: Quick live-test environment for the app.
+
+  MyBeanstalkEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref MyBeanstalkApplication
+      EnvironmentName: TestEnvironment
+      Description: Quick live-test environment for the app.
+      CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
+      SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
+      OptionSettings: 
+        - Namespace: aws:elasticbeanstalk:application
+          OptionName: "Application Healthcheck URL"
+          Value: /info
+
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !Ref BeanstalkServiceRole
+
+        # - Namespace: String
+        #   OptionName: String
+        #   ResourceName: String
+        #   Value: String
+
+        # - Namespace: String
+        #   OptionName: String
+        #   ResourceName: String
+        #   Value: String
+
+  # MyBeanstalkInstanceProfile:
+  #   Type: "AWS::IAM::InstanceProfile"
+  #   Properties: 
+  #     Roles:
+  #     - !Ref BeanstalkAppRole 
+  #     InstanceProfileName: MyBeanstalkInstanceProfile
+
+Outputs:
+  CodeBuild:
+    Value: !Ref MyPipe
+  IamRole:
+    Value: !Ref CodeBuildRole  
+
+
+
+
+
+
+
