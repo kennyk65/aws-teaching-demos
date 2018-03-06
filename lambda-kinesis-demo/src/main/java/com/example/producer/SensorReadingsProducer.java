@@ -1,9 +1,5 @@
 package com.example.producer;
 
-// Copyright 2017 Amazon Web Services, Inc. or its affiliates. All rights reserved.
-
-import java.util.Random;
-
 import com.amazonaws.regions.Region;
 import com.amazonaws.services.kinesis.producer.KinesisProducer;
 import com.amazonaws.services.kinesis.producer.KinesisProducerConfiguration;

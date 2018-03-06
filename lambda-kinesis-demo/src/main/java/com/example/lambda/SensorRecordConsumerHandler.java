@@ -10,7 +10,7 @@ import com.example.consumer.SensorRecordProcessorFactory;
 /**
  * Entry point for use as a Lambda function responding to Kinesis Events.
  */
-public class LambdaRequestHandler implements RequestHandler<KinesisEvent,String>{
+public class SensorRecordConsumerHandler implements RequestHandler<KinesisEvent,String>{
 	
 	private SensorRecordProcessor processor = 
 		(SensorRecordProcessor)
