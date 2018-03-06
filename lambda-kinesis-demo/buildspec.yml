@@ -1,0 +1,34 @@
+version: 0.1
+
+# This is a configuration file for AWS CodeBuild.  It just runs maven.
+phases:
+  build:
+    commands:
+      - echo Build started on `date`
+      - mvn package
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo installing Lambda functions
+      - aws lambda create-function
+          --function-name kinesis-create-table
+          --runtime java8
+          --role <value>
+          --handler <value>
+          [--code <value>]
+          [--description <value>]
+          [--timeout <value>]
+          [--memory-size <value>]
+          [--publish | --no-publish]
+          [--vpc-config <value>]
+          [--dead-letter-config <value>]
+          [--environment <value>]
+          [--kms-key-arn <value>]
+          [--tracing-config <value>]
+          [--tags <value>]
+          [--zip-file <value>]
+          [--cli-input-json <value>]
+          [--generate-cli-skeleton <value>]
+artifacts:
+  files:
+    - target/spring-cloud-aws-environment-demo-1.war
