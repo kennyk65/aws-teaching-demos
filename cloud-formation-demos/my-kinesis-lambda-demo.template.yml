@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This demonstrates a Kinesis stream processed using Lambda.  Tested in Oregon.
+# The stream itself is created here by CloudFormation
+# A "KinesisDemoRecordProducer" Lambda function populates the stream with sample data (sensor records).
+# A "KinesisDemoRecordConsumer" Lambda processes the results, raising an alarm when repeated high temperatures seen.
+# Both functions are Java, contained in the same JAR just to make deployment convenient.
+# The Java code is based on the AWS Dev course, lab 4.
+# The producer will run on a schedule, or you can run it manually.
+# The consumer will employ Lambda's "Pull" model to read from the stream.
+
+Parameters:
+
+  S3Bucket:
+    Description: Bucket containing the existing JAR file with the Kinesis code.  Must be in same region as this stack.
+    Type: String
+    Default: kk-uploads-oregon
+
+  S3Object:
+    Description: Object key of the existing JAR file in the S3 bucket
+    Type: String
+    Default: lambda-kinesis-demo-1.jar
+
+  ScheduleExpression:
+    Description: Controls how often batches of sample data should be added to the stream 
+    Type: String
+    Default: "rate(1 minute)"
+
+
+Resources:
+
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties: 
+      Name: KinesisLabStream    # Warning - name hard-coded in Java code.
+      RetentionPeriodHours: 24
+      ShardCount: 2
+
+  RecordProducer:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: KinesisDemoRecordProducer
+      Description: A (Java) Lambda function that produces sample sensor records for a Kinesis stream
+      MemorySize: 256
+      Timeout: 15
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref RecordProducerRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: java8
+      Handler: com.example.lambda.SensorReadingsProducerHandler
+      Code:
+        # TODO - REPLACE WITH A MORE DYNAMIC SOURCE LIKE CODE BUILT FROM GITHUB
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Object
+        # TODO - MAKE THE STREAM NAME A VARIABLE SET EXTERNALLY RATHER THAN HARD-CODED IN JAVA.
+
+
+  RecordConsumer:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: KinesisDemoRecordConsumer
+      Description: A (Java) Lambda function that processes sensor records from a Kinesis stream
+      MemorySize: 256
+      Timeout: 15
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref RecordConsumerRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: java8
+      Handler: com.example.lambda.SensorRecordConsumerHandler
+      Code:
+        # TODO - REPLACE WITH A MORE DYNAMIC SOURCE LIKE CODE BUILT FROM GITHUB
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Object
+        # TODO - MAKE THE STREAM NAME A VARIABLE SET EXTERNALLY RATHER THAN HARD-CODED IN JAVA.
+
+
+  # Fire the RecordProducer function on a schedule:
+  TriggerLambdaOnSchedule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets: 
+        - Arn: !GetAtt RecordProducer.Arn
+          Id: TriggerProducerOnSchedule
+
+
+  # Fire the RecordConsumer Lambda function by polling the Kinesis stream:
+  RecordConsumerTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: 
+      BatchSize: 1000
+      Enabled: true
+      EventSourceArn: !GetAtt KinesisStream.Arn
+      FunctionName: !Ref RecordConsumer
+      StartingPosition: LATEST
+
+
+  # This Role fits the Lambda 'producer' function:
+  RecordProducerRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Role fits the Lambda 'consumer' function:
+  RecordConsumerRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the Lambda Roles above.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionBasicPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref RecordProducerRole    
+        -  !Ref RecordConsumerRole    
+
+
+  # This policy allows writing to a Kinesis stream.  Used by the producer:
+  KinesisProducerPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: KinesisProducerPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - kinesis:PutRecor*
+          Resource: "*"
+      Roles: 
+        -  !Ref RecordProducerRole    
+
+  # This policy allows reading from a Kinesis stream.  Used by the consumer:
+  KinesisConsumerPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: KinesisConsumerPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - kinesis:Get*
+            - kinesis:Describe*
+            - kinesis:List*
+            - lambda:InvokeFunction   # Consumer must POLL kinesis, so the poller must then invoke the function.
+          Resource: "*"
+      Roles: 
+        -  !Ref RecordConsumerRole    
+
+  # This resource permission allows the RecordProducer 
+  # to be invoked by AWS events (i.e. on a schedule)
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref RecordProducer
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TriggerLambdaOnSchedule.Arn
+
+
