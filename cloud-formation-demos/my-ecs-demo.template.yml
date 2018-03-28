@@ -282,14 +282,15 @@ Resources:
               - ecs:UpdateService
             Resource: '*'
 
-  # I think this is scaling the actual containers:
+  # This is scaling the actual containers.  The ECSService (above) ties the 
+  # TaskDefinition to the cluster, and this teaches it how to scale:
   ServiceScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     # DependsOn: ECSService
     Properties:
       MinCapacity: 1
       MaxCapacity: 2
-      ResourceId: !Join ['', [service/, !Ref 'ECSCluster', /, !GetAtt [ECSService, Name]]]
+      ResourceId: !Join ['', [service/, !Ref 'ECSCluster', /, !GetAtt [ECSService, Name]]]  
       RoleARN: !GetAtt [AutoscalingRole, Arn]
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
