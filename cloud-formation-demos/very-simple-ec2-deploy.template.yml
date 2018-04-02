@@ -1,0 +1,180 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# 
+
+Mappings:
+  #  This is just the Amazon Linux AMI:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-1ecae776
+    us-east-2:
+      AMI: ami-15e9c770      
+    us-west-1:
+      AMI: ami-d114f295
+    us-west-2:
+      AMI: ami-e7527ed7
+    eu-west-1:
+      AMI: ami-a10897d6
+    eu-central-1:
+      AMI: ami-a8221fb5
+    sa-east-1:
+      AMI: ami-b52890a8
+    ap-southeast-1:
+      AMI: ami-68d8e93a
+    ap-southeast-2:
+      AMI: ami-fd9cecc7
+    ap-northeast-1:
+      AMI: ami-cbf90ecb
+
+
+Resources:
+  # First, A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: SimpleDeploy VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now a single public subnet:
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet A
+        
+  # A route table for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  
+  # Attach the public subnets to public route tables.
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+      
+
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+
+
+  # Launch Configuration for our web server running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      InstanceType: t2.micro          # Any instance type will do
+      SecurityGroups:
+      - !Ref WebServerSecurityGroup   # Plug in the security group.
+      BlockDeviceMappings:
+      - DeviceName: "/dev/xvdf"
+        Ebs:
+          VolumeSize: '10'
+          VolumeType: gp2
+      UserData:      #  This code Installs a Spring Boot app. Notice a different way to signal completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install java-1.8.0 -y
+          yum remove java-1.7.0-openjdk -y         
+          wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: PublicSubnetARouteTableAssociation
+    Properties:
+      VPCZoneIdentifier: 
+      - Ref: PublicSubnetA
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
+      MaxSize: 3
+      DesiredCapacity: 1
+      Tags:
+      - Key: ApplicationRole
+        Value: OurWebApp
+        PropagateAtLaunch: 'true'
+      - Key: Name
+        Value: AppServer
+        PropagateAtLaunch: 'true'
+    # This resource is not really created until you get 1 signal back'.
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+        
+  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Listeners:
+      - LoadBalancerPort: '80'
+        InstancePort: '80'
+        Protocol: HTTP
+      SecurityGroups:
+      - Ref: WebServerSecurityGroup
+      Subnets:
+      - Ref: PublicSubnetA
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '10'
+        Timeout: '5'
+        
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  AppAutoScalingGroupName:
+    Description: Name of the Auto Scaling group
+    Value: !Ref AppAutoScalingGroup
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !GetAtt AppLoadBalancer.DNSName

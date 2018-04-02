@@ -47,7 +47,7 @@ Parameters:
     Description: Select 1-2 subnets in your selected VPC, private preferred if NATting is setup.  ECS cluster nodes will run here.
 
 Mappings:
-  #  This is just the Amazon Linux AMI:
+  #  These are variants of the Amazon Linux AMI optimized for ECS:
   AmazonLinuxAMI:
     us-east-1:
       AMI: ami-d61027ad

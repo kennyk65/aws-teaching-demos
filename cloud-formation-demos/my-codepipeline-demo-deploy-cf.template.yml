@@ -119,7 +119,7 @@ Resources:
   CFNRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: ElasticBeanstalkRole  
+      RoleName: CFNRole  
       AssumeRolePolicyDocument:
         Statement:
           Effect: Allow
