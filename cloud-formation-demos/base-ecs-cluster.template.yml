@@ -136,6 +136,7 @@ Resources:
               - ecs:StartTelemetrySession
               - ecs:Submit*
               - ecr:Get*                   # Trying to resolve 'not authorized to perform ecr:GetAuthorizationToken on resource: *' if the task needs to pull from ECR.
+              - ecr:*                      # Trying to resolve 'repository xxxxx not found: does not exist or no pull access'.  Not sure which role needs permission to pull from ECR.
               - logs:CreateLogStream
               - logs:PutLogEvents
             Resource: '*'
@@ -217,6 +218,7 @@ Resources:
           yum install -y aws-cfn-bootstrap
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
 
+  # TODO - GETTING WARNING ABOUT OUTDATED ECS AGENT.
 
   # Attach EC2Role's permissions to each ECS Instance.
   EC2InstanceProfile:
