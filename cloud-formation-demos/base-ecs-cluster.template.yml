@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Stand up an ECS and run a container on it.  
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Network Configuration"
+        Parameters: 
+          - VpcId
+          - PrivateSubnetIds
+      - Label: 
+          default: "ECS Cluster"
+        Parameters: 
+          - MaxSize
+          - DesiredCapacity
+
+Parameters:
+  
+  MaxSize:
+    Type: String
+    Default: 1
+    Description: Maximum number of ECS instances.
+
+  DesiredCapacity:
+    Type: String
+    Default: 1
+    Description: Desired number of ECS instances.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances access to the Internet.
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select 1-2 subnets in your selected VPC, private preferred if NATting is setup.  ECS cluster nodes will run here.
+
+Mappings:
+  #  These are variants of the Amazon Linux AMI optimized for ECS:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-d61027ad
+    us-east-2:
+      AMI: ami-bb8eaede
+    us-west-1:
+      AMI: ami-514e6431
+    us-west-2:
+      AMI: ami-c6f81abe
+    eu-west-1:
+      AMI: ami-bd7e8dc4
+    eu-central-1:
+      AMI: ami-f15ff69e
+    ap-northeast-1:
+      AMI: ami-ab5ea9cd
+    ap-southeast-1:
+      AMI: ami-ae0b91cd
+    ap-southeast-2:
+      AMI: ami-5781be34
+
+
+Resources:
+
+  # The IAM Role to be used by the EC2 instances in the ECS cluster.
+  # Essential permissions to allow registration / deregistration with load balancer.
+  # Allows your Amazon ECS container agent to make calls to your load balancer: 
+  ECSContainerAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-ECSContainerAgentRole" ]]
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ecs.amazonaws.com
+      Policies:
+      - PolicyName:  !Join ['', [!Ref 'AWS::StackName', "-ECSContainerAgentPolicy" ]]
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: 
+              - elasticloadbalancing:Register*
+              - elasticloadbalancing:Deregister*
+              - elasticloadbalancing:Describe*
+              - ec2:Describe*
+              - ec2:AuthorizeSecurityGroupIngress
+            Resource: '*'
+
+  AutoscalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-ClusterAutoscalingRole" ]]
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: application-autoscaling.amazonaws.com
+      Path: /
+      Policies:
+      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-ClusterAutoscalingPolicy" ]]
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: 
+              - application-autoscaling:*
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:PutMetricAlarm
+              - ecs:DescribeServices
+              - ecs:UpdateService
+            Resource: '*'
+
+  # Permissions associated with each ECS Instance.
+  ECSInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-ECSInstanceRole" ]]
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      Policies:
+      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-ECSInstancePolicy" ]]
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeregisterContainerInstance
+              - ecs:DiscoverPollEndpoint
+              - ecs:Poll
+              - ecs:RegisterContainerInstance
+              - ecs:StartTelemetrySession
+              - ecs:Submit*
+              - ecr:Get*                   # Trying to resolve 'not authorized to perform ecr:GetAuthorizationToken on resource: *' if the task needs to pull from ECR.
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: '*'
+
+
+  # Now, an ECS Cluster to deploy to:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Join ['', [!Ref 'AWS::StackName', "-ECSCluster" ]]    # Something you can recognize in the console, but unique.
+
+
+  # Security Group for the ECS instances.  Allow inbound ports for the ELB to use:
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
+      GroupDescription: ECS Security Group
+      VpcId: !Ref 'VpcId'
+
+  #  Inbound rules for HTTP on 80 plus anything above 31000:
+  EcsSecurityGroupHTTPinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref 'EcsSecurityGroup'
+      IpProtocol: tcp
+      FromPort: '80'
+      ToPort: '80'
+      CidrIp: 0.0.0.0/0
+  EcsSecurityGroupALBports:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref 'EcsSecurityGroup'
+      IpProtocol: tcp
+      FromPort: '31000'
+      ToPort: '61000'
+      SourceSecurityGroupId: !Ref 'EcsSecurityGroup'
+
+  # This LogsGroup will be useful when several containers emit output:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', [!Ref 'AWS::StackName', "-ECSLogGroup" ]]
+      RetentionInDays: 14
+
+
+  # Auto-Scaling Group for the cluser:
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      LaunchConfigurationName: !Ref ContainerInstances
+      MinSize: 1
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      Tags:
+      - Key: Name
+        Value: ECS Cluster Node
+        PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M     # 5 minutes
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+
+  # The LaunchConfiguration for the cluster:      
+  ContainerInstances:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [AmazonLinuxAMI, !Ref 'AWS::Region', AMI]
+      SecurityGroups: [!Ref EcsSecurityGroup]
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
+
+
+  # Attach EC2Role's permissions to each ECS Instance.
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref ECSInstanceRole]
+
+
+Outputs:
+  ecscluster:
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", ECSCluster ] ]
+
+
+
+
+
+
+
