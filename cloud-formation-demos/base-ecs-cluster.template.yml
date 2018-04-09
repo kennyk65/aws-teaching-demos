@@ -137,8 +137,10 @@ Resources:
               - ecs:Submit*
               - ecr:Get*                   # Trying to resolve 'not authorized to perform ecr:GetAuthorizationToken on resource: *' if the task needs to pull from ECR.
               - ecr:*                      # Trying to resolve 'repository xxxxx not found: does not exist or no pull access'.  Not sure which role needs permission to pull from ECR.
+              - logs:CreateLogGroup
               - logs:CreateLogStream
               - logs:PutLogEvents
+              - logs:DescribeLogStreams
             Resource: '*'
 
 
@@ -215,7 +217,49 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-          yum install -y aws-cfn-bootstrap
+          yum install -y aws-cfn-bootstrap  # Install CloudFormation utilities
+          yum install -y awslogs            # Install CloudWatch Logs Agent
+          yum install -y jq                 # Install JSON Query tool
+          # Believe it or not, you have to configure CloudWatch Logs yourself:
+          # Inject the CloudWatch Logs configuration file contents
+          cat > /etc/awslogs/awslogs.conf <<- EOF
+          [general]
+          state_file = /var/lib/awslogs/agent-state        
+          [/var/log/dmesg]
+          file = /var/log/dmesg
+          log_group_name = /var/log/dmesg
+          log_stream_name = {cluster}/{container_instance_id}
+          [/var/log/messages]
+          file = /var/log/messages
+          log_group_name = /var/log/messages
+          log_stream_name = {cluster}/{container_instance_id}
+          datetime_format = %b %d %H:%M:%S
+          [/var/log/docker]
+          file = /var/log/docker
+          log_group_name = /var/log/docker
+          log_stream_name = {cluster}/{container_instance_id}
+          datetime_format = %Y-%m-%dT%H:%M:%S.%f
+          [/var/log/ecs/ecs-init.log]
+          file = /var/log/ecs/ecs-init.log
+          log_group_name = /var/log/ecs/ecs-init.log
+          log_stream_name = {cluster}/{container_instance_id}
+          datetime_format = %Y-%m-%dT%H:%M:%SZ
+          [/var/log/ecs/ecs-agent.log]
+          file = /var/log/ecs/ecs-agent.log.*
+          log_group_name = /var/log/ecs/ecs-agent.log
+          log_stream_name = {cluster}/{container_instance_id}
+          datetime_format = %Y-%m-%dT%H:%M:%SZ
+          [/var/log/ecs/audit.log]
+          file = /var/log/ecs/audit.log.*
+          log_group_name = /var/log/ecs/audit.log
+          log_stream_name = {cluster}/{container_instance_id}
+          datetime_format = %Y-%m-%dT%H:%M:%SZ
+          EOF
+          sed -i -e "s/{cluster}/$ECS_CLUSTER/g" /etc/awslogs/awslogs.conf
+          sed -i -e "s/{container_instance_id}/$CONTAINER_INSTANCE_ID/g" /etc/awslogs/awslogs.conf
+          sed -i -e "s/us-east-1/${AWS::Region}/g" /etc/awslogs/awscli.conf
+          service awslogs start
+          chkconfig awslogs on
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
 
   # TODO - GETTING WARNING ABOUT OUTDATED ECS AGENT.
