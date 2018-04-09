@@ -181,4 +181,14 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt TriggerLambdaOnSchedule.Arn
 
-
+  # Lambda's define LogGroups automatically, but I want to make sure they expire:
+  CloudwatchLogsGroupProducer:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', ["/aws/lambda/", !Ref RecordProducer ]]
+      RetentionInDays: 14
+  CloudwatchLogsGroupConsumer:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', ["/aws/lambda/", !Ref RecordConsumer ]]
+      RetentionInDays: 14
