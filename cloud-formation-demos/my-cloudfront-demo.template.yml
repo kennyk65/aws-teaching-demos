@@ -25,20 +25,21 @@ Resources:
 
 
   # Contents of the bucket are publicly gettable:
+  # TODO: Make CloudFront the only allowed principal.
   BucketPolicy:
-    Type: "AWS::S3::BucketPolicy"
+    Type: AWS::S3::BucketPolicy
     Properties: 
       Bucket: !Ref S3
       PolicyDocument: 
         Statement: 
-          - Effect: "Allow"                                   #  Allow...
-            Principal: "*"                                      #  ...anyone anywhere...
-            Action:                                               # ...to perform GetObject on...
+          - Effect: Allow                              #  Allow...
+            Principal: "*"                                  #  ...anyone anywhere...
+            Action:                                            # ...to perform GetObject on...
               - s3:GetObject
             Resource: !Join [ "", ["arn:aws:s3:::", !Ref S3, "/*" ]]  #  ...any object in this S3 bucket.
 
   CloudFront:
-    Type: "AWS::CloudFront::Distribution"
+    Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig: 
         Comment: Pointing at S3 Bucket
