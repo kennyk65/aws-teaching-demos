@@ -181,7 +181,8 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt TriggerLambdaOnSchedule.Arn
 
-  # Lambda's define LogGroups automatically, but I want to make sure they expire:
+  # Lambda functions define their own LogGroups automatically.
+  # However, logs are retained indefinitely, and I want to limit that.
   CloudwatchLogsGroupProducer:
     Type: AWS::Logs::LogGroup
     Properties:
