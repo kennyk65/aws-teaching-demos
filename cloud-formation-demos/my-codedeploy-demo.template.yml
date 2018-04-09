@@ -11,12 +11,15 @@ Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: The VPC in which you want to run your demo instances.  Make sure it has public subnets.
+  
   SubnetId:
     Type: AWS::EC2::Subnet::Id
     Description: The subnet in which you want to run your demo instances.  Make sure it is in the selected VPC.  Sorry, I can't restrict this list by the VPC you just selected.
+  
   InstancesKeyName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: The name of the private key file to use for SSH/RDP access.  You shouldn't need to do any SSH access, but just in case.
+  
   DesiredCapacity:
     Type: Number
     MinValue: 1
@@ -125,8 +128,7 @@ Resources:
       - Key: Name
         Value: WebServer
         PropagateAtLaunch: 'true'
-    # This creation policy is more elegant than the clumsy wait condition shown earlier, but it only works on EC2
-    # and ASG/LaunchConfigurtions.  Essentially it says 'this resource is not really created until you get 1 signal back'.
+    # This creation policy is saying, 'this resource is not really created until you get 1 signal back'.
     # Best to make the number of signals match the minimum or desired capacity of the ASG.
     CreationPolicy:
       ResourceSignal:
