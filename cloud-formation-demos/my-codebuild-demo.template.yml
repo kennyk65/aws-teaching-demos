@@ -32,7 +32,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodeBuildRole  
+      RoleName:  !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -47,7 +47,7 @@ Resources:
   CodeBuildPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodeBuildPolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -70,7 +70,7 @@ Resources:
   MyBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: DemoBuild
+      Name:  !Join ['', [!Ref 'AWS::StackName', "-CodeBuildDemo" ]]
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
