@@ -1,0 +1,211 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description" : "Architecting on AWS v5.2 - Lab 4: Implementing a Serverless Architecture with AWS Managed Services",
+  "Resources": {
+    "InputS3BucketForTransactionsFiles": {
+      "Type": "AWS::S3::Bucket"
+    },
+    "CustomerDynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "Customer",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "CustomerId",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "CustomerId",
+            "KeyType": "HASH"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "5",
+          "WriteCapacityUnits": "5"
+        }
+      }
+    },
+    "TransactionsDynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DependsOn": "CustomerDynamoDBTable",
+      "Properties": {
+        "TableName": "Transactions",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "CustomerId",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "TransactionId",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "CustomerId",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "TransactionId",
+            "KeyType": "RANGE"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "5",
+          "WriteCapacityUnits": "5"
+        },
+        "StreamSpecification": {
+          "StreamViewType": "NEW_IMAGE"
+        }
+      }
+    },
+    "TransactionTotalDynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DependsOn": "TransactionsDynamoDBTable",
+      "Properties": {
+        "TableName": "TransactionTotal",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "CustomerId",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "CustomerId",
+            "KeyType": "HASH"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "5",
+          "WriteCapacityUnits": "5"
+        }
+      }
+    },
+    "TransactionProcessorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "TransactionProcessorRole",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+          "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+        ],
+        "Policies": [ {
+           "PolicyName": "CWLogsPolicy",
+           "PolicyDocument": {
+              "Version" : "2012-10-17",
+              "Statement": [
+                  {
+                    "Action": [
+                      "logs:CreateLogGroup",
+                      "logs:CreateLogStream",
+                      "logs:PutLogEvents"
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                    "Effect": "Allow"
+                  }
+              ]}
+           }
+         ]
+      }
+    },
+    "TotalNotifierRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "TotalNotifierRole",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+          "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+        ],
+        "Policies": [
+          {
+           "PolicyName": "CWLogsPolicy",
+           "PolicyDocument": {
+              "Version" : "2012-10-17",
+              "Statement": [
+                  {
+                    "Action": [
+                      "logs:CreateLogGroup",
+                      "logs:CreateLogStream",
+                      "logs:PutLogEvents"
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                    "Effect": "Allow"
+                  }
+              ]}
+           },
+           {
+            "PolicyName": "StreamsPolicy",
+            "PolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [
+                   {
+                     "Action": [
+                      "dynamodb:GetRecords",
+                      "dynamodb:GetShardIterator",
+                      "dynamodb:DescribeStream",
+                      "dynamodb:ListStreams"
+                     ],
+                     "Resource": "*",
+                     "Effect": "Allow"
+                   }
+               ]}
+            }
+         ]
+      }
+    }
+  },
+  "Outputs": {
+    "InputS3BucketForTransactionsFilesName": {
+      "Value": {
+        "Ref": "InputS3BucketForTransactionsFiles"
+      },
+      "Description": "Name of the S3 bucket in which transactions text file should be uploaded"
+    },
+    "CustomerDynamoDBTable": {
+      "Value": {
+        "Ref": "CustomerDynamoDBTable"
+      },
+      "Description": "Customer table in DynamoDB"
+    },
+    "TransactionsDynamoDBTable": {
+      "Value": {
+        "Ref": "TransactionsDynamoDBTable"
+      },
+      "Description": "Transactions table in DynamoDB. This table has streams enabled"
+    },
+    "TransactionTotalDynamoDBTable": {
+      "Value": {
+        "Ref": "TransactionTotalDynamoDBTable"
+      },
+      "Description": "TansactionTotal table in DynamoDB"
+    }
+  }
+}

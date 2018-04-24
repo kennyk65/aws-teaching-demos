@@ -1,0 +1,373 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Architecting on AWS v5.2 Lab 3 - Working With Auto Scaling ",
+  "Parameters": {
+    "VPCCIDR": {
+      "Description": "CIDR Block",
+      "Type": "String",
+      "Default": "10.1.0.0/16",
+      "AllowedValues": [
+        "10.1.0.0/16"
+      ]
+    },
+    "PublicSubnetCIDR": {
+      "Description": "Public Subnet",
+      "Type": "String",
+      "Default": "10.1.10.0/24",
+      "AllowedValues": [
+        "10.1.10.0/24"
+      ]
+    },
+    "KeyName": {
+      "Type": "String",
+      "Description": "Keyname for the keypair that Qwiklab will use to launch EC2 instances",
+      "Default": "default-lab-key"
+    }
+  },
+  "Mappings": {
+    "AmazonLinuxAMI": {
+      "us-east-1":      { "AMI": "ami-c58c1dd3" },
+      "us-east-2":      { "AMI": "ami-4191b524" },
+      "us-west-1":      { "AMI": "ami-7a85a01a" },
+      "us-west-2":      { "AMI": "ami-4836a428" },
+      "ca-central-1":   { "AMI": "ami-0bd66a6f" },
+      "eu-west-1":      { "AMI": "ami-01ccc867" },
+      "eu-west-2":      { "AMI": "ami-b6daced2" },
+      "eu-central-1":   { "AMI": "ami-b968bad6" },
+      "sa-east-1":      { "AMI": "ami-37cfad5b" },
+      "ap-southeast-1": { "AMI": "ami-fc5ae39f" },
+      "ap-southeast-2": { "AMI": "ami-162c2575" },
+      "ap-south-1":     { "AMI": "ami-52c7b43d" },
+      "ap-northeast-1": { "AMI": "ami-923d12f5" },
+      "ap-northeast-2": { "AMI": "ami-9d15c7f3" }
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "VPCCIDR"
+        },
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "Tags": [
+          {
+            "Key": "VPC",
+            "Value": "Lab VPC"
+          },
+          {
+            "Key": "Name",
+            "Value": "Lab VPC"
+          }
+        ]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "DependsOn": "VPC"
+    },
+    "AttachGateway": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "DependsOn": [
+        "VPC",
+        "InternetGateway"
+      ],
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": "AttachGateway",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "CidrBlock": {
+          "Ref": "PublicSubnetCIDR"
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Public Subnet"
+          }
+        ]
+      }
+    },
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC",
+        "AttachGateway"
+      ],
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Public Route Table"
+          }
+        ]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "PublicRouteTable",
+        "AttachGateway"
+      ],
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicSubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "PublicRouteTable",
+        "PublicSubnet",
+        "AttachGateway"
+      ],
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnet"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "WebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "DependsOn": "AttachGateway",
+      "Properties": {
+        "GroupDescription": "Security Group for Web server",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "WebServerSecurityGroup"
+          },
+          {
+            "Key": "InstanceType",
+            "Value": "General"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "0",
+            "ToPort": "65535",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "0",
+            "ToPort": "65535",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "AsgRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "*",
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "AsgInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "DependsOn": "AsgRole",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "AsgRole"
+          }
+        ]
+      }
+    },
+    "AsgLaunchConfig": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AmazonLinuxAMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMI"
+          ]
+        },
+        "AssociatePublicIpAddress": "true",
+        "SecurityGroups": [
+          {
+            "Ref": "WebServerSecurityGroup"
+          }
+        ],
+        "InstanceType": "t2.small",
+        "IamInstanceProfile": {
+          "Ref": "AsgInstanceProfile"
+        },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sdk",
+            "Ebs": {
+              "VolumeType": "gp2",
+              "VolumeSize": "10"
+            }
+          }
+        ],
+        "KeyName": {
+          "Ref": "KeyName"
+        }
+      }
+    },
+    "AppAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "DependsOn": "AsgLaunchConfig",
+      "Properties": {
+        "VPCZoneIdentifier": [
+          {
+            "Ref": "PublicSubnet"
+          }
+        ],
+        "LaunchConfigurationName": {
+          "Ref": "AsgLaunchConfig"
+        },
+        "AvailabilityZones": [
+          {
+            "Fn::GetAtt": [
+              "PublicSubnet",
+              "AvailabilityZone"
+            ]
+          }
+        ],
+        "MinSize": "1",
+        "MaxSize": "3",
+        "LoadBalancerNames": [
+          {
+            "Ref": "AppLoadBalancer"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "AsgConfigured",
+            "Value": "Yes",
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Name",
+            "Value": "AsgAutoScalingGroup",
+            "PropagateAtLaunch": "false"
+          }
+        ]
+      }
+    },
+    "AppLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "Listeners": [
+          {
+            "LoadBalancerPort": "80",
+            "InstancePort": "80",
+            "Protocol": "HTTP"
+          }
+        ],
+        "SecurityGroups": [
+          {
+            "Ref": "WebServerSecurityGroup"
+          }
+        ],
+        "Subnets": [
+          {
+            "Ref": "PublicSubnet"
+          }
+        ],
+        "HealthCheck": {
+          "Target": "HTTP:80/index.php",
+          "HealthyThreshold": "3",
+          "UnhealthyThreshold": "5",
+          "Interval": "30",
+          "Timeout": "5"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "AppAutoScalingGroupName": {
+      "Description": "Name of the Auto Scaling group",
+      "Value": {
+        "Ref": "AppAutoScalingGroup"
+      }
+    }
+  }
+}

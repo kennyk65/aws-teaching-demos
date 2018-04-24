@@ -1,0 +1,394 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Architecting on AWS v5.2 - Lab 5 - Route 53 Failover ",
+  "Parameters": {
+    "VPCCIDR": {
+      "Description": "CIDR Block for VPC",
+      "Type": "String",
+      "Default": "10.10.0.0/16",
+      "AllowedValues": [
+        "10.10.0.0/16"
+      ]
+    },
+    "PublicSubnet1Param": {
+      "Description": "Public Subnet 1",
+      "Type": "String",
+      "Default": "10.10.10.0/24",
+      "AllowedValues": [
+        "10.10.10.0/24"
+      ]
+    },
+    "KeyName": {
+      "Type": "String",
+      "Description": "Keyname for the keypair that Qwiklab will use to launch EC2 instances",
+      "Default": "default-lab-key"
+    }
+  },
+  "Conditions": {
+    "InUsEast1": {
+      "Fn::Equals": [
+        {
+          "Ref": "AWS::Region"
+        },
+        "us-east-1"
+      ]
+    },
+  },
+  "Mappings": {
+    "AmazonLinuxAMI": {
+      "us-east-1":      { "AMI": "ami-c58c1dd3" },
+      "us-east-2":      { "AMI": "ami-4191b524" },
+      "us-west-1":      { "AMI": "ami-7a85a01a" },
+      "us-west-2":      { "AMI": "ami-4836a428" },
+      "ca-central-1":   { "AMI": "ami-0bd66a6f" },
+      "eu-west-1":      { "AMI": "ami-01ccc867" },
+      "eu-west-2":      { "AMI": "ami-b6daced2" },
+      "eu-central-1":   { "AMI": "ami-b968bad6" },
+      "sa-east-1":      { "AMI": "ami-37cfad5b" },
+      "ap-southeast-1": { "AMI": "ami-fc5ae39f" },
+      "ap-southeast-2": { "AMI": "ami-162c2575" },
+      "ap-south-1":     { "AMI": "ami-52c7b43d" },
+      "ap-northeast-1": { "AMI": "ami-923d12f5" },
+      "ap-northeast-2": { "AMI": "ami-9d15c7f3" }
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "VPCCIDR"
+        },
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "Tags": [
+          {
+            "Key": "VPC",
+            "Value": "Architecting on AWS Lab 5"
+          },
+          {
+            "Key": "Name",
+            "Value": "Lab VPC"
+          }
+        ]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "DependsOn": "VPC"
+    },
+    "AttachGateway": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "DependsOn": [
+        "VPC",
+        "InternetGateway"
+      ],
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": "AttachGateway",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "CidrBlock": {
+          "Ref": "PublicSubnet1Param"
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch" : "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Public Subnet 1"
+          }
+        ]
+      }
+    },
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC",
+        "AttachGateway"
+      ],
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Public"
+          }
+        ]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "PublicRouteTable",
+        "AttachGateway"
+      ],
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicSubnet1RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "PublicRouteTable",
+        "PublicSubnet1",
+        "AttachGateway"
+      ],
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnet1"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "WA1SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "DependsOn": "AttachGateway",
+      "Properties": {
+        "GroupDescription": "Security Group for Web Server",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Web SG"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "0",
+            "ToPort": "65535",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "0",
+            "ToPort": "65535",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "RootRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "*",
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "RootInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "DependsOn": "RootRole",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "RootRole"
+          }
+        ]
+      }
+    },
+    "StudentHostedZone": {
+      "Type": "AWS::Route53::HostedZone",
+      "Properties": {
+        "Name": {
+          "Fn::Join": [
+            ".",
+            [
+              {
+                "Ref": "KeyName"
+              },
+              "training"
+            ]
+          ]
+        }
+      }
+    },
+    "WaitHandle01": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle",
+      "Properties": {}
+    },
+    "WaitCondition01": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "DependsOn": "WebApp1",
+      "Properties": {
+        "Handle": {
+          "Ref": "WaitHandle01"
+        },
+        "Timeout": "1800"
+      }
+    },
+    "WebApp1EIP" : {
+      "Type" : "AWS::EC2::EIP",
+      "DependsOn" : [ "AttachGateway" , "WebApp1" ],
+      "Properties" : {
+         "InstanceId" : { "Ref" : "WebApp1" },
+         "Domain" : "vpc"
+      }
+    },
+    "WebApp1": {
+      "Type": "AWS::EC2::Instance",
+      "DependsOn": [
+        "WA1SecurityGroup"
+      ],
+      "Properties": {
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "IamInstanceProfile": {
+          "Ref": "RootInstanceProfile"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AmazonLinuxAMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMI"
+          ]
+        },
+        "InstanceType": "t2.micro",
+        "NetworkInterfaces": [
+          {
+            "DeviceIndex": "0",
+            "AssociatePublicIpAddress": "true",
+            "SubnetId": {
+              "Ref": "PublicSubnet1"
+            },
+            "GroupSet": [
+              {
+                "Ref": "WA1SecurityGroup"
+              }
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Web-Application-1"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -ex \n",
+                "yum -y update \n",
+                "yum -y install httpd php\n",
+                "chkconfig httpd on\n",
+                "wget http://us-west-2-tcprod.s3.amazonaws.com/courses/AWS-100-ARC/v5.2.11/lab-5-failover/scripts/lab5.zip\n",
+                "unzip lab5.zip -d /var/www/html/\n",
+                "service httpd start\n",
+                "aws cloudformation create-stack --region ",
+                {
+                  "Fn::If": [
+                    "InUsEast1",
+                    "us-west-2",
+                    "us-east-1"
+                  ]
+                },
+                " --stack-name SecondaryRegionAdvArchLab --template-url https://us-west-2-tcprod.s3.amazonaws.com/courses/AWS-100-ARC/v5.2.11/lab-5-failover/scripts/lab-5-secondary-region.template  --parameters ParameterKey=KeyName,ParameterValue=",
+                {
+                  "Ref": "KeyName"
+                },
+                " \n",
+                "/opt/aws/bin/cfn-signal -s true '",
+                {
+                  "Ref": "WaitHandle01"
+                },
+                "'\n"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "PrimaryRegion": {
+      "Description": "Primary Region that this lab is being executed in.",
+      "Value": {
+        "Ref": "AWS::Region"
+      }
+    },
+    "SecondaryRegion": {
+      "Description": "Secondary Region that this lab is being executed in.",
+      "Value": {
+        "Fn::If": [
+          "InUsEast1",
+          "eu-west-2 - Oregon",
+          "us-east-1 - N. Virginia"
+        ]
+      }
+    }
+  }
+}
