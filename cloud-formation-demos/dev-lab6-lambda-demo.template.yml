@@ -35,7 +35,7 @@ Resources:
       BucketName: !Ref TheOutputBucketName
 
 
-  # This is a simple inline NodeJS "hello world" style Lambda function.
+  # This NodeJS function takes the triggered input S3 object, transforms it, and uploads it to the output bucket.
   MyLambda:
     Type: "AWS::Lambda::Function"
     Properties: 
