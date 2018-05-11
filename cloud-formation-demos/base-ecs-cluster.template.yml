@@ -13,6 +13,7 @@ Metadata:
       - Label: 
           default: "ECS Cluster"
         Parameters: 
+          - InstanceType
           - MaxSize
           - DesiredCapacity
 
@@ -27,6 +28,17 @@ Parameters:
     Type: String
     Default: 1
     Description: Desired number of ECS instances.
+
+  InstanceType:
+    Type: String
+    AllowedValues: 
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge 
+    Default: t2.micro
+    Description: What kind of instance types in the cluster?
 
   VpcId:
     Type: AWS::EC2::VPC::Id
@@ -211,7 +223,7 @@ Resources:
     Properties:
       ImageId: !FindInMap [AmazonLinuxAMI, !Ref 'AWS::Region', AMI]
       SecurityGroups: [!Ref EcsSecurityGroup]
-      InstanceType: t2.micro
+      InstanceType: !Ref InstanceType 
       IamInstanceProfile: !Ref EC2InstanceProfile
       UserData:
         Fn::Base64: !Sub |
