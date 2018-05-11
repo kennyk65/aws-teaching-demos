@@ -26,6 +26,10 @@ Parameters:
     Type: String
     Default: "rate(1 minute)"
 
+  EmailAddress:
+    Description: The EmailAddress you want to send High Temperature Alarms to.
+    Type: String
+    Default: kenkrueger65@gmail.com
 
 Resources:
 
@@ -186,10 +190,49 @@ Resources:
   CloudwatchLogsGroupProducer:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Join ['', ["/aws/lambda/", !Ref RecordProducer ]]
-      RetentionInDays: 14
+      LogGroupName: !Join ['/', ["/aws/lambda", !Ref RecordProducer ]]
+      RetentionInDays: 1
   CloudwatchLogsGroupConsumer:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Join ['', ["/aws/lambda/", !Ref RecordConsumer ]]
-      RetentionInDays: 14
+      LogGroupName: !Join ['/', ["/aws/lambda", !Ref RecordConsumer ]]
+      RetentionInDays: 1
+
+  HighTempMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties: 
+      FilterPattern: '"HIGH TEMPERATURE ALERT!!!"'
+      LogGroupName: !Ref CloudwatchLogsGroupConsumer
+      MetricTransformations: 
+      - MetricValue: 1
+        MetricNamespace: !Ref AWS::StackName 
+        MetricName: HighTemperatureAlerts      
+
+  HighTemperatureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: HighTemperatureAlarm
+      AlarmDescription: Some High Temperature alerts have gone off.
+      MetricName: HighTemperatureAlerts
+      Namespace: !Ref AWS::StackName
+      Statistic: Sum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 5
+      Period: 300   # 5 minutes
+      EvaluationPeriods: 1
+      AlarmActions:
+        - !Ref SnsTopic
+      Unit: Count
+
+  SnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: High Temperature Topic
+      TopicName: HighTempTopic
+
+  SnsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref EmailAddress
+      Protocol: email
+      TopicArn: !Ref SnsTopic      
