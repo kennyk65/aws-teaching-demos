@@ -83,7 +83,7 @@ Resources:
           Effect: Allow
           # Permission requirements vary from app to app, but everyone needs cloudwatch logs.
           Action: 
-            - logs:CreateLogStream
+            - logs:Create*
             - logs:GetLogEvents
             - logs:PutLogEvents
             - logs:DescribeLogGroups
@@ -117,7 +117,7 @@ Resources:
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
       VersionLabel: !Ref MyVersion
-      EnvironmentName: Production
+      EnvironmentName: CloudWatchDemo
       CNAMEPrefix: !Ref Prefix
       SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
       OptionSettings: 
@@ -132,6 +132,14 @@ Resources:
         - Namespace: aws:autoscaling:launchconfiguration
           OptionName: IamInstanceProfile
           Value: !Ref MyBeanstalkInstanceProfile  # What is my EC2 instance allowed to do?
+
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: true                             # Turn CloudWatch logs on.
+
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: RetentionInDays
+          Value: 3                                # Keep logs a few days.
 
 
   # Attaches the role to the instance:
