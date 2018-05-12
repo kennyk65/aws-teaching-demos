@@ -74,8 +74,7 @@ Mappings:
 Resources:
 
   # The IAM Role to be used by the EC2 instances in the ECS cluster.
-  # Essential permissions to allow registration / deregistration with load balancer.
-  # Allows your Amazon ECS container agent to make calls to your load balancer: 
+  # Allows your Amazon ECS container agent to register / deregister with load balancer. 
   ECSContainerAgentRole:
     Type: AWS::IAM::Role
     Properties:
@@ -194,7 +193,7 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Join ['', [!Ref 'AWS::StackName', "-ECSLogGroup" ]]
-      RetentionInDays: 14
+      RetentionInDays: 3
 
 
   # Auto-Scaling Group for the cluser:
