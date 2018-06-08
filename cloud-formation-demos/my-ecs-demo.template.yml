@@ -138,6 +138,7 @@ Resources:
             awslogs-stream-prefix: ecs-demo-app
         PortMappings:
         - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
+          # Notice how the HostPort is not defined.  This means it will be assigned randomly.  The ALB will find it automatically.  Cool huh?
 
 
   # Security Group for the ECS instances.  Allow inbound ports for the ELB to use:

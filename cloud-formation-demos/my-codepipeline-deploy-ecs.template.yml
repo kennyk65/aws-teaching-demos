@@ -29,7 +29,7 @@ Parameters:
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
   DockerRepository:
-    Description:  The name of the repository you want to create.  CodeBuild will push the Docker image here in ECR when built.  Check that Region.
+    Description:  The name of the ECR repository you want to create.  CodeBuild will push the Docker image here in ECR when built.  Check that Region.
     Type: String
     Default: spring-cloud-aws-environment-demo-1
 
@@ -108,8 +108,7 @@ Resources:
           # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
           # codebuild probably does not need to be wide open like this, and the logs should only need
           # to create the stream, group, and log events.
-          # The real issue came when trying to deploy to elastic beanstalk.  The error would only go away with *.
-          # Need SNS send message permission too
+          # Ultimately I ran into too many permission errors with little information available in the documentation to debug, so I had to use "*".
           Action: 
             # - logs:CreateLogGroup
             # - logs:CreateLogStream
@@ -345,9 +344,12 @@ Resources:
                 ServiceName:  !Ref ECSService
  
   # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers.
-  # WARNING (TODO): There is a nasty circular reference here.  This ECSService cannot start if the Docker image referenced in the Task Definition is not present.  
-  # However it won't be present until the CodePipeline puts it there.  However the CodePipeline cannot be complete until the ECS deploy step is complete, 
-  # and it depends on this ECSService.  Ugh.
+  # WARNING (TODO): There is a nasty circular reference here:  
+  #  1. This ECSService cannot start if the Docker image referenced in the Task Definition is not present.  
+  #  2. However it won't be present until the CodePipeline puts it there.  
+  #  3. However the CodePipeline cannot be complete until the ECS deploy step is complete, 
+  #  4. and it depends on this ECSService.  
+  #  Ugh.  My solution is to 'seed' the docker image with one created manually.
   ECSService:
     Type: AWS::ECS::Service
     Properties:
