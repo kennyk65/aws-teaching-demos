@@ -57,7 +57,7 @@ Resources:
           AttributeType: S
       ProvisionedThroughput:
         ReadCapacityUnits: 10
-        WriteCapacityUnits: 5
+        WriteCapacityUnits: 15
 
 
   # This Role allows the EC2 Instance to make S3 and DynamoDB calls.
@@ -156,7 +156,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
-      InstanceType: t2.micro                                          # Any size is fine
+      InstanceType: t2.small                                          # Any size is fine
       IamInstanceProfile: !Ref InstanceProf                           # Attach the role to allow S3 and Dynamo calls
       NetworkInterfaces:
       - DeviceIndex: '0'
