@@ -29,8 +29,32 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
         - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
 
-  # This security group will be actively modified by the "worker node AWS CloudFormation template".
-  # This is why it has no rules of its own when created.
+  # This role is assumed by the worker nodes in our cluster
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-EKSNodeRole" ]]
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  # Attaches Role to the instances.
+  EKSNodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - !Ref EKSNodeRole
+
+
+  # This security group governs what the control plane can do.
   ControlPlaneSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -40,6 +64,64 @@ Resources:
       - Key: Name
         Value: !Join ['', [!Ref "AWS::StackName", "-EKSControlPlaneSecurityGroup" ]]
   
+  # The control plane can accept secured http from the worker nodes:
+  ControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+  # The control plane is only allowed to talk to the worker nodes
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  # This security group protects each worker node.
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all nodes in the cluster
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: !Join ['', [!Ref "AWS::StackName", "-EKSNodeSecurityGroup" ]]
+      - Key: !Sub "kubernetes.io/cluster/${EKSCluster.Name}"
+        Value: 'owned'
+
+  # The Ingress rules: Nodes are allowed to intercommunicate however they like
+  # They can take instructions from the control plane.  No egress rules.
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow node to communicate with each other
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+
+  # The EKS Cluster itself, a bit of an anticlimax.  This is basically the "Control Plane".
+  # The cluster will run in the subnets you specify using the Security Group above.
+  # Can take up to 10 minutes for AWS to provision this, and it costs $.20 per hour.
   EKSCluster:
     Type: AWS::EKS::Cluster
     Properties:
