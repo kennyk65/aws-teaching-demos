@@ -4,6 +4,21 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
   
+  ClusterSize:
+    Type: String
+    Description: The Minimum:Desired:Maximum number of EC2 worker nodes in the cluster.  
+    Default:  "2:2:6"
+
+  NodeInstanceType:
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: Select a VPC with the subnets you want to use
@@ -11,6 +26,42 @@ Parameters:
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 3 subnets in your selected VPC.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Worker Nodes
+        Parameters:
+          - NodeInstanceType
+          - NodeImageId
+          - ClusterSize
+      - Label:
+          default: Worker Network Configuration
+        Parameters:
+          - VpcId
+          - SubnetIds
+
+Mappings:
+  MaxPodsPerNode:
+    t2.small:
+      MaxPods: 8
+    t2.medium:
+      MaxPods: 17
+    t2.large:
+      MaxPods: 35
+    t2.xlarge:
+      MaxPods: 44
+    t2.2xlarge:
+      MaxPods: 44
+
+  # TODO: Expect that AWS will update and replace these images over time.  These are current as of June 2018:
+  NodeImageId:
+    us-west-2:
+      AMI: ami-73a6e20b
+    us-east-1:
+      AMI: ami-dea4d5a1
 
 Resources:
   
@@ -54,7 +105,7 @@ Resources:
       - !Ref EKSNodeRole
 
 
-  # This security group governs what the control plane can do.
+  # This security group governs what the control plane instances are allowed to call.
   ControlPlaneSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -64,19 +115,9 @@ Resources:
       - Key: Name
         Value: !Join ['', [!Ref "AWS::StackName", "-EKSControlPlaneSecurityGroup" ]]
   
-  # The control plane can accept secured http from the worker nodes:
-  ControlPlaneSecurityGroupIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      Description: Allow pods to communicate with the cluster API Server
-      GroupId: !Ref ControlPlaneSecurityGroup
-      SourceSecurityGroupId: !Ref NodeSecurityGroup
-      IpProtocol: tcp
-      ToPort: 443
-      FromPort: 443
-  # The control plane is only allowed to talk to the worker nodes
   ControlPlaneEgressToNodeSecurityGroup:
     Type: AWS::EC2::SecurityGroupEgress
+    DependsOn: NodeSecurityGroup
     Properties:
       Description: Allow the cluster control plane to communicate with worker Kubelet and pods
       GroupId: !Ref ControlPlaneSecurityGroup
@@ -84,6 +125,17 @@ Resources:
       IpProtocol: tcp
       FromPort: 1025
       ToPort: 65535
+
+  ControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
 
   # This security group protects each worker node.
   NodeSecurityGroup:
@@ -94,13 +146,12 @@ Resources:
       Tags:
       - Key: Name
         Value: !Join ['', [!Ref "AWS::StackName", "-EKSNodeSecurityGroup" ]]
-      - Key: !Sub "kubernetes.io/cluster/${EKSCluster.Name}"
+      - Key: !Sub "kubernetes.io/cluster/${EKSCluster}"
         Value: 'owned'
 
-  # The Ingress rules: Nodes are allowed to intercommunicate however they like
-  # They can take instructions from the control plane.  No egress rules.
   NodeSecurityGroupIngress:
     Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
     Properties:
       Description: Allow node to communicate with each other
       GroupId: !Ref NodeSecurityGroup
@@ -108,8 +159,10 @@ Resources:
       IpProtocol: '-1'
       FromPort: 0
       ToPort: 65535
+
   NodeSecurityGroupFromControlPlaneIngress:
     Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
     Properties:
       Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
       GroupId: !Ref NodeSecurityGroup
@@ -132,7 +185,82 @@ Resources:
           - !Ref ControlPlaneSecurityGroup
         SubnetIds: !Ref SubnetIds
 
+  # This AutoScaleGroup establishes the worker nodes which run our containers.
+  NodeGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref NodeLaunchConfig
+      MinSize:         !Select [0,  !Split [ ":", !Ref ClusterSize ]]
+      DesiredCapacity: !Select [1,  !Split [ ":", !Ref ClusterSize ]]
+      MaxSize:         !Select [2,  !Split [ ":", !Ref ClusterSize ]]
+      VPCZoneIdentifier:
+        !Ref SubnetIds
+      Tags:
+      - Key: Name
+        Value: !Ref EKSCluster
+        PropagateAtLaunch: true
+      - Key: !Sub 'kubernetes.io/cluster/${EKSCluster}'
+        Value: owned
+        PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+
+  NodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true    # This would really depend on whether your workers were launched in public vs private subnets.
+      IamInstanceProfile: !Ref EKSNodeInstanceProfile
+      ImageId: !FindInMap [ NodeImageId, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
+      InstanceType: !Ref NodeInstanceType
+      SecurityGroups:
+      - !Ref NodeSecurityGroup
+      UserData:
+        Fn::Base64:
+          Fn::Join: [
+            "",
+            [
+              "#!/bin/bash -xe\n",
+              "CA_CERTIFICATE_DIRECTORY=/etc/kubernetes/pki", "\n",
+              "CA_CERTIFICATE_FILE_PATH=$CA_CERTIFICATE_DIRECTORY/ca.crt", "\n",
+              "MODEL_DIRECTORY_PATH=~/.aws/eks", "\n",
+              "MODEL_FILE_PATH=$MODEL_DIRECTORY_PATH/eks-2017-11-01.normal.json", "\n",
+              "mkdir -p $CA_CERTIFICATE_DIRECTORY", "\n",
+              "mkdir -p $MODEL_DIRECTORY_PATH", "\n",
+              "curl -o $MODEL_FILE_PATH https://s3-us-west-2.amazonaws.com/amazon-eks/1.10.3/2018-06-05/eks-2017-11-01.normal.json", "\n",
+              "aws configure add-model --service-model file://$MODEL_FILE_PATH --service-name eks", "\n",
+              "aws eks describe-cluster --region=", { Ref: "AWS::Region" }," --name=", { Ref: EKSCluster }," --query 'cluster.{certificateAuthorityData: certificateAuthority.data, endpoint: endpoint}' > /tmp/describe_cluster_result.json", "\n",
+              "cat /tmp/describe_cluster_result.json | grep certificateAuthorityData | awk '{print $2}' | sed 's/[,\"]//g' | base64 -d >  $CA_CERTIFICATE_FILE_PATH", "\n",
+              "MASTER_ENDPOINT=$(cat /tmp/describe_cluster_result.json | grep endpoint | awk '{print $2}' | sed 's/[,\"]//g')", "\n",
+              "INTERNAL_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)", "\n",
+              "sed -i s,MASTER_ENDPOINT,$MASTER_ENDPOINT,g /var/lib/kubelet/kubeconfig", "\n",
+              "sed -i s,CLUSTER_NAME,", { Ref: EKSCluster }, ",g /var/lib/kubelet/kubeconfig", "\n",
+              "sed -i s,REGION,", { Ref: "AWS::Region" }, ",g /etc/systemd/system/kubelet.service", "\n",
+              "sed -i s,MAX_PODS,", { "Fn::FindInMap": [ MaxPodsPerNode, { Ref: NodeInstanceType }, MaxPods ] }, ",g /etc/systemd/system/kubelet.service", "\n",
+              "sed -i s,MASTER_ENDPOINT,$MASTER_ENDPOINT,g /etc/systemd/system/kubelet.service", "\n",
+              "sed -i s,INTERNAL_IP,$INTERNAL_IP,g /etc/systemd/system/kubelet.service", "\n",
+              "DNS_CLUSTER_IP=10.100.0.10", "\n",
+              "if [[ $INTERNAL_IP == 10.* ]] ; then DNS_CLUSTER_IP=172.20.0.10; fi", "\n",
+              "sed -i s,DNS_CLUSTER_IP,$DNS_CLUSTER_IP,g  /etc/systemd/system/kubelet.service", "\n",
+              "sed -i s,CERTIFICATE_AUTHORITY_FILE,$CA_CERTIFICATE_FILE_PATH,g /var/lib/kubelet/kubeconfig" , "\n",
+              "sed -i s,CLIENT_CA_FILE,$CA_CERTIFICATE_FILE_PATH,g  /etc/systemd/system/kubelet.service" , "\n",
+              "systemctl daemon-reload", "\n",
+              "systemctl restart kubelet", "\n",
+              "/opt/aws/bin/cfn-signal -e $? ",
+              "         --stack ", { Ref: "AWS::StackName" },
+              "         --resource NodeGroup ",
+              "         --region ", { Ref: "AWS::Region" }, "\n"
+            ]
+          ]
+
+
+
 Outputs:
+
+  ClusterName:
+    Description: Name of the EKS Cluster
+    Value: !Ref EKSCluster
 
   CertificateAuthorityData:
     Description: The certificate-authority-data for your cluster.
@@ -141,3 +269,7 @@ Outputs:
   Endpoint:
     Description: The endpoint for your Kubernetes API server.
     Value: !GetAtt  EKSCluster.Endpoint
+
+  EKSNodeRole:
+    Description: Role applied to the EKS Nodes.  Used when running kubectl apply -f aws-auth-cm.yaml
+    Value: !GetAtt EKSNodeRole.Arn
