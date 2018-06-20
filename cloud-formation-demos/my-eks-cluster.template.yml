@@ -266,7 +266,7 @@ Outputs:
     Description: The certificate-authority-data for your cluster.
     Value: !GetAtt  EKSCluster.CertificateAuthorityData
 
-  Endpoint:
+  EKSEndpoint:
     Description: The endpoint for your Kubernetes API server.
     Value: !GetAtt  EKSCluster.Endpoint
 
