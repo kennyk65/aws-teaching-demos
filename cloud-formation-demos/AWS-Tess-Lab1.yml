@@ -1,0 +1,344 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Automatically creates Technical Essentials Lab 1.
+# Exports Key values to be used in lab 2.
+
+Parameters:
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedValues:
+      - 10.0.0.0/16
+Mappings:
+  AWSRegionToAMI:
+    us-east-1:
+      AMI: ami-c58c1dd3
+    us-east-2:
+      AMI: ami-4191b524
+    us-west-1:
+      AMI: ami-7a85a01a
+    us-west-2:
+      AMI: ami-4836a428
+    ca-central-1:
+      AMI: ami-0bd66a6f
+    eu-west-1:
+      AMI: ami-01ccc867
+    eu-west-2:
+      AMI: ami-b6daced2
+    eu-central-1:
+      AMI: ami-b968bad6
+    sa-east-1:
+      AMI: ami-37cfad5b
+    ap-southeast-1:
+      AMI: ami-fc5ae39f
+    ap-southeast-2:
+      AMI: ami-162c2575
+    ap-south-1:
+      AMI: ami-52c7b43d
+    ap-northeast-1:
+      AMI: ami-923d12f5
+    ap-northeast-2:
+      AMI: ami-9d15c7f3
+
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      Tags:
+        - Key: Name
+          Value: My Lab VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+        - Key: Name
+          Value: Public Subnet A
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ] 
+      Tags:
+        - Key: Name
+          Value: Public Subnet B
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+        - Key: Name
+          Value: Private Subnet A
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+        - Key: Name
+          Value: Private Subnet B
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn:
+      - AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+
+  WebInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region', AMI ]
+      InstanceType: t2.micro
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref PublicSubnet1
+          GroupSet:
+            - !Ref WebSecurityGroup
+      Tags:
+        - Key: Name
+          Value: Web Server 1
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex 
+          yum -y update
+          yum -y install httpd php mysql php-mysql
+          chkconfig httpd on
+          /etc/init.d/httpd start
+          if [ ! -f /var/www/html/lab-app.tgz ]; then
+          cd /var/www/html
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.3.2/lab-2-configure-website-datastore/scripts/lab-app.tgz
+          tar xvfz lab-app.tgz
+          chown apache:root /var/www/html/rds.conf.php
+          fi
+
+  NATInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region', AMI ]
+      InstanceType: t2.micro
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref PublicSubnet1
+          GroupSet:
+            - !Ref NATSecurityGroup
+      SourceDestCheck: 'false'
+      Tags:
+        - Key: Name
+          Value: NAT Server
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash 
+          yum -y update 
+          echo 1 > /proc/sys/net/ipv4/ip_forward 
+          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects 
+          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE 
+          /sbin/iptables-save > /etc/sysconfig/iptables 
+          mkdir -p /etc/sysctl.d/ 
+          cat <<EOF > /etc/sysctl.d/nat.conf 
+          net.ipv4.ip_forward = 1 
+          net.ipv4.conf.eth0.send_redirects = 0 
+          EOF 
+
+  NATSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable internal access to the NAT device
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: NAT-Security-Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '0'
+          ToPort: '1024'
+          CidrIp: 10.0.3.0/24
+        - IpProtocol: tcp
+          FromPort: '0'
+          ToPort: '1024'
+          CidrIp: 10.0.4.0/24
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Web-Security-Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NATInstance
+
+  LambdaVPCRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: LambdaLogToCloudWatch
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+        - PolicyName: Lambda_VPC_Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: Stmt1506457719000
+                Effect: Allow
+                Action:
+                  - ec2:CreateDefaultVpc
+                  - ec2:DescribeVpcs
+                Resource:
+                  - '*'
+
+  LambdaCreateDefaultVPC:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: defaultvpc
+      Handler: defaultvpc.lambda_handler
+      MemorySize: '512'
+      Timeout: '120'
+      Role: !GetAtt 
+        - LambdaVPCRole
+        - Arn
+      Code:
+        S3Bucket: !Join 
+          - ''
+          - - !Ref 'AWS::Region'
+            - '-tcprod'
+        S3Key: courses/SharedLambda/defaultvpc.zip
+      Runtime: python2.7
+  MyDefaultVPC:
+    Type: 'Custom::MyDefaultVPC'
+    Properties:
+      ServiceToken: !GetAtt 
+        - LambdaCreateDefaultVPC
+        - Arn
+
+Outputs:
+  IPAddress:
+    Description: IP Address of web server
+    Value: !Join ['', ["http://", !GetAtt  WebInstance.PublicIp ]]
+
+  VPC:
+    Description: VPC of the base network
+    Value: !Ref VPC
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", VPC ] ]
+
+  PrivateSubnet1:
+    Description: First Private Subnet
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnet1 ] ]
+
+  PrivateSubnet2:
+    Description: Second Private Subnet
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnet2 ] ]
+
+
+  WebSecurityGroup:
+    Description: Id of the Web Security group.
+    Value: !Ref WebSecurityGroup
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", WebSecurityGroup ] ]
+
+

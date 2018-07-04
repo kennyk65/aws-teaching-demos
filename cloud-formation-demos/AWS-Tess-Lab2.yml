@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Automatically creates Technical Essentials Lab 2.
+# You must have lab 1 created first, and provide its stack name here.
+
+Parameters:
+
+  Lab1Stack:
+    Type:  String
+    Description:  The name of the stack from Lab 1.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
+    Default: Lab1
+
+  DBAllocatedStorage:
+    Default: '5'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+
+  DBInstanceClass:
+    Default: db.t2.micro
+    Description: The database instance type
+    Type: String
+    AllowedValues:
+      - db.t2.micro
+    ConstraintDescription: must select a valid database instance type.
+
+Resources:
+
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DB Instance Security Group
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${Lab1Stack}:VPC
+      Tags:
+        - Key: Name
+          Value: DB-Security-Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          SourceSecurityGroupId: 
+            Fn::ImportValue:
+              !Sub ${Lab1Stack}:WebSecurityGroup
+
+  dbsubnetgroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Lab DB Subnet Group
+      SubnetIds:
+        - Fn::ImportValue: !Sub ${Lab1Stack}:PrivateSubnet1
+        - Fn::ImportValue: !Sub ${Lab1Stack}:PrivateSubnet2
+
+  labdbinstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: lab
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: MySQL
+      MasterUsername: master
+      MasterUserPassword: lab-password
+      MultiAZ: true
+      DBSubnetGroupName: !Ref dbsubnetgroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: MySQL Lab DB Instance
+
+Outputs:
+  RDSEndpoint:
+    Description: Endpoint of RDS DB
+    Value: !GetAtt labdbinstance.Endpoint.Address
