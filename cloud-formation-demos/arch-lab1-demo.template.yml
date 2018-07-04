@@ -13,25 +13,17 @@ Mappings:
   #  This is just the Amazon Linux AMI:
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-1ecae776
+      AMI: ami-b70554c8
     us-east-2:
-      AMI: ami-15e9c770      
+      AMI: ami-8c122be9      
     us-west-1:
-      AMI: ami-d114f295
+      AMI: ami-e0ba5c83
     us-west-2:
-      AMI: ami-e7527ed7
+      AMI: ami-a9d09ed1
     eu-west-1:
-      AMI: ami-a10897d6
+      AMI: ami-466768ac
     eu-central-1:
-      AMI: ami-a8221fb5
-    sa-east-1:
-      AMI: ami-b52890a8
-    ap-southeast-1:
-      AMI: ami-68d8e93a
-    ap-southeast-2:
-      AMI: ami-fd9cecc7
-    ap-northeast-1:
-      AMI: ami-cbf90ecb
+      AMI: ami-7c4f7097
 
 Resources:
 
@@ -171,21 +163,21 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           # Install Apache Web Server and PHP
-          yum remove -y httpd php
-          yum install -y httpd24 php56
-          # Download Lab files, unzip, and move to Apache Server folder
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/AWS-100-ARC/v5.2.10/lab-1-webapp/scripts/lab1src.zip
+          yum install -y httpd
+          amazon-linux-extras install -y php7.2
+          # Download Lab files
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v5.5.3/lab-1-webapp/scripts/lab1src.zip
           unzip lab1src.zip -d /tmp/
           mv /tmp/lab1src/*.php /var/www/html/
           # Download and install the AWS SDK for PHP
-          wget https://github.com/aws/aws-sdk-php/releases/download/3.15.9/aws.zip
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
           unzip aws -d /var/www/html
-          # Copy files to Amazon S3 bucket with name webapp-*
+          # Determine bucket and region:
           BUCKET=${TheS3Bucket}
           echo Bucket is: $BUCKET 
-          # Determine Region
           REGION=${AWS::Region}
           echo Region is: $REGION 
+          # Copy files to Amazon S3 bucket 
           aws s3 cp /tmp/lab1src/jquery/ s3://$BUCKET/jquery/ --recursive --acl public-read --region $REGION
           aws s3 cp /tmp/lab1src/images/ s3://$BUCKET/images/ --recursive --acl public-read --region $REGION
           aws s3 ls s3://$BUCKET/ --region $REGION --recursive
