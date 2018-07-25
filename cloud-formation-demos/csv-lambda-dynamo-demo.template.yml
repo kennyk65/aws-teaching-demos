@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template makes a bucket, dynamoDB table, and lambda function (with supporting roles).
+# Any CSV file uploaded to the bucket has its data copied into the DynamoDB table.
+# Caveat: The partition key of the DynamoDB table must be present in the CSV file, which must have headers.
+# Otherwise, there are no real format requirements for the CSV, though the Python code might choke on unusual CSV variants.  Tested with Excel.
+
+Parameters:
+  TheBucketName:
+    Description: The bucket (in the same region) to upload CSV files to.  
+    Type: String
+    Default: kk-sample-bucket
+
+  TheDynamoDBTableName:
+    Description: The name of the DynamoDB table to be created
+    Type: String
+    Default: kk-sample-table
+
+  TheDynamoDBKeyName:
+    Description: The partion key to be established on the new DynamoDB table.  Must match a key (column) in the CSV file.
+    Type: String
+    Default: EventID
+
+Resources:
+
+  # A bucket to be used for CSV uploads:
+  TheS3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn: BucketPermission
+    Properties: 
+      BucketName: !Ref TheBucketName
+      NotificationConfiguration:
+        LambdaConfigurations: 
+        - Event: "s3:ObjectCreated:*"
+          Function: !GetAtt MyLambda.Arn
+
+  # Table to be populated based on the uploads.
+  Dynamo:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TheDynamoDBTableName 
+      KeySchema:         
+        - AttributeName: !Ref TheDynamoDBKeyName
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: !Ref TheDynamoDBKeyName
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # This lambda reads the CSV file from S3, and puts each row into DynamoDB.
+  MyLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: CsvToDynamo
+      Description: Function that takes a CSV file uploaded to the given bucket and imports the data to DynamoDB
+      MemorySize: 128
+      Timeout: 10
+      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Runtime: python2.7
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          from __future__ import print_function
+          import urllib, json, csv, boto3
+          print('Loading function')
+          s3 = boto3.resource('s3')
+          dynamodb = boto3.resource('dynamodb')
+          def lambda_handler(event, context):
+              #print("Received event: " + json.dumps(event, indent=2))
+              # Get the input bucket and object key:
+              bucketName = event['Records'][0]['s3']['bucket']['name']
+              keyName = urllib.unquote_plus(event['Records'][0]['s3']['object']['key'].encode('utf8'))
+              print("S3 object is: " + bucketName + "/" + keyName )
+              table = dynamodb.Table('${TheDynamoDBTableName}') # Notice how the name of the table comes from the CF parameter!
+              # Get the bucket:
+              bucket = s3.Bucket(bucketName)
+              # get a handle on the object you want (i.e. your file)
+              obj = bucket.Object(keyName)
+              # get the object contents:
+              contents = obj.get()
+              # read the contents of the file and split it into a list of lines
+              lines = contents['Body'].read().split()
+              # now iterate over those lines
+              reader = csv.DictReader(lines, dialect='excel')
+              for row in reader:    
+                # Fortunately the row is JSON, which is exactly what our DynamoDB put_item function needs.
+                # Just make sure there is a key/value that satisfies the exact spelling of the partition key:
+                response = table.put_item(Item=row)        
+
+  # This is a 'function permission', it allows the S3 bucket to fire the Lambda:
+  BucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref MyLambda
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::${TheBucketName}"
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CsvToDynamoRole" ]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the CsvToDynamoRole.
+  # Basic permissions for CloudWatch Logs, plus get on S3, put on DynamoDB.  expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CsvToDynamoPolicy" ]]
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:getObject
+            - dynamodb:put*
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
+Outputs:
+  S3ConsoleBucket:
+    Description: The S3 bucket via the console
+    Value: !Join ['', ["https://s3.console.aws.amazon.com/s3/buckets/", !Ref  TheBucketName ]]
