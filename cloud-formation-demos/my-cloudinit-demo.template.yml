@@ -1,0 +1,96 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Example of launching an EC2 instance using cloud-init directives instead of bash script in the user data.
+Parameters:
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC with at least one public subnet.  Default VPC is fine.
+
+  VpcPublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a single public subnet from the selected VPC.
+
+  PrivateInstancesKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to instances if needed.
+
+
+Mappings:
+  #  This is just the Amazon Linux AMI:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-1ecae776
+    us-east-2:
+      AMI: ami-15e9c770      
+    us-west-1:
+      AMI: ami-d114f295
+    us-west-2:
+      AMI: ami-e7527ed7
+    eu-west-1:
+      AMI: ami-a10897d6
+    eu-central-1:
+      AMI: ami-a8221fb5
+    sa-east-1:
+      AMI: ami-b52890a8
+    ap-southeast-1:
+      AMI: ami-68d8e93a
+    ap-southeast-2:
+      AMI: ami-fd9cecc7
+    ap-northeast-1:
+      AMI: ami-cbf90ecb
+
+
+Resources:
+
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      
+  # Create a sample EC2 instance:    
+  WebInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
+      KeyName: !Ref PrivateInstancesKeyName                           # We use the Key specified in input parameters
+      InstanceType: t2.micro                                          # Any instance type is fine
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        SubnetId: !Ref VpcPublicSubnet                                # Any public subnet is fine
+        AssociatePublicIpAddress: 'true'                              # We will definitely need a public IP address
+        GroupSet:
+        - Ref: WebServerSecurityGroup                                 # Plug in the security group
+      Tags:
+      - Key: Name
+        Value: WebServer
+      UserData:      #  This code used cloud init to install a Spring Boot app:
+        Fn::Base64: !Sub |
+          #cloud-config
+          # bootcmd is similar to runcmd, but runs earlier, and on each boot:
+          bootcmd:
+          - yum update -y
+          - yum install java-1.8.0 -y
+          - yum remove java-1.7.0-openjdk -y         
+          - wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          - sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
+
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  DnsName:
+    Description: web server
+    Value: !Join ['', ["http://", !GetAtt  WebInstance.PublicIp ]]
+
+
