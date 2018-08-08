@@ -10,14 +10,29 @@ AWSTemplateFormatVersion: 2010-09-09
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
 # The default value you see here will work only if you prepend it with a '0'.
 # You will also need a working ECS Cluster.  Create one with "base-ecs-cluster.template.yml" if you need one.
+# You will also need an ECR registry containing the image you want to deploy, at least the initial copy of it.  This will be updated by the pipeline.
 
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: The location of source code
+        Parameters:
+          - GitHubRepository
+          - GitHubOAuthToken
+      - Label:
+          default: Target ECS Cluster
+        Parameters:
+          - DockerRepository
+          - ECSCluster
+          - ContainerName
+      - Label:
+          default: Other
+        Parameters:
+          - CodePipelineBucketPrefix
 
 Parameters:
-  CodePipelineBucketPrefix:
-    Description: CodePipeline needs a utility bucket for its internal use.  Specify the prefix for the bucket name
-    Type: String
-    Default: codepipeline-kk-
-
   GitHubRepository:
     Type: String
     Default:  kennyk65/aws-cloudbuild-demo/master
@@ -28,15 +43,25 @@ Parameters:
     Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
-  DockerRepository:
-    Description:  The name of the ECR repository you want to create.  CodeBuild will push the Docker image here in ECR when built.  Check that Region.
-    Type: String
-    Default: spring-cloud-aws-environment-demo-1
-
   ECSCluster:
     Description:  The ECS Cluster that is ready to run our service / task definition.
     Type: String    
     Default: default
+
+  DockerRepository:
+    Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
+    Type: String
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
+
+  ContainerName:
+    Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+    Type: String
+    Default:  spring-cloud-aws-environment-demo
+
+  CodePipelineBucketPrefix:
+    Description: CodePipeline needs a utility bucket for its internal use.  Specify the prefix for the bucket name.  You'll probably need to clean this out later to delete the stack.
+    Type: String
+    Default: codepipeline-kk-
 
 
 Resources:
@@ -132,14 +157,6 @@ Resources:
       BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
 
 
-  # Make sure there is an ECR Repository to build to for this artifact:    
-  # Warning: This will need to be deleted manually before you can delete the stack.
-  ECRRepository:
-    Type: AWS::ECR::Repository
-    Properties: 
-      RepositoryName: !Ref DockerRepository
-
-
   # This CodeBuild project runs packaging, tests are separate.
   # This is a Java / Maven build, Followed by Dockerization / push to ECR
   MavenBuild:
@@ -194,7 +211,7 @@ Resources:
                   - aws --version
                   - echo Logging in to Amazon ECR...
                   - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
-                  - REPOSITORY_URI=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepository}   
+                  - REPOSITORY_URI=${DockerRepository}   
                   - IMAGE_TAG=1111
                   - echo REPOSITORY_URI is set to $REPOSITORY_URI
                   - echo IMAGE_TAG is set to $IMAGE_TAG
@@ -212,7 +229,7 @@ Resources:
                   - docker push $REPOSITORY_URI:latest
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
                   - echo Writing image definitions file...
-                  - printf '[{"name":"${DockerRepository}","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+                  - printf '[{"name":"${ContainerName}","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
             artifacts:
                 files: imagedefinitions.json
       Environment:
@@ -357,6 +374,9 @@ Resources:
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
       LaunchType: EC2  # or FARGATE
 
   # This TaskDefinition defines the image(s) we want to run on ECS
@@ -368,8 +388,8 @@ Resources:
 
         # We want to run a little Spring Boot app named "environment-demo",
         # but since the DockerImage is an input parameter it could be anything.  
-      - Name: !Ref DockerRepository
-        Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepository}
+      - Name: !Ref ContainerName
+        Image: !Sub ${DockerRepository}
         Cpu: 10
         Memory: 256
         Essential: true
@@ -381,7 +401,7 @@ Resources:
             awslogs-stream-prefix: SpringEnvironmentDemo
         PortMappings:
         - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
-          HostPort: 80
+          HostPort: 80            # This means the host must have port 80 available, which influences if you can update a running container.
 
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:
