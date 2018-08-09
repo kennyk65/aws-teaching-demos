@@ -1,10 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-#  STUCK!!  THIS IS A LOT MORE DIFFICULT THAN ONE WOULD THINK.
-#  RIGHT NOW I'M STUCK ON THE TASK DEFINITION.
-#  READ THIS ARTICLE:  https://www.prodops.io/blog/deploying-fargate-services-using-cloudformation
-#
-
 # This is a  codepipeline demo that 
 # 1) grabs code from GitHub on change 
 # 2) packages and tests using paralell actions 
@@ -16,6 +11,7 @@ AWSTemplateFormatVersion: 2010-09-09
 # The default value you see here will work only if you prepend it with a '0'.
 # You will also need a working ECS Cluster.  Create one with "base-ecs-cluster.template.yml" if you need one.
 # You will also need an ECR registry containing the image you want to deploy, at least the initial copy of it.  This will be updated by the pipeline.
+#  This article helped immensely:  https://www.prodops.io/blog/deploying-fargate-services-using-cloudformation
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
