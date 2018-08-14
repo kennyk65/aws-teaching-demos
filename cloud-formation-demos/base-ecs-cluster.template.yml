@@ -181,25 +181,26 @@ Resources:
     Properties:
       GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
       GroupDescription: ECS Security Group
-      VpcId: !Ref 'VpcId'
+      VpcId: !Ref VpcId
 
-  #  Inbound rules for HTTP on 80 plus anything above 31000:
+  #  Inbound rules for HTTP on 80.  31000 - 61000 is for dynamic port assignment in ECS:
   EcsSecurityGroupHTTPinbound:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref 'EcsSecurityGroup'
+      GroupId: !Ref EcsSecurityGroup
       IpProtocol: tcp
       FromPort: '80'
       ToPort: '80'
-      CidrIp: 0.0.0.0/0
+      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
   EcsSecurityGroupALBports:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref 'EcsSecurityGroup'
+      GroupId: !Ref EcsSecurityGroup
       IpProtocol: tcp
       FromPort: '31000'
       ToPort: '61000'
-      SourceSecurityGroupId: !Ref 'EcsSecurityGroup'
+      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
+
 
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:
