@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 2.
+# The main difference is the IAM Role
+
+Parameters:
+  PrivateKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the instance, if needed.
+
+Mappings:
+  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-04681a1dbd79675a5
+    us-east-2:
+      AMI: ami-0cf31d971a3ca20d6
+    us-west-1:
+      AMI: ami-0782017a917e973e7
+    us-west-2:
+      AMI: ami-6cd6f714
+
+
+Resources:
+
+  # First, a VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: Lab VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now some subnets, 1 public and 1 private:
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/23
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public Route Table
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  # Here is a private route table:
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private Route Table
+
+  
+  # Attach the public subnets to public route tables, 
+  # and attach the private subnets to private route tables:    
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  AppSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: App-SG
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+
+  # web server:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
+      InstanceType: t2.micro                                          # Any instance type will do
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        AssociatePublicIpAddress: 'true'                              # We will need a public IP address
+        SubnetId: !Ref PublicSubnet                                   # We should sit in a public subnet.
+        GroupSet:
+        - Ref: AppSg                                                  # Attach the security group
+      UserData:      #  What to run:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Install Apache Web Server and PHP
+          yum install -y httpd mysql
+          amazon-linux-extras install -y php7.2
+          # Download Lab files
+          wget https://us-west-2-tcdev.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.0.0/lab-2-vpc/scripts/inventory-app.zip
+          unzip inventory-app.zip -d /var/www/html/
+          # Download and install the AWS SDK for PHP
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
+          unzip aws -d /var/www/html
+          # Turn on web server
+          chkconfig httpd on
+          service httpd start
+
+  # EC2 instance will need to talk to SSM to read parameters:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Inventory-App-Role2
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: ssm:*
+                Resource: 'arn:aws:ssm:*:*:parameter/inventory-app/*'
+
+  # Attach EC2Role's permissions to each ECS Instance.
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref InstanceRole]
+
+
+Outputs:
+  EC2InstancePublicIP:
+    Description: The IP address for EC2 instance.
+    Value: !Join ['', ["http://", !GetAtt WebServer.PublicIp ]]
