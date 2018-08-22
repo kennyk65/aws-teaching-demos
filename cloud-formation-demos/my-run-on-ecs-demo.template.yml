@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # This demo illustrates how to run a Docker image on an existing ECS cluster.
 # You will need an existing ECS cluster.  Use base-ecs-cluster.template.yml to make one if you don't have one.
-# You will need an existing Docker image stored in ECR, any image will do.
+# You will need an existing Docker image stored in ECR.  Pretty much any image will do.
 # We will also demonstrate associating a load balancer with the container, and autoscaling.
 
 Metadata:
@@ -34,7 +34,7 @@ Parameters:
     Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
 
   ContainerName:
-    Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+    Description:  The label of the container you will see on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
     Type: String
     Default:  spring-cloud-aws-environment-demo
 
@@ -44,7 +44,7 @@ Parameters:
 
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Subnets to be used by the load balancer.  
+    Description: Subnets to be used by the load balancer nodes.  May be public or private, depending on where you want to access it from.  
 
 Resources:
 
