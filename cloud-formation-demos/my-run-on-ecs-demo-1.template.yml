@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This demo illustrates how to run a Docker image on an existing ECS cluster.
+# You will need an existing ECS cluster.  Use base-ecs-cluster.template.yml to make one if you don't have one.
+# You will need an existing Docker image stored in ECR.  Pretty much any image will do.
+# This demo represents a bare-minimum deployment; no load balancer, no autoscaling.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Target ECS Cluster
+        Parameters:
+          - ECSCluster
+          - DockerRepository
+          - ContainerName
+
+Parameters:
+
+  ECSCluster:
+    Description:  The ECS Cluster that is ready to run our service / task definition.
+    Type: String    
+    Default: default
+
+  DockerRepository:
+    Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  Check that Region and account number.
+    Type: String
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
+
+  ContainerName:
+    Description:  The label of the container you will see on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+    Type: String
+    Default:  spring-cloud-aws-environment-demo
+
+Resources:
+
+  # An ECS "Service" associates a TaskDefinition with a cluster:
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Join ['', [!Ref 'AWS::StackName', "-DemoECSService" ]]
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration:  # Allows one to update the service without downtime.
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      LaunchType: EC2  # or FARGATE
+
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Join ['', [!Ref 'AWS::StackName', -DemoTaskDefinition]]
+      Cpu: 128      # Required when using EC2 launch type, between 128 units and 10240
+      ContainerDefinitions:
+      - Name: !Ref ContainerName
+        Image: !Ref DockerRepository
+        Memory: 256   # MB
+        Essential: true
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: EcsDemo
+        PortMappings:
+        - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
+          HostPort: 80            # Container instance's port 80 will be routed to this container's 8080.  This greatly constrains what instance can deploy our container.
+
+  # This LogsGroup will be useful when several containers emit output:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoECSLogGroup]]
+      RetentionInDays: 14
