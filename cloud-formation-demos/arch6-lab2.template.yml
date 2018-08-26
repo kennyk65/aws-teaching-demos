@@ -11,14 +11,37 @@ Parameters:
 Mappings:
   #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
   AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-04681a1dbd79675a5
+    us-east-1: 
+      AMI: ami-04681a1dbd79675a5    # Virginia
     us-east-2:
-      AMI: ami-0cf31d971a3ca20d6
+      AMI: ami-0cf31d971a3ca20d6    # Ohio
     us-west-1:
-      AMI: ami-0782017a917e973e7
+      AMI: ami-0782017a917e973e7    # N California
     us-west-2:
-      AMI: ami-6cd6f714
+      AMI: ami-6cd6f714             # Oregon
+    ap-south-1:
+      AMI: ami-00b6a8a2bd28daf19    # Mumbai
+    ap-northeast-2:
+      AMI: ami-012566705322e9a8e    # Seoul
+    ap-southeast-1:
+      AMI: ami-01da99628f381e50a    # Singapore
+    ap-southeast-2:
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
+    ap-northeast-1:
+      AMI: ami-08847abae18baa040    # Tokyo
+    ca-central-1:
+      AMI: ami-ce1b96aa             # Montreal
+    eu-central-1:
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+    eu-west-1:
+      AMI: ami-0bdb1d6c15a40392c    # Ireland
+    eu-west-2:
+      AMI: ami-e1768386             # London
+    eu-west-3:
+      AMI: ami-06340c8c12baa6a09    # Paris
+    sa-east-1:
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
+
 
 
 Resources:
