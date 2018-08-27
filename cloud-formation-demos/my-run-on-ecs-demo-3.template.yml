@@ -11,6 +11,8 @@ AWSTemplateFormatVersion: 2010-09-09
 # The default value you see here will work only if you prepend it with a '0'.
 # You will also need a working ECS Cluster.  Create one with "base-ecs-cluster.template.yml" if you need one.
 # You will also need an initial deployment of a service in that cluster.  This template is designed to update it, not initially create it.
+# TODO: At present it deploys, then deploys again.  Not sure why.
+
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
@@ -21,13 +23,13 @@ Metadata:
         Parameters:
           - GitHubRepository
           - GitHubOAuthToken
+          - DockerRepository
       - Label:
           default: Target ECS Cluster
         Parameters:
-          - DockerRepository
           - ECSCluster
-          - ContainerName
           - ECSService
+          - ContainerName
       - Label:
           default: Other
         Parameters:
