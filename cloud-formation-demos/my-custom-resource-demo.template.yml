@@ -29,12 +29,12 @@ Resources:
   # This custom resource is executed on stack create and stack delete.
   # - On Create: Copies content into our newly created bucket
   # - On Delete: Deletes bucket contents before CloudFormation tries to remove it
-  S3BucketContentHandler:
-    Type: Custom::CopyOMatic
-    Properties:
-      ServiceToken: !GetAtt CLIRunnerLambda.Arn
-      CliCommandCreate: "aws s3 cp s3://${SourceBucket} s3://${S3} --recursive"
-      CliCommandDelete: "aws s3 rm s3://${S3} --recursive"                          # Pretty dangerous...
+  # S3BucketContentHandler:
+  #   Type: Custom::CopyOMatic
+  #   Properties:
+  #     ServiceToken: !GetAtt CLIRunnerLambda.Arn
+  #     CliCommandCreate: "aws s3 cp s3://${SourceBucket} s3://${S3} --recursive"
+  #     CliCommandDelete: "aws s3 rm s3://${S3} --recursive"                          # Pretty dangerous...
 
 
   # This function is waaaay cool - it runs simple CLI commands for you:
@@ -44,7 +44,7 @@ Resources:
     Properties: 
       FunctionName: CLIRunner
       Description: Lambda function that can run simple AWS CLI commands.
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       MemorySize: 256     # Probably should make this variable
       Timeout: 30         # Probably should make this variable
       Runtime: python2.7
