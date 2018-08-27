@@ -1,0 +1,371 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This is a  codepipeline demo that 
+# 1) grabs code from GitHub on change 
+# 2) packages and tests using parallel actions 
+# 3) Docker-izes it, and stores in ECR
+# 4) deploy to an ECS Cluster
+
+# TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
+# To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
+# The default value you see here will work only if you prepend it with a '0'.
+# You will also need a working ECS Cluster.  Create one with "base-ecs-cluster.template.yml" if you need one.
+# You will also need an initial deployment of a service in that cluster.  This template is designed to update it, not initially create it.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: The location of source code
+        Parameters:
+          - GitHubRepository
+          - GitHubOAuthToken
+      - Label:
+          default: Target ECS Cluster
+        Parameters:
+          - DockerRepository
+          - ECSCluster
+          - ContainerName
+          - ECSService
+      - Label:
+          default: Other
+        Parameters:
+          - CodePipelineBucketPrefix
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Default:  kennyk65/aws-cloudbuild-demo/master
+    Description:  The owner / repository / branch that you want to pull from.
+
+  GitHubOAuthToken:
+    Type: String
+    Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+
+  ECSCluster:
+    Description:  The ECS Cluster that is ready to run our service / task definition.
+    Type: String    
+    Default: default
+
+  ECSService:
+    Description:  The name of the existing ECS service to be updated.  
+    Type: String
+    
+  DockerRepository:
+    Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
+    Type: String
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
+
+  ContainerName:
+    Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+    Type: String
+    Default:  spring-cloud-aws-environment-demo
+
+  CodePipelineBucketPrefix:
+    Description: CodePipeline needs a utility bucket for its internal use.  Specify the prefix for the bucket name.  You'll probably need to clean this out later to delete the stack.
+    Type: String
+    Default: codepipeline-kk-
+
+
+Resources:
+
+  # This Role allows CodeBuild to do certain things on our behalf.
+  # See the policy for the interesting stuff:
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the CodeBuildRole.
+  # CodeBuild is get and put on S3, CodeBuild, and CloudWatch Logs.  Allowed to login and push to ECR.  This all could probably be tightened quite a bit.
+  CodeBuildPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - s3:getObject
+            - codebuild:*
+            - ecr:Get*                    # For Docker builds pushing to ECR, one will need to GetAuthorizationToken
+            - ecr:InitiateLayerUpload     # For Docker push to ECR
+            - ecr:Upload*                 # For Docker push to ECR
+            - ecr:Complete*               # For Docker push to ECR
+            - ecr:*                       # I'm getting weird results on Docker push, and this fixed it.  TODO - Figure out what ECR permissions are needed.
+          Resource: "*"
+      Roles: 
+        -  !Ref CodeBuildRole
+
+  # This Role allows CodePipeline to make certain things on our behalf:
+  # See the policy for the interesting stuff:
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelineRole" ]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the CodePipelineRole.
+  # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodePipelinePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]]
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
+          # codebuild probably does not need to be wide open like this, and the logs should only need
+          # to create the stream, group, and log events.
+          # Ultimately I ran into too many permission errors with little information available in the documentation to debug, so I had to use "*".
+          Action: 
+            # - logs:CreateLogGroup
+            # - logs:CreateLogStream
+            # - logs:PutLogEvents
+            # - s3:putObject
+            # - s3:getObject
+            # - codebuild:*
+            # - elasticbeanstalk:*
+            - "*"                             #  TODO - FIND OUT WHAT CODE PIPELINE permissions are needed.
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref CodePipelineRole
+
+
+  # General Bucket where CodePipeline will store things:
+  # Warning: This will need to be deleted manually before you can delete the stack.
+  S3:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+
+
+  # This CodeBuild project runs packaging, tests are separate.
+  # This is a Java / Maven build, Followed by Dockerization / push to ECR
+  MavenBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenBuild" ]]
+      Description: Maven build, packaging only (tests are run separately)
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
+            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
+            # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
+            phases:
+              pre_build:
+                commands:
+                  - aws --version
+              build:
+                commands:
+                  - echo Maven Build started on `date`
+                  - mvn package -DskipTests
+                  - echo Maven Build finished on `date`
+            artifacts:
+              files:
+                - target/spring-cloud-aws-environment-demo-1.war
+                - Dockerfile
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8      
+      Artifacts:    
+        Type: CODEPIPELINE
+
+  DockerBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Join ['', [!Ref 'AWS::StackName', "-DockerBuild" ]]
+      Description: Docker image build + push
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs a Docker build, plus push to ECR
+            phases:
+              pre_build:
+                commands:
+                  - aws --version
+                  - echo Logging in to Amazon ECR...
+                  - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+                  - REPOSITORY_URI=${DockerRepository}   
+                  - IMAGE_TAG=1111
+                  - echo REPOSITORY_URI is set to $REPOSITORY_URI
+                  - echo IMAGE_TAG is set to $IMAGE_TAG
+                  - echo CODEBUILD_RESOLVED_SOURCE_VERSION is set to $CODEBUILD_RESOLVED_SOURCE_VERSION
+                  - echo CODEBUILD_SOURCE_VERSION is set to $CODEBUILD_SOURCE_VERSION
+              build:
+                commands:
+                  - echo Docker Image Build started on `date`
+                  - docker build -t $REPOSITORY_URI:latest .
+                  - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  - echo Docker Image Build finished on `date`
+              post_build:
+                commands:
+                  - echo Pushing the Docker images...
+                  - docker push $REPOSITORY_URI:latest
+                  - docker push $REPOSITORY_URI:$IMAGE_TAG
+                  - echo Writing image definitions file...
+                  - printf '[{"name":"${ContainerName}","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+            artifacts:
+                files: imagedefinitions.json
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/docker:17.09.0
+      Artifacts:    
+        Type: CODEPIPELINE
+
+      # TODO: THE IMAGE_TAG IS NOT WHAT THE EXAMPLE AT https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-cd-pipeline.html SPECIFIES - COULDN'T GET IT TO WORK.
+
+  # This CodeBuild project runs unit tests only.  
+  # The intent is to run parallel to the packaging to decrease build duration.
+  MavenTests:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenTests" ]]
+      Description: Demo of CodeBuild with CodeDeploy pipeline.
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs the maven tests only.  No output.
+            phases:
+              build:
+                commands:
+                  - echo Testing started on `date`
+                  - mvn test
+                  - echo Testing finished on `date`
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/java:openjdk-8
+      Artifacts:    
+        Type: CODEPIPELINE
+
+
+  # This is the CodePipeline with its stages:
+  MyPipe:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Join ['', [!Ref 'AWS::StackName', "-PipeFromGitHubToECS" ]]
+      ArtifactStore: 
+        Location: !Ref S3
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref CodePipelineRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Stages: 
+
+        # Stage 1:  Get the source from GitHub:
+        - Name: Source
+          Actions: 
+            - Name: SourceAction
+              RunOrder: 1
+              ActionTypeId: 
+                Category: Source
+                Owner: ThirdParty       
+                Provider: GitHub        
+                Version: 1              # Required, meaningless and must be 1, go figure.
+              Configuration: 
+                Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
+                Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
+                Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
+                PollForSourceChanges: true   # Don't know if/how to control frequency
+                OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
+              OutputArtifacts: 
+                - Name: TheSourceCode
+
+        # Stage 2:  Build using CodeBuild / Maven, Test in parallel using CodeBuild / Maven:
+        - Name: Build
+          Actions:
+            # This runs a Maven build which packages the WAR.  Test are run in the parallel action below: 
+            - Name: MavenBuild
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheSourceCode           # Duh, the output from the previous step.
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                      # Required, meaningless and must be 1.
+              Configuration:
+                ProjectName:  !Ref MavenBuild   # See the CodeBuild definition above.       
+              OutputArtifacts: 
+                - Name: TheWarAndDockerfile  
+            - Name: DockerBuild
+              RunOrder: 2
+              InputArtifacts: 
+                - Name: TheWarAndDockerfile     # Output from the previous step.
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                      # Required, meaningless and must be 1.
+              Configuration:
+                ProjectName:  !Ref DockerBuild  # See the CodeBuild definition above.       
+              OutputArtifacts: 
+                - Name: TheImageDefinition 
+
+            # This runs a Maven build featuring only the unit tests.  No output:   
+            - Name: UnitTest
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheSourceCode       
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS       
+                Provider: CodeBuild        
+                Version: 1                  
+              Configuration:
+                ProjectName:  !Ref MavenTests  # See the CodeBuild definition above.       
+
+        # Stage 3:  Deploy on ECS:
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheImageDefinition   # This should contain imagedefinitions.json
+              ActionTypeId: 
+                Category: Deploy
+                Owner: AWS       
+                Provider: ECS        
+                Version: 1                  # Don't know the purpose of 'version'
+              Configuration:
+                ClusterName:  !Ref ECSCluster  # Input parameter       
+                ServiceName:  !Ref ECSService  # Input parameter 
+
+Outputs:
+  CodeBuild:
+    Value: !Ref MyPipe
+

@@ -156,3 +156,7 @@ Outputs:
   ECSALB:
     Description: Your ALB DNS URL
     Value: !Join ['', ["http://", !GetAtt [ALB, DNSName]]]
+
+  ECSServiceName:
+    Description: Name of the ECS Service produced by this stack
+    Value: !GetAtt ECSService.Name      # Not "ServiceName" as above, go figure.
