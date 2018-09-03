@@ -80,6 +80,7 @@ public class SensorReadingsProducer {
 	private static KinesisProducer createKinesisProducer() {
 		KinesisProducerConfiguration config = new KinesisProducerConfiguration();
 		config.setRegion(REGION.getName());
+		config.setVerifyCertificate(false); // Correct unusual error beginning in August of 2018
 		return new KinesisProducer(config);
 	}
 
