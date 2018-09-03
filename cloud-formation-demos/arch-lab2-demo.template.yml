@@ -213,12 +213,12 @@ Resources:
       UserData:      #  This code download a PHP app. Notice how the last line signals completion:
         Fn::Base64: !Sub |
           #!/bin/bash
-          sudo yum -y update
-          sudo yum -y install httpd php
-          sudo chkconfig httpd on
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/AWS-100-ARC/v5.2.11/lab-2-ha/scripts/phpapp.zip
-          sudo unzip phpapp.zip -d /var/www/html/
-          sudo service httpd start
+          yum -y update
+          yum -y install httpd php
+          chkconfig httpd on
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v5.5.4/lab-2-ha/scripts/phpapp.zip
+          unzip phpapp.zip -d /var/www/html/
+          service httpd start
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
 
   AppAutoScalingGroup:
