@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This demo illustrates how to run a Docker image on an existing ECS cluster.
+# You will need an existing ECS cluster.  Use base-ecs-cluster.template.yml to make one if you don't have one.
+# You will need an existing Docker image stored in ECR.  Pretty much any image will do.
+# We will also demonstrate associating a load balancer with the container, and autoscaling.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Target ECS Cluster
+        Parameters:
+          - ECSCluster
+          - DockerRepository
+          - ContainerName
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - SubnetIds
+
+Parameters:
+
+  ECSCluster:
+    Description:  The ECS Cluster that is ready to run our service / task definition.
+    Type: String    
+    Default: default
+
+  DockerRepository:
+    Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  Check that Region and account number.
+    Type: String
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
+
+  ContainerName:
+    Description:  The label of the container you will see on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+    Type: String
+    Default:  spring-cloud-aws-environment-demo
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC to be used by the Load Balancer.  Use same VPC as you use for the ECS cluster.
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets to be used by the load balancer nodes.  May be public or private, depending on where you want to access it from.  
+
+Resources:
+
+  # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers and controls auto-scaling.
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALB
+    Properties:
+      ServiceName: !Join ['', [!Ref 'AWS::StackName', "-DemoECSService" ]]
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration:  # Allows one to update the service without downtime.
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      LaunchType: EC2  # or FARGATE
+      LoadBalancers:
+      - ContainerName: !Ref ContainerName
+        ContainerPort: 8080
+        TargetGroupArn: !Ref ALBTargetGroup      
+
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Join ['', [!Ref 'AWS::StackName', -DemoTaskDefinition]]
+      ContainerDefinitions:
+      - Name: !Ref ContainerName
+        Image: !Sub ${DockerRepository}
+        Cpu: 10
+        Memory: 256
+        Essential: true
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: EcsDemo
+        PortMappings:
+        - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
+          # By not specifying HostPort: 80, we are doing dynamic port assignment, which is great when using an ALB.
+
+  # This LogsGroup will be useful when several containers emit output:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoECSLogGroup]]
+      RetentionInDays: 14
+
+
+  # Security Group to be used by the LoadBalancer.  Allow inbound ports on 80:
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB Security Group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+
+  # Now the Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [!Ref EcsSecurityGroup]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: '80'
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # The rule is simple; all traffic to "/" goes to our one and only target group:      
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      Priority: 1
+  # This TargetGroup is hooked up to the ECS "Service" above.
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: ALBTargetGroup
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health        # Spring Boot enables this endpoint.
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+Outputs:
+  ECSALB:
+    Description: Your ALB DNS URL
+    Value: !Join ['', ["http://", !GetAtt [ALB, DNSName]]]
+
+  ECSServiceName:
+    Description: Name of the ECS Service produced by this stack
+    Value: !GetAtt ECSService.Name      # Not "ServiceName" as above, go figure.

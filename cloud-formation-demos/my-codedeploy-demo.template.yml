@@ -12,9 +12,9 @@ Parameters:
     Type: AWS::EC2::VPC::Id
     Description: The VPC in which you want to run your demo instances.  Make sure it has public subnets.
   
-  SubnetId:
-    Type: AWS::EC2::Subnet::Id
-    Description: The subnet in which you want to run your demo instances.  Make sure it is in the selected VPC.  Sorry, I can't restrict this list by the VPC you just selected.
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select two or more subnets (public) to be used by the Load Balancer's nodes.  Make sure it is in the selected VPC.  Sorry, I can't restrict this list by the VPC you just selected.
   
   InstancesKeyName:
     Type: AWS::EC2::KeyPair::KeyName
@@ -22,6 +22,7 @@ Parameters:
   
   DesiredCapacity:
     Type: Number
+    Default: 1
     MinValue: 1
     MaxValue: 4
     Description: Choose from 1 to 4, the number of web server instances you wish to launch in the auto-scale group.    
@@ -33,31 +34,43 @@ Metadata:
           default: "Please Enter:"
         Parameters: 
           - VpcId
-          - SubnetId
+          - Subnets
           - InstancesKeyName
           - DesiredCapacity
 
 Mappings:
-  #  This is just the Amazon Linux AMI:
+  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
   AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-1ecae776
+    us-east-1: 
+      AMI: ami-04681a1dbd79675a5    # Virginia
+    us-east-2:
+      AMI: ami-0cf31d971a3ca20d6    # Ohio
     us-west-1:
-      AMI: ami-d114f295
+      AMI: ami-0782017a917e973e7    # N California
     us-west-2:
-      AMI: ami-e7527ed7
-    eu-west-1:
-      AMI: ami-a10897d6
-    eu-central-1:
-      AMI: ami-a8221fb5
-    sa-east-1:
-      AMI: ami-b52890a8
+      AMI: ami-6cd6f714             # Oregon
+    ap-south-1:
+      AMI: ami-00b6a8a2bd28daf19    # Mumbai
+    ap-northeast-2:
+      AMI: ami-012566705322e9a8e    # Seoul
     ap-southeast-1:
-      AMI: ami-68d8e93a
+      AMI: ami-01da99628f381e50a    # Singapore
     ap-southeast-2:
-      AMI: ami-fd9cecc7
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
     ap-northeast-1:
-      AMI: ami-cbf90ecb
+      AMI: ami-08847abae18baa040    # Tokyo
+    ca-central-1:
+      AMI: ami-ce1b96aa             # Montreal
+    eu-central-1:
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+    eu-west-1:
+      AMI: ami-0bdb1d6c15a40392c    # Ireland
+    eu-west-2:
+      AMI: ami-e1768386             # London
+    eu-west-3:
+      AMI: ami-06340c8c12baa6a09    # Paris
+    sa-east-1:
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
 
 
 Resources:
@@ -91,39 +104,32 @@ Resources:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
       KeyName: !Ref InstancesKeyName                                  # We get the keypair name from the input parameters
       InstanceType: t2.micro                                          # Any instance type will do
-      SecurityGroups:
-      - !Ref WebServerSecurityGroup                                   # Plug in the security group.
-      BlockDeviceMappings:
-      - DeviceName: "/dev/xvdf"
-        Ebs:
-          VolumeSize: '25'
-          VolumeType: gp2
+      SecurityGroups: [ !Ref WebServerSecurityGroup ]                 # Plug in the security group.
       UserData:      #  This code installs 1) CodeDeploy agent 2) a demo Java/Spring app.  Then it signals completion:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum -y update
-          yum install -y ruby wget 
+          yum install -y ruby wget java
           cd /home/ec2-user
           wget https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install
           chmod +x ./install
           ./install auto
           service codedeploy-agent start
-          wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/zero-downtime-blue.war -o app.jar
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
+          java -jar app.war --server.port=80        
+
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier:
-      - Ref: SubnetId
+      VPCZoneIdentifier: !Ref Subnets
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
       MaxSize: 4
       DesiredCapacity: !Ref DesiredCapacity       # Parameter at top limits this to max of 4
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
-      LoadBalancerNames: 
-      - Ref: AppLoadBalancer
+      TargetGroupARNs:  [ !Ref ALBTargetGroup ]
       Tags:
       - Key: Name
         Value: WebServer
@@ -135,27 +141,42 @@ Resources:
         Count: !Ref DesiredCapacity
         Timeout: PT5M
         
-  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
-  AppLoadBalancer:
-    Type: AWS::ElasticLoadBalancing::LoadBalancer
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Listeners:
-      - LoadBalancerPort: '80'
-        InstancePort: '80'
-        Protocol: HTTP
-      SecurityGroups:
-      - Ref: WebServerSecurityGroup
-      Subnets:
-      - Ref: SubnetId
-      HealthCheck:
-        Target: HTTP:80/
-        HealthyThreshold: '3'
-        UnhealthyThreshold: '5'
-        Interval: '10'
-        Timeout: '5'
-        
+      Name: ALB
+      Scheme: internet-facing
+      Subnets: !Ref Subnets
+      SecurityGroups: [!Ref WebServerSecurityGroup ]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: App
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2        
+
+
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !GetAtt AppLoadBalancer.DNSName
+    Value: !Join ['', ["http://", !GetAtt [ALB, DNSName]]]

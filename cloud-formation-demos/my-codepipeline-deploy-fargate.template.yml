@@ -4,13 +4,14 @@ AWSTemplateFormatVersion: 2010-09-09
 # 1) grabs code from GitHub on change 
 # 2) packages and tests using paralell actions 
 # 3) Docker-izes it, and stores in ECR
-# 4) deploy to an ECS Cluster
+# 4) deploy to a FARGATE ECS Cluster
 
 # TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
 # The default value you see here will work only if you prepend it with a '0'.
 # You will also need a working ECS Cluster.  Create one with "base-ecs-cluster.template.yml" if you need one.
 # You will also need an ECR registry containing the image you want to deploy, at least the initial copy of it.  This will be updated by the pipeline.
+#  This article helped immensely:  https://www.prodops.io/blog/deploying-fargate-services-using-cloudformation
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
@@ -26,11 +27,14 @@ Metadata:
         Parameters:
           - DockerRepository
           - ECSCluster
+          - ClusterType
           - ContainerName
       - Label:
           default: Other
         Parameters:
           - CodePipelineBucketPrefix
+          - VpcId
+          - SubnetIds
 
 Parameters:
   GitHubRepository:
@@ -58,11 +62,30 @@ Parameters:
     Type: String
     Default:  spring-cloud-aws-environment-demo
 
+  ClusterType:
+    Description:  Do you want to deploy to a standard ECS cluster or Fargate cluster?  Fargate is easier, but more expensive.
+    Type: String
+    AllowedValues:
+      - ECS
+      - Fargate
+
   CodePipelineBucketPrefix:
     Description: CodePipeline needs a utility bucket for its internal use.  Specify the prefix for the bucket name.  You'll probably need to clean this out later to delete the stack.
     Type: String
     Default: codepipeline-kk-
 
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select the VPC that you want to access the running containers through.
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select 1-2 public subnets in your VPC where you want the resulting containers to be accessible from.
+
+
+Conditions:
+  DeployToFargate:
+    !Equals [ !Ref ClusterType, Fargate ]
 
 Resources:
 
@@ -79,32 +102,25 @@ Resources:
           Principal:
             Service: codebuild.amazonaws.com
           Action: sts:AssumeRole
-
-  # This Policy is attached to the CodeBuildRole.
-  # CodeBuild is get and put on S3, CodeBuild, and CloudWatch Logs.  Allowed to login and push to ECR.  This all could probably be tightened quite a bit.
-  CodeBuildPolicy:
-    Type: AWS::IAM::Policy
-    Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
-      PolicyDocument: 
-        Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Action: 
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-            - s3:putObject
-            - s3:getObject
-            - codebuild:*
-            - ecr:Get*                    # For Docker builds pushing to ECR, one will need to GetAuthorizationToken
-            - ecr:InitiateLayerUpload     # For Docker push to ECR
-            - ecr:Upload*                 # For Docker push to ECR
-            - ecr:Complete*               # For Docker push to ECR
-            - ecr:*                       # I'm getting weird results on Docker push, and this fixed it.  TODO - Figure out what ECR permissions are needed.
-          Resource: "*"
-      Roles: 
-        -  !Ref CodeBuildRole
+      Policies:
+      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:putObject
+              - s3:getObject
+              - codebuild:*
+              - ecr:Get*                    # For Docker builds pushing to ECR, one will need to GetAuthorizationToken
+              - ecr:InitiateLayerUpload     # For Docker push to ECR
+              - ecr:Upload*                 # For Docker push to ECR
+              - ecr:Complete*               # For Docker push to ECR
+              - ecr:*                       # I'm getting weird results on Docker push, and this fixed it.  TODO - Figure out what ECR permissions are needed.
+            Resource: "*"
 
   # This Role allows CodePipeline to make certain things on our behalf:
   # See the policy for the interesting stuff:
@@ -119,35 +135,53 @@ Resources:
           Principal:
             Service: codepipeline.amazonaws.com
           Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]]
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
+            # codebuild probably does not need to be wide open like this, and the logs should only need
+            # to create the stream, group, and log events.
+            # Ultimately I ran into too many permission errors with little information available in the documentation to debug, so I had to use "*".
+            Action: 
+              # - logs:CreateLogGroup
+              # - logs:CreateLogStream
+              # - logs:PutLogEvents
+              # - s3:putObject
+              # - s3:getObject
+              # - codebuild:*
+              # - elasticbeanstalk:*
+              - "*"                             #  TODO - FIND OUT WHAT CODE PIPELINE permissions are needed.
+            Resource: 
+              - "*"
 
-  # This Policy is attached to the CodePipelineRole.
-  # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
-  CodePipelinePolicy:
-    Type: AWS::IAM::Policy
+  # When running in Fargate, the task definition MUST have a role
+  # providing "to support log driver awslogs", whatever that is.
+  # It also needs permission to pull images from ECR:
+  EcsTaskRole:
+    Type: AWS::IAM::Role
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]]
-      PolicyDocument: 
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-EcsTaskRole" ]]
+      AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
           Effect: Allow
-          # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
-          # codebuild probably does not need to be wide open like this, and the logs should only need
-          # to create the stream, group, and log events.
-          # Ultimately I ran into too many permission errors with little information available in the documentation to debug, so I had to use "*".
-          Action: 
-            # - logs:CreateLogGroup
-            # - logs:CreateLogStream
-            # - logs:PutLogEvents
-            # - s3:putObject
-            # - s3:getObject
-            # - codebuild:*
-            # - elasticbeanstalk:*
-            - "*"                             #  TODO - FIND OUT WHAT CODE PIPELINE permissions are needed.
-          Resource: 
-            - "*"
-      Roles: 
-        -  !Ref CodePipelineRole
-
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-EcsTaskPolicy" ]]
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:*    #  Not sure which permissions are needed for some kind of logging activity.
+              - ecr:*     #  Not sure which permissions are needed to pull an ECR image.
+            Resource: 
+              - "*"
 
   # General Bucket where CodePipeline will store things:
   # Warning: This will need to be deleted manually before you can delete the stack.
@@ -155,6 +189,24 @@ Resources:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+
+  # Security Group for the ECS containers when running in Fargate mode:
+  EcsContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
+      GroupDescription: ECS Security Group
+      VpcId: !Ref VpcId
+      #  Inbound rules for HTTP on 80 and 8080:
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8080'
+        CidrIp: 0.0.0.0/0
 
 
   # This CodeBuild project runs packaging, tests are separate.
@@ -366,32 +418,42 @@ Resources:
   #  2. However it won't be present until the CodePipeline puts it there.  
   #  3. However the CodePipeline cannot be complete until the ECS deploy step is complete, 
   #  4. and it depends on this ECSService.  
-  #  Ugh.  My solution is to 'seed' the docker image with one created manually.
+  #  Ugh.  My solution is to supply the ECR with a pre-seeded image first before the whole thing is created.
   ECSService:
     Type: AWS::ECS::Service
     Properties:
       ServiceName: !Join ['', [!Ref 'AWS::StackName', "-SpringEnvironmentDemoECSService" ]]
+      LaunchType: !If [DeployToFargate, FARGATE, EC2]   # Fargate cluster is much less fuss to manage, but much more expensive.
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
-      DeploymentConfiguration:
+      DeploymentConfiguration:    # Enable live updating by allowing a new container to run while the old is still running:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
-      LaunchType: EC2  # or FARGATE
+      NetworkConfiguration: 
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref EcsContainerSecurityGroup
+          Subnets: !Ref SubnetIds
+
 
   # This TaskDefinition defines the image(s) we want to run on ECS
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoTaskDefinition]]
+      ExecutionRoleArn: !GetAtt EcsTaskRole.Arn
+      Cpu: 256                            # Required in Fargate, optional otherwise.
+      Memory: 512                             # Required in Fargate, optional otherwise.
+      NetworkMode: awsvpc                            # Required for Fargate, can default otherwise.
+      RequiresCompatibilities:  
+         - !If [DeployToFargate, FARGATE, EC2]  # Must be Fargate on Fargate
       ContainerDefinitions:
-
         # We want to run a little Spring Boot app named "environment-demo",
         # but since the DockerImage is an input parameter it could be anything.  
       - Name: !Ref ContainerName
         Image: !Sub ${DockerRepository}
-        Cpu: 10
-        Memory: 256
         Essential: true
         LogConfiguration:
           LogDriver: awslogs
@@ -401,7 +463,7 @@ Resources:
             awslogs-stream-prefix: SpringEnvironmentDemo
         PortMappings:
         - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
-          HostPort: 80            # This means the host must have port 80 available, which influences if you can update a running container.
+          HostPort: !If [DeployToFargate, 8080, 80]  # Fargate doesn't do port mapping, values must match.  Otherwise this means the host must have port 80 available, which influences if you can update a running container.
 
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:

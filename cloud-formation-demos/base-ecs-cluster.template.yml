@@ -49,27 +49,40 @@ Parameters:
     Description: Select 1-2 subnets in your selected VPC, private preferred if NATting is setup.  ECS cluster nodes will run here.
 
 Mappings:
-  #  These are variants of the Amazon Linux AMI optimized for ECS:
+  #  These are variants of the Amazon Linux AMI optimized for ECS, version 1.20 at the moment:
   AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-d61027ad
     us-east-2:
-      AMI: ami-bb8eaede
-    us-west-1:
-      AMI: ami-514e6431
-    us-west-2:
-      AMI: ami-c6f81abe
-    eu-west-1:
-      AMI: ami-bd7e8dc4
-    eu-central-1:
-      AMI: ami-f15ff69e
-    ap-northeast-1:
-      AMI: ami-ab5ea9cd
-    ap-southeast-1:
-      AMI: ami-ae0b91cd
-    ap-southeast-2:
-      AMI: ami-5781be34
-
+      AMI: ami-0e65e665ff5f3fc5f
+    us-east-1:   
+      AMI: ami-112e366e
+    us-west-2:   
+      AMI: ami-a1f8dfd9
+    us-west-1:   
+      AMI: ami-dd0de2be
+    eu-west-2:   
+      AMI: ami-c3ea1fa4
+    eu-west-3:   
+      AMI: ami-0e4185127a627bbac
+    eu-west-1:   
+      AMI: ami-0612d1ef7f8e72c06
+    eu-central-1:   
+      AMI: ami-c7e9e72c
+    ap-northeast-2:   
+      AMI: ami-02b0706448bd6fb5e
+    ap-northeast-1:   
+      AMI: ami-256c15c8
+    ap-southeast-2:   
+      AMI: ami-df49e9bd
+    ap-southeast-1:   
+      AMI: ami-0e1566e9c8eb85002
+    ca-central-1:   
+      AMI: ami-cf60edab
+    ap-south-1:   
+      AMI: ami-0c814df738f3c9fd5
+    sa-east-1:   
+      AMI: ami-085384d0e5fd5ae0a
+    us-gov-west-1:   
+      AMI: ami-8b8814ea
 
 Resources:
 
@@ -168,25 +181,26 @@ Resources:
     Properties:
       GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
       GroupDescription: ECS Security Group
-      VpcId: !Ref 'VpcId'
+      VpcId: !Ref VpcId
 
-  #  Inbound rules for HTTP on 80 plus anything above 31000:
+  #  Inbound rules for HTTP on 80.  31000 - 61000 is for dynamic port assignment in ECS:
   EcsSecurityGroupHTTPinbound:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref 'EcsSecurityGroup'
+      GroupId: !Ref EcsSecurityGroup
       IpProtocol: tcp
       FromPort: '80'
       ToPort: '80'
-      CidrIp: 0.0.0.0/0
+      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
   EcsSecurityGroupALBports:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref 'EcsSecurityGroup'
+      GroupId: !Ref EcsSecurityGroup
       IpProtocol: tcp
       FromPort: '31000'
       ToPort: '61000'
-      SourceSecurityGroupId: !Ref 'EcsSecurityGroup'
+      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
+
 
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:

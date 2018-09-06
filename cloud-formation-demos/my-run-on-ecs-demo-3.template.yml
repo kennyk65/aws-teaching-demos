@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # This is a  codepipeline demo that 
 # 1) grabs code from GitHub on change 
-# 2) packages and tests using paralell actions 
+# 2) packages and tests using parallel actions 
 # 3) Docker-izes it, and stores in ECR
 # 4) deploy to an ECS Cluster
 
@@ -10,7 +10,9 @@ AWSTemplateFormatVersion: 2010-09-09
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
 # The default value you see here will work only if you prepend it with a '0'.
 # You will also need a working ECS Cluster.  Create one with "base-ecs-cluster.template.yml" if you need one.
-# You will also need an ECR registry containing the image you want to deploy, at least the initial copy of it.  This will be updated by the pipeline.
+# You will also need an initial deployment of a service in that cluster.  This template is designed to update it, not initially create it.
+# TODO: At present it deploys, then deploys again.  Not sure why.
+
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
@@ -21,11 +23,12 @@ Metadata:
         Parameters:
           - GitHubRepository
           - GitHubOAuthToken
+          - DockerRepository
       - Label:
           default: Target ECS Cluster
         Parameters:
-          - DockerRepository
           - ECSCluster
+          - ECSService
           - ContainerName
       - Label:
           default: Other
@@ -48,6 +51,10 @@ Parameters:
     Type: String    
     Default: default
 
+  ECSService:
+    Description:  The name of the existing ECS service to be updated.  
+    Type: String
+    
   DockerRepository:
     Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
     Type: String
@@ -358,57 +365,7 @@ Resources:
                 Version: 1                  # Don't know the purpose of 'version'
               Configuration:
                 ClusterName:  !Ref ECSCluster  # Input parameter       
-                ServiceName:  !Ref ECSService
- 
-  # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers.
-  # WARNING (TODO): There is a nasty circular reference here:  
-  #  1. This ECSService cannot start if the Docker image referenced in the Task Definition is not present.  
-  #  2. However it won't be present until the CodePipeline puts it there.  
-  #  3. However the CodePipeline cannot be complete until the ECS deploy step is complete, 
-  #  4. and it depends on this ECSService.  
-  #  Ugh.  My solution is to 'seed' the docker image with one created manually.
-  ECSService:
-    Type: AWS::ECS::Service
-    Properties:
-      ServiceName: !Join ['', [!Ref 'AWS::StackName', "-SpringEnvironmentDemoECSService" ]]
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 1
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
-      LaunchType: EC2  # or FARGATE
-
-  # This TaskDefinition defines the image(s) we want to run on ECS
-  TaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoTaskDefinition]]
-      ContainerDefinitions:
-
-        # We want to run a little Spring Boot app named "environment-demo",
-        # but since the DockerImage is an input parameter it could be anything.  
-      - Name: !Ref ContainerName
-        Image: !Sub ${DockerRepository}
-        Cpu: 10
-        Memory: 256
-        Essential: true
-        LogConfiguration:
-          LogDriver: awslogs
-          Options:
-            awslogs-group: !Ref CloudwatchLogsGroup
-            awslogs-region: !Ref AWS::Region
-            awslogs-stream-prefix: SpringEnvironmentDemo
-        PortMappings:
-        - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
-          HostPort: 80            # This means the host must have port 80 available, which influences if you can update a running container.
-
-  # This LogsGroup will be useful when several containers emit output:
-  CloudwatchLogsGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoECSLogGroup]]
-      RetentionInDays: 14
+                ServiceName:  !Ref ECSService  # Input parameter 
 
 Outputs:
   CodeBuild:
