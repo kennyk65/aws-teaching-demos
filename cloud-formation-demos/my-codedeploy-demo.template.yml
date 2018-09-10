@@ -110,12 +110,15 @@ Resources:
           #!/bin/bash
           yum -y update
           yum install -y ruby wget java
+          # Install CodeDeploy agent:
           cd /home/ec2-user
           wget https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install
           chmod +x ./install
           ./install auto
           service codedeploy-agent start
-          wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/zero-downtime-blue.war -o app.jar
+          # Download and start Java/Spring app, signal completion:
+          wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/zero-downtime-blue.war 
+          mv zero-downtime-blue.war app.war
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
           java -jar app.war --server.port=80        
 
@@ -174,6 +177,55 @@ Resources:
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2        
 
+  # CodeDeploy application:
+  MyDemoCodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: MyDemoCodeDeployApplication
+      ComputePlatform: Server
+
+  MyDemoCodeDeployConfig:
+    Type: AWS::CodeDeploy::DeploymentConfig
+    Properties:
+      MinimumHealthyHosts:
+        Type: FLEET_PERCENT
+        Value: 50
+
+  MyDemoCodeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref MyDemoCodeDeployApplication
+      AutoScalingGroups: [ !Ref AppAutoScalingGroup ]
+      #Deployment:                                        # Ironically, giving a deployment group a name makes it so you can't update it.  Go figure.
+      #  Deployment
+      DeploymentConfigName: !Ref MyDemoCodeDeployConfig
+      DeploymentStyle:                                    # Let's do a rolling deploy behind a load balancer.
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+        DeploymentType: IN_PLACE
+      #Ec2TagFilters:                                     # We can identify instance by tags, but not needed for our demo.
+      #  - Ec2TagFilters
+      LoadBalancerInfo: 
+        TargetGroupInfoList: 
+        - Name: !GetAtt ALBTargetGroup.TargetGroupName
+      ServiceRoleArn: !GetAtt CodeDeployRole.Arn
+
+
+  # This role allows CodeDeploy to mess with Load Balancers and ASGs on our behalf:
+  CodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeDeployRole" ]]
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: codedeploy.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+
+# TODO: Need to come up with an example of a Deployment object that contains info on how to deploy the new green version.
+# May be on a file somewhere like in GitHub.  If we use the Deployment tag in the DeploymentGroup, it gets automatically run, which isn't a good demo.
 
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:
