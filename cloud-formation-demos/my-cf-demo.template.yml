@@ -316,7 +316,7 @@ Resources:
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
           java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
 
-AppAutoScalingGroup:
+  AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: 
     - NatInstanceWaitCondition
@@ -374,4 +374,4 @@ Outputs:
     Value: !Ref AppAutoScalingGroup
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !GetAtt AppLoadBalancer.DNSName
+    Value: !Join ['', ["http://", !GetAtt AppLoadBalancer.DNSName ]]
