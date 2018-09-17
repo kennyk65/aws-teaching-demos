@@ -42,25 +42,25 @@ Resources:
   # This Role allows CodeBuild to do certain things on our behalf.
   # See the policy for the interesting stuff:
   CodeBuildRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodeBuildRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codebuild.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodeBuildRole.
   # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodeBuildPolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodeBuildPolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -77,25 +77,25 @@ Resources:
   # This Role allows CodePipeline to make certain things on our behalf:
   # See the policy for the interesting stuff:
   CodePipelineRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodePipelineRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelineRole" ]]
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codepipeline.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodePipelineRole.
   # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodePipelinePolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodePipelinePolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]] 
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
@@ -119,9 +119,9 @@ Resources:
 
   # This Role is given to the ElasticBeanstalk environment:
   BeanstalkServiceRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkServiceRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServiceRole" ]]
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -134,7 +134,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkServicePolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServicePolicy" ]]
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -168,7 +168,7 @@ Resources:
   MyBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyBuild
+      Name: !Join ['', [!Ref 'AWS::StackName', "-MyBuild" ]]
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -206,7 +206,7 @@ Resources:
   MyTests:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyTests
+      Name: !Join ['', [!Ref 'AWS::StackName', "-MyTests" ]]  
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -232,7 +232,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: MyPipe
+      Name: !Join ['', [!Ref 'AWS::StackName', "-MyPipe" ]]
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
@@ -325,7 +325,7 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: TestApplication
+      ApplicationName: !Join ['', [!Ref 'AWS::StackName', "-TestApplication" ]] 
       Description: Quick live-test environment for the app.
 
   MyBeanstalkEnvironment:
@@ -344,13 +344,6 @@ Resources:
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !Ref BeanstalkServiceRole
-
-  # MyBeanstalkInstanceProfile:
-  #   Type: AWS::IAM::InstanceProfile
-  #   Properties: 
-  #     Roles:
-  #     - !Ref BeanstalkAppRole 
-  #     InstanceProfileName: MyBeanstalkInstanceProfile
 
   SnsTopic:
     Type: AWS::SNS::Topic
