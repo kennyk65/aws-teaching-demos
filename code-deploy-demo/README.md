@@ -1,9 +1,11 @@
-# 
-Simple Demonstration of AWS CodeDeploy.
-
+# Simple Demonstration of AWS CodeDeploy.
+---
 To run this demo, do the following (tested in us-west-2, adjust for other regions):
 
-1.  Run the "my-codedeploy-demo.template.yml" Cloud Formation template.  It establishes a basic web environment with a few instances running behind a load balancer.  An 'old' version of the app is deployed just to have a starting point, and to keep the load balancer health check from continually rejecting the running EC2 instances.
+1.  Run the "my-codedeploy-demo.template.yml" Cloud Formation template.  
+  * It establishes a basic web environment with a few instances running in an AutoScaling group behind a load balancer.  
+  * An 'old' version of the app is deployed just to have a starting point, and to keep the load balancer health check from continually rejecting the running EC2 instances.
+  * A deployment group is setup which points to the AutoScaling Group
 
 2.  Run this command (no way to do this from CloudFormation or Console) from the same folder as this readme:
 
