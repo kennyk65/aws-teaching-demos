@@ -80,7 +80,7 @@ Resources:
       VpcId: !Ref VpcId
       Tags:
       - Key: Name
-        Value: WebServerSecurityGroup
+        Value: !Join ['', [!Ref 'AWS::StackName', "-WebServerSecurityGroup" ]] 
       - Key: ResourceGroup
         Value: CloudFormationResource
       SecurityGroupIngress:
@@ -153,7 +153,7 @@ Resources:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: ALB
+      Name: !Join ['', [!Ref 'AWS::StackName', "-Alb" ]]
       Scheme: internet-facing
       Subnets: !Ref Subnets
       SecurityGroups: [!Ref WebServerSecurityGroup ]
@@ -171,7 +171,7 @@ Resources:
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: App
+      Name: !Join ['', [!Ref 'AWS::StackName', "-AlbTargetGroup" ]]
       VpcId: !Ref VpcId
       Port: 80
       Protocol: HTTP
@@ -180,7 +180,11 @@ Resources:
       HealthCheckIntervalSeconds: 10
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2        
+      UnhealthyThresholdCount: 2 
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds   # Let's try to speed this thing up a bit.
+        Value: 10
+
 
   # Attach A role to the EC2 instance to allow the CodeDeploy agent to pull stuff from S3.
   InstanceProfile:
@@ -207,16 +211,8 @@ Resources:
   MyDemoCodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: MyDemoCodeDeployApplication
+      ApplicationName: MyDemoCodeDeployApplication  
       ComputePlatform: Server
-
-  # TODO: REPLACE THIS WITH A BUILT-IN DEPLOYMENT CONFIGURATION LIKE CodeDeployDefault.HalfAtATime
-  # MyDemoCodeDeployConfig:
-  #   Type: AWS::CodeDeploy::DeploymentConfig
-  #   Properties:
-  #     MinimumHealthyHosts:
-  #       Type: FLEET_PERCENT
-  #       Value: 50
 
   MyDemoCodeDeployDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
