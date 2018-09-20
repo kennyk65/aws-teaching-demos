@@ -1,5 +1,5 @@
 version: 0.0
-#  This is a CodeDeploy AppSpec.yml file.  
+#  This is a CodeDeploy AppSpec.yml file.
 #  It tells CodeDeploy how to install, start, stop, and update this application.
 os: linux
 files:
