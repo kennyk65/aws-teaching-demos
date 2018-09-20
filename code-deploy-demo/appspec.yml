@@ -1,0 +1,25 @@
+version: 0.0
+#  This is a CodeDeploy AppSpec.yml file.  
+#  It tells CodeDeploy how to install, start, stop, and update this application.
+os: linux
+files:
+  - source: /*.war
+    destination: /opt/bluegreen
+hooks:
+  BeforeInstall:
+    - location: scripts/before_install.sh
+      timeout: 300
+      runas: root
+  # AfterInstall:
+  #   - location: scripts/after_install.sh
+  #     timeout: 300
+  #     runas: root
+  ApplicationStart:
+    - location: scripts/application_start.sh
+      timeout: 300
+      runas: root
+  ApplicationStop:
+    - location: scripts/application_stop.sh
+      timeout: 300
+      runas: root
+
