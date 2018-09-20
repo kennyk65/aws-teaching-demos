@@ -3,8 +3,8 @@ version: 0.0
 #  It tells CodeDeploy how to install, start, stop, and update this application.
 os: linux
 files:
-  - source: /*.war
-    destination: /opt/bluegreen
+  - source: /*.jar
+    destination: /opt/app
 hooks:
   BeforeInstall:
     - location: scripts/before_install.sh

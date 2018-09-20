@@ -123,6 +123,7 @@ Resources:
           # Run Java Spring app as service:
           ln -s /opt/app/app.jar /etc/init.d/demoapp
           service demoapp start
+          # Signal CloudFormation that we are complete:
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
           # TODO PUT THE CLOUDWATCH LOGS AGENT ON HERE TO MAKE DEBUGGING OF DEPLOYMENTS EASIER.
 
@@ -140,7 +141,7 @@ Resources:
       Tags:
       - Key: Name
         Value: WebServer
-        PropagateAtLaunch: 'true'
+        PropagateAtLaunch: true
     # This creation policy is saying, 'this resource is not really created until you get 1 signal back'.
     # Best to make the number of signals match the minimum or desired capacity of the ASG.
     CreationPolicy:
@@ -210,12 +211,12 @@ Resources:
       ComputePlatform: Server
 
   # TODO: REPLACE THIS WITH A BUILT-IN DEPLOYMENT CONFIGURATION LIKE CodeDeployDefault.HalfAtATime
-  MyDemoCodeDeployConfig:
-    Type: AWS::CodeDeploy::DeploymentConfig
-    Properties:
-      MinimumHealthyHosts:
-        Type: FLEET_PERCENT
-        Value: 50
+  # MyDemoCodeDeployConfig:
+  #   Type: AWS::CodeDeploy::DeploymentConfig
+  #   Properties:
+  #     MinimumHealthyHosts:
+  #       Type: FLEET_PERCENT
+  #       Value: 50
 
   MyDemoCodeDeployDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
@@ -224,7 +225,7 @@ Resources:
       AutoScalingGroups: [ !Ref AppAutoScalingGroup ]
       #Deployment:                                        # Ironically, giving a deployment group a name makes it so you can't update it.  Go figure.
       #  Deployment
-      DeploymentConfigName: !Ref MyDemoCodeDeployConfig
+      DeploymentConfigName: CodeDeployDefault.OneAtATime  # CodeDeployDefault.HalfAtATime
       DeploymentStyle:                                    # Let's do a rolling deploy behind a load balancer.
         DeploymentOption: WITH_TRAFFIC_CONTROL
         DeploymentType: IN_PLACE
