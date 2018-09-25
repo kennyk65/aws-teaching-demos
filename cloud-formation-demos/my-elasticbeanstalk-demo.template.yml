@@ -25,9 +25,9 @@ Resources:
 
   # This Role is given to the ElasticBeanstalk environment:
   BeanstalkServiceRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkServiceRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServiceRole" ]]  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -64,7 +64,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkAppRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkAppRole" ]]  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -117,7 +117,7 @@ Resources:
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
       VersionLabel: !Ref MyBeanstalkVersion
-      EnvironmentName: TestEnvironment
+      EnvironmentName: DemoEnvironment
       CNAMEPrefix: !Ref CNAMEPrefix
       SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
       OptionSettings: 
@@ -138,21 +138,11 @@ Resources:
 
   # Attaches the role to the instance:
   MyBeanstalkInstanceProfile:
-    Type: "AWS::IAM::InstanceProfile"
+    Type: AWS::IAM::InstanceProfile
     Properties: 
       Roles:
       - !Ref BeanstalkAppRole 
-      InstanceProfileName: MyBeanstalkInstanceProfile
 
 Outputs:
   URL:
-    Value: !GetAtt MyBeanstalkEnvironment.EndpointURL
-#   IamRole:
-#     Value: !Ref CodeBuildRole  
-
-
-
-
-
-
-
+    Value: !Join ['', ["http://", !GetAtt MyBeanstalkEnvironment.EndpointURL ]] 

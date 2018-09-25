@@ -32,16 +32,16 @@ Resources:
 
   # This Role is given to the ElasticBeanstalk environment:
   BeanstalkServiceRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkRollingServiceRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServiceRole" ]]  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
           Effect: Allow
           Principal:
-            Service: "elasticbeanstalk.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: elasticbeanstalk.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the BeanstalkServiceRole.
   BeanstalkServicePolicy:
@@ -71,7 +71,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkRollingAppRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkAppRole" ]]  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -167,12 +167,11 @@ Resources:
 
   # Attaches the role to the instance:
   MyBeanstalkInstanceProfile:
-    Type: "AWS::IAM::InstanceProfile"
+    Type: AWS::IAM::InstanceProfile
     Properties: 
-      InstanceProfileName: RollingBeanstalkInstanceProfile
       Roles:
       - !Ref BeanstalkAppRole 
 
 Outputs:
   ProductionURL:
-    Value: !GetAtt EBEnvironment.EndpointURL
+    Value: !Join ['', ["http://", !GetAtt EBEnvironment.EndpointURL ]] 
