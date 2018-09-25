@@ -1,0 +1,124 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Just run an EC2 with in a Default VPC/subnet with a sample program on it.
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - PrivateKeyName
+
+Parameters:
+  PrivateKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the instance, if needed.
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
+
+Mappings:
+  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
+  AmazonLinuxAMI:
+    us-east-1: 
+      AMI: ami-04681a1dbd79675a5    # Virginia
+    us-east-2:
+      AMI: ami-0cf31d971a3ca20d6    # Ohio
+    us-west-1:
+      AMI: ami-0782017a917e973e7    # N California
+    us-west-2:
+      AMI: ami-6cd6f714             # Oregon
+    ap-south-1:
+      AMI: ami-00b6a8a2bd28daf19    # Mumbai
+    ap-northeast-2:
+      AMI: ami-012566705322e9a8e    # Seoul
+    ap-southeast-1:
+      AMI: ami-01da99628f381e50a    # Singapore
+    ap-southeast-2:
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
+    ap-northeast-1:
+      AMI: ami-08847abae18baa040    # Tokyo
+    ca-central-1:
+      AMI: ami-ce1b96aa             # Montreal
+    eu-central-1:
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+    eu-west-1:
+      AMI: ami-0bdb1d6c15a40392c    # Ireland
+    eu-west-2:
+      AMI: ami-e1768386             # London
+    eu-west-3:
+      AMI: ami-06340c8c12baa6a09    # Paris
+    sa-east-1:
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
+
+
+Resources:
+
+  # Security Group for the web server.  Allow HTTP and SSH from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+
+  # web server:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      InstanceType: t2.micro                                          # Any instance type will do
+      KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true                                # We will need a public IP address
+        SubnetId: !Ref PublicSubnet                                   # We should sit in a public subnet.
+        GroupSet: [ !Ref WebServerSecurityGroup ]                     # Attach the security group
+      UserData:      #  This code installs a demo Java/Spring app.  Then it signals completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update the OS and get Java
+          yum -y update
+          yum install -y wget java
+          # Download and start Java/Spring app:
+          mkdir /opt/app
+          cd /opt/app
+          wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/spring-cloud-aws-environment-demo-1.war 
+          mv spring-cloud-aws-environment-demo-1.war  app.war
+          chmod +x app.war
+          # java -jar app.war
+          # Run Java Spring app as service:
+          ln -s /opt/app/app.war /etc/init.d/demoapp
+          service demoapp start
+          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT3M
+        
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  WebServerIpAddress:
+    Description: IP Address of the web server
+    Value: !Join ['', ["http://", !GetAtt WebServer.PublicIp ]]
