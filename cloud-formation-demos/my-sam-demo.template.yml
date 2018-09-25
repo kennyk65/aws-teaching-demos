@@ -41,11 +41,11 @@ Resources:
   MyLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: MyLambda
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-HelloWorldLambda' ]] 
       Description: Example Lambda from CloudFormation
       MemorySize: 128
       Timeout: 4
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: !Ref Runtime
       Handler: !Ref LambdaHandler
       CodeUri: 
@@ -53,11 +53,13 @@ Resources:
         Key: !Ref LambdaCodeKey
       # Events section defines what triggers the Lambda
       Events:
-        # This will define an API Gateway resource that will call our function on a GET to /.  
+        # This will define an API Gateway resource that will call our function on a GET to /hello.
+        # The SAM stuff will transform this into all of the required API gateway components.
+        # Good thing too because they are almost impossible to define using regular cloud formation.
         MyApi:
           Type: Api
           Properties:
-            Path: /
+            Path: /hello
             Method: GET
 
 
@@ -65,23 +67,23 @@ Resources:
   LambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BasicLambdaRole  
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BasicLambdaRole" ]]
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Principal:
-            Service: "lambda.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the LambdaFunctionRole.
   # Basic permissions for CloudWatch Logs, expand as needed.
   LambdaFunctionPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: LambdaFunctionPolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-LambdaFunctionPolicy" ]]
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -107,4 +109,5 @@ Outputs:
         - !Ref 'AWS::Region'
         - '.amazonaws.com/'
         - !Ref ServerlessRestApiProdStage 
+        - '/hello'
     Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
