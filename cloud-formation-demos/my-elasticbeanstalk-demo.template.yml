@@ -40,7 +40,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkServicePolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServicePolicy" ]]
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -77,7 +77,7 @@ Resources:
   BeanstalkAppPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkAppPolicy
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkAppPolicy" ]]
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
