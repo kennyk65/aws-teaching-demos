@@ -6,28 +6,29 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 
 Mappings:
-  #  This is just the Amazon Linux AMI:
+
+  #  This is the Amazon Linux 2 AMI:
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-1ecae776
+      AMI: ami-04681a1dbd79675a5    # N Virginia
     us-east-2:
-      AMI: ami-15e9c770      
+      AMI: ami-0cf31d971a3ca20d6    # Ohio      
     us-west-1:
-      AMI: ami-d114f295
+      AMI: ami-0782017a917e973e7    # N California
     us-west-2:
-      AMI: ami-e7527ed7
+      AMI: ami-6cd6f714             # Oregon
     eu-west-1:
-      AMI: ami-a10897d6
+      AMI: ami-0bdb1d6c15a40392c    # Ireland
     eu-central-1:
-      AMI: ami-a8221fb5
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
     sa-east-1:
-      AMI: ami-b52890a8
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
     ap-southeast-1:
-      AMI: ami-68d8e93a
+      AMI: ami-01da99628f381e50a    # Singaport
     ap-southeast-2:
-      AMI: ami-fd9cecc7
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
     ap-northeast-1:
-      AMI: ami-cbf90ecb
+      AMI: ami-08847abae18baa040    # Tokyo
 
 
 Resources:
@@ -141,8 +142,8 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           cd /tmp
-          sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-          sudo start amazon-ssm-agent
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          start amazon-ssm-agent
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
