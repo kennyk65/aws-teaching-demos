@@ -243,11 +243,6 @@ Resources:
       InstanceType: t2.micro          # Any instance type will do
       SecurityGroups:
       - !Ref WebServerSecurityGroup   # Plug in the security group.
-      BlockDeviceMappings:
-      - DeviceName: "/dev/xvdf"
-        Ebs:
-          VolumeSize: '25'
-          VolumeType: gp2
       UserData:      #  This code Installs the "blue" version of our code:
         Fn::Base64: !Sub |
           #!/bin/bash
