@@ -1,0 +1,13 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+# This is an example of an extremely minimal SAM function.
+Resources:
+  TestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://kk-uploads-oregon/lambda-helloworld.js.zip
+      Handler: lambda-helloworld.justatest
+      Runtime: nodejs6.10
+      Environment:
+        Variables: 
+          S3_BUCKET: bucket-name

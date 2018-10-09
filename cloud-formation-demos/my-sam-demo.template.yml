@@ -19,12 +19,12 @@ Parameters:
   LambdaHandler:
     Type: String
     Default: lambda-helloworld.justatest
-    Description: Handler of your Lambda function.  Usually something like "index.handler".
+    Description: Handler of your Lambda function.  Usually something like "index.handler", depends on your code.
 
   Runtime:
     Type: String
     Default: nodejs6.10
-    Description: Runtime of your zipped lambda code.
+    Description: Runtime of your lambda code.
     AllowedValues: 
       - nodejs
       - nodejs4.3
@@ -46,8 +46,8 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: !Ref Runtime
       Handler: !Ref LambdaHandler
+      Runtime: !Ref Runtime
       CodeUri: 
         Bucket: !Ref LambdaCodeBucket
         Key: !Ref LambdaCodeKey
@@ -111,3 +111,17 @@ Outputs:
         - !Ref ServerlessRestApiProdStage 
         - '/hello'
     Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
+
+  ApiGatewayInManagementConsole:
+    Value: !Join
+      - ''
+      - - https://
+        - !Ref 'AWS::Region'
+        - '.console.aws.amazon.com/apigateway/home?region='
+        - !Ref 'AWS::Region'
+        - '#/apis/'
+        - !Ref ServerlessRestApi
+        - '/resources/'
+        - !Ref ServerlessRestApiProdStage 
+    Description: Handy link to the Management Console location where this API can be seen.
+    
