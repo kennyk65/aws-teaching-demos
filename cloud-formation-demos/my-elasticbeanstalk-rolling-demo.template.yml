@@ -2,13 +2,13 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # This CloudFormation template sets up a demonstration of a Rolling deployment.
 # It sets up one four-node ElasticBeanstalk "production" environment with two "versions" of the app.
-# The "v1-blue" version is the old version, presently deployed.  "v2-green" is the newer version.
-# The environment is configured to roll out updates 2 instances at a time.  Takes about 10 minutes to roll out.
+# The "v1-old" version is the old version, presently deployed.  "v2-new" is the newer version.
+# The environment is configured to roll out updates 2 instances at a time.  Takes about 10 minutes to fully roll out.
 
 Parameters:
 
   Prefix:
-    Description: Unique prefix of the environment
+    Description: Unique prefix of the environment.  Becomes the prefix in the DNS name.
     Type: String
     Default: kk-rolling
 
@@ -17,15 +17,15 @@ Parameters:
     Type: String
     Default: kk-uploads-oregon
 
-  S3ObjectBlue:
+  S3ObjectOld:
     Description: Object key (optional prefix) of the existing OLD WAR file in the S3 bucket
     Type: String
-    Default: zero-downtime-blue.war
+    Default: zero-downtime-old.war
 
-  S3ObjectGreen:
+  S3ObjectNew:
     Description: Object key (optional prefix) of the existing NEW WAR file in the S3 bucket
     Type: String
-    Default: zero-downtime-green.war
+    Default: zero-downtime-new.war
 
 
 Resources:
@@ -106,39 +106,39 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: RollingDemo
+      ApplicationName: RollingDemo2
 
-  BlueVersion:
+  OldVersion:
     Type: AWS::ElasticBeanstalk::ApplicationVersion
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
-      Description: v1-blue
+      Description: v1-old
       SourceBundle:
         S3Bucket: !Ref S3Bucket
-        S3Key: !Ref S3ObjectBlue
+        S3Key: !Ref S3ObjectOld
 
-  GreenVersion:
+  NewVersion:
     Type: AWS::ElasticBeanstalk::ApplicationVersion
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
-      Description: v2-green
+      Description: v2-new
       SourceBundle:
         S3Bucket: !Ref S3Bucket
-        S3Key: !Ref S3ObjectGreen
+        S3Key: !Ref S3ObjectNew
 
   # How to run the code:
   EBEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
-      VersionLabel: !Ref BlueVersion
+      VersionLabel: !Ref OldVersion
       EnvironmentName: Rolling
       CNAMEPrefix: !Ref Prefix
-      SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.4 running Tomcat 8.5 Java 8"
       OptionSettings: 
-        - Namespace: aws:elasticbeanstalk:application
-          OptionName: "Application Healthcheck URL"
-          Value: /health
+        # - Namespace: aws:elasticbeanstalk:application
+        #   OptionName: "Application Healthcheck URL"
+        #   Value: /health
 
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
@@ -147,6 +147,10 @@ Resources:
         - Namespace: aws:autoscaling:launchconfiguration
           OptionName: IamInstanceProfile
           Value: !Ref MyBeanstalkInstanceProfile  # What is my EC2 instance allowed to do?
+
+       # - Namespace: aws:elasticbeanstalk:application:environment
+       #   OptionName: SERVER_PORT
+       #   Value: 5000                             # Tell Spring Boot to listen on 5000, because Ngnx will sit on 80 and forward to 5000.
 
         - Namespace: aws:autoscaling:asg
           OptionName: MinSize
