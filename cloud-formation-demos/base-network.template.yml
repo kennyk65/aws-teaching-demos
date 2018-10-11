@@ -86,7 +86,7 @@ Resources:
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
       Tags:
       - Key: Name
-        Value: Public Subnet A
+        Value: !Sub "${AWS::StackName}-Public-A"
   PublicSubnetB:
     Type: AWS::EC2::Subnet
     Condition: BuildPublicB
@@ -96,7 +96,7 @@ Resources:
       AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
       Tags:
       - Key: Name
-        Value: Public Subnet B
+        Value: !Sub "${AWS::StackName}-Public-B"
   PublicSubnetC:
     Type: AWS::EC2::Subnet
     Condition: BuildPublicC
@@ -106,7 +106,7 @@ Resources:
       AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
       Tags:
       - Key: Name
-        Value: Public Subnet C
+        Value: !Sub "${AWS::StackName}-Public-C"
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
     Condition: BuildPrivateSubnets
@@ -116,7 +116,7 @@ Resources:
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
       Tags:
       - Key: Name
-        Value: Private Subnet A
+        Value: !Sub "${AWS::StackName}-Private-A"
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
     Condition: BuildPrivateB
@@ -126,7 +126,7 @@ Resources:
       AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
       Tags:
       - Key: Name
-        Value: Private Subnet B
+        Value: !Sub "${AWS::StackName}-Private-B"
   PrivateSubnetC:
     Type: AWS::EC2::Subnet
     Condition: BuildPrivateC
@@ -136,7 +136,7 @@ Resources:
       AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
       Tags:
       - Key: Name
-        Value: Private Subnet C
+        Value: !Sub "${AWS::StackName}-Private-C"
         
   # Some route tables for our subnets:        
   PublicRouteTable:
