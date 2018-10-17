@@ -7,7 +7,7 @@ To run this demo, do the following (tested in us-west-2, adjust for other region
   * An 'old' version of the app is deployed just to have a starting point, and to keep the load balancer health check from continually rejecting the running EC2 instances.
   * A deployment group is setup which points to the AutoScaling Group
 
-2.  Run this command (no way to do this from CloudFormation or Console) from the same folder as this readme:
+2.  Run this command (no way to do this from CloudFormation or Console) FROM THE SAME FOLDER as this readme:
 
 ````
     aws deploy push --application-name MyDemoCodeDeployApplication --s3-location s3://kk-uploads-oregon/CodeDeploy-Example-Revision.zip
