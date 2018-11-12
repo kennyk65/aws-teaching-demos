@@ -5,6 +5,17 @@ AWSTemplateFormatVersion: 2010-09-09
 # An EC2 instance is used as a NAT; it is easy to turn off temporarily to save $.
 # The VPC and subnets are exported for use by other stacks.
 
+Metadata: 
+  # Control the UI display when running this template from the AWS Management Console:
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Network Configuration"
+        Parameters: 
+          - NumberOfAZs
+          - PrivateSubnets
+          - NATType
+
 Parameters:
   PrivateSubnets:
     Type: String
@@ -23,12 +34,22 @@ Parameters:
     Default: 2
     Description:  How many Availability Zones do you wish to utilize?
 
+  NATType:
+    Type: String
+    AllowedValues:
+    - "EC2 NAT Instance"
+    - "NAT Gateway"
+    Default:  "NAT Gateway"
+    Description:  What type of NAT to use for private instances to communicate with the internet.  A single EC2 instance can be used as a NAT, or you can use the AWS NAT Gateway (managed, scalable, more expensive).  This setting will be IGNORED if you do not build private subnets.
+
 Conditions:
   BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
   BuildPublicB:         !Not [ !Equals [ !Ref NumberOfAZs, 1 ]]  
   BuildPublicC:         !Equals [ !Ref NumberOfAZs, 3 ]  
   BuildPrivateB:        !And [ !Not [ !Equals [ !Ref NumberOfAZs, 1 ]], !Equals [ !Ref PrivateSubnets, True ] ]
   BuildPrivateC:        !And [ !Equals [ !Ref NumberOfAZs, 3 ], !Equals [ !Ref PrivateSubnets, True ] ]
+  BuildNATGateway:      !And [ !Equals [ !Ref PrivateSubnets, True ], !Equals [ !Ref NATType, "NAT Gateway" ] ]
+  BuildNATInstance:     !And [ !Equals [ !Ref PrivateSubnets, True ], !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
 
 Mappings:
   #  This is just the Amazon Linux AMI:
@@ -169,9 +190,10 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !Ref NATInstance
+      InstanceId:   !If [ BuildNATInstance, !Ref NATInstance, !Ref "AWS::NoValue" ]
+      NatGatewayId: !If [ BuildNATGateway, !Ref NATGateway, !Ref "AWS::NoValue" ]
 
-  
+
   # Attach the public subnets to public route tables, 
   # and attach the private subnets to private route tables:    
   PublicSubnetARouteTableAssociation:
@@ -214,7 +236,7 @@ Resources:
   # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
   NATSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Condition: BuildPrivateSubnets
+    Condition: BuildNATInstance
     DependsOn: AttachGateway
     Properties:
       GroupName: !Join [ "", [ "NATSecurityGroup-", !Ref "AWS::StackName" ] ]
@@ -234,11 +256,12 @@ Resources:
         FromPort: '0'
         ToPort: '65535'
         CidrIp: 0.0.0.0/0
-            
-  # Create a NAT instance.  Could use a NAT Gateway instead if you want:    
+
+
+  # A NAT Instance will be built and used if the user selected Private subnets and specified an EC2 instance over a managed Gateway.  
   NATInstance:
     Type: AWS::EC2::Instance
-    Condition: BuildPrivateSubnets
+    Condition: BuildNATInstance
     DependsOn: PublicRoute1                                           # Must have route to IGW established.
     Properties:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
@@ -273,6 +296,22 @@ Resources:
       ResourceSignal:
         Count: 1
         Timeout: PT5M
+
+  # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: BuildNATGateway
+    Properties: 
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags: 
+      - Key: Name
+        Value: !Sub "NAT-${AWS::StackName}"
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
+    Condition: BuildNATGateway
+    Properties:
+      Domain: VPC
 
 
 Outputs:
