@@ -222,7 +222,7 @@ Resources:
       - IpProtocol: tcp
         FromPort: '22'
         ToPort: '22'
-        CidrIp: !Join [ '', [ !GetAtt BastionServer.PrivateIp, "/0" ]]
+        CidrIp: !Join [ '', [ !GetAtt BastionServer.PrivateIp, "/32" ]]
       
   # This instance is our Bastion server
   BastionServer:
