@@ -190,7 +190,9 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
+      # If we are using a NAT Instance, route traffic through the NAT Instance:
       InstanceId:   !If [ BuildNATInstance, !Ref NATInstance, !Ref "AWS::NoValue" ]
+      # Otherwise if we are using a NAT Gateway, route traffic through the NAT Gateway:
       NatGatewayId: !If [ BuildNATGateway, !Ref NATGateway, !Ref "AWS::NoValue" ]
 
 
