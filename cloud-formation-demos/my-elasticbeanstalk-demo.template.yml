@@ -119,7 +119,7 @@ Resources:
       VersionLabel: !Ref MyBeanstalkVersion
       EnvironmentName: DemoEnvironment
       CNAMEPrefix: !Ref CNAMEPrefix
-      SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:application
           OptionName: "Application Healthcheck URL"

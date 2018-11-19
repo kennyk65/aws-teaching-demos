@@ -134,7 +134,7 @@ Resources:
       VersionLabel: !Ref OldVersion
       EnvironmentName: Rolling
       CNAMEPrefix: !Ref Prefix
-      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.4 running Tomcat 8.5 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
       OptionSettings: 
         # - Namespace: aws:elasticbeanstalk:application
         #   OptionName: "Application Healthcheck URL"
