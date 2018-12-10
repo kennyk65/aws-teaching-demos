@@ -51,27 +51,30 @@ Conditions:
   BuildNATGateway:      !And [ !Equals [ !Ref PrivateSubnets, True ], !Equals [ !Ref NATType, "NAT Gateway" ] ]
   BuildNATInstance:     !And [ !Equals [ !Ref PrivateSubnets, True ], !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
 
+
 Mappings:
-  #  This is just the Amazon Linux AMI:
+  #  This is the Amazon Linux 2 AMI.  Adjust these values as needed, they can change a few times per year:
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-1853ac65
+      AMI: ami-04681a1dbd79675a5    # N Virginia
     us-east-2:
-      AMI: ami-25615740
+      AMI: ami-0cf31d971a3ca20d6    # Ohio      
     us-west-1:
-      AMI: ami-bf5540df
+      AMI: ami-0782017a917e973e7    # N California
     us-west-2:
-      AMI: ami-d874e0a0
+      AMI: ami-6cd6f714             # Oregon
     eu-west-1:
-      AMI: ami-3bfab942
+      AMI: ami-0bdb1d6c15a40392c    # Ireland
     eu-central-1:
-      AMI: ami-ac442ac3
-    ap-northeast-1:
-      AMI: ami-a77c30c1
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+    sa-east-1:
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
     ap-southeast-1:
-      AMI: ami-e2adf99e
+      AMI: ami-01da99628f381e50a    # Singaport
     ap-southeast-2:
-      AMI: ami-43874721
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
+    ap-northeast-1:
+      AMI: ami-08847abae18baa040    # Tokyo
 
 
 Resources:
@@ -81,11 +84,11 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.1.0.0/16
-      EnableDnsSupport: 'true'
-      EnableDnsHostnames: 'true'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags:
       - Key: Name
-        Value: !Join ['', [!Ref "AWS::StackName", "-VPC" ]]
+        Value: !Sub ${AWS::StackName}-VPC
         
   # Our VPC will need internet access:      
   InternetGateway:
@@ -241,7 +244,7 @@ Resources:
     Condition: BuildNATInstance
     DependsOn: AttachGateway
     Properties:
-      GroupName: !Join [ "", [ "NATSecurityGroup-", !Ref "AWS::StackName" ] ]
+      GroupName: !Sub NATSecurityGroup-${AWS::StackName}
       GroupDescription: Enable internal access to the NAT device
       VpcId: !Ref VPC
       SecurityGroupIngress:
@@ -272,12 +275,11 @@ Resources:
       - DeviceIndex: '0'
         SubnetId: !Ref PublicSubnetA                                  # Any public subnet is fine
         AssociatePublicIpAddress: true                                # We will definitely need a public IP address
-        GroupSet:
-        - Ref: NATSecurityGroup                                       # Plug in the security group
+        GroupSet: [!Ref NATSecurityGroup]                             # Plug in the security group
       SourceDestCheck: false                                          # NATs don't work if EC2 tries the match source addresses with destinations.
       Tags:
       - Key: Name
-        Value: !Join [ "", [ "NAT-", !Ref "AWS::StackName" ] ]
+        Value: !Sub NAT-${AWS::StackName}
       UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -321,42 +323,42 @@ Outputs:
     Description: VPC of the base network
     Value: !Ref VPC
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", VPC ] ]
+      Name: !Sub ${AWS::StackName}-VPC
   PublicSubnetA:
     Description: First Public Subnet
     Value: !Ref PublicSubnetA
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnetA ] ]
+      Name: !Sub ${AWS::StackName}-PublicSubnetA
   PublicSubnetB:
     Description: Second Public Subnet
     Condition: BuildPublicB
     Value: !Ref PublicSubnetB
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnetB ] ]
+      Name: !Sub ${AWS::StackName}-PublicSubnetB
   PublicSubnetC:
     Description: Third Public Subnet
     Condition: BuildPublicC
     Value: !Ref PublicSubnetC
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnetC ] ]
+      Name: !Sub ${AWS::StackName}-PublicSubnetC
   PrivateSubnetA:
     Condition: BuildPrivateSubnets
     Description: First Private Subnet
     Value: !Ref PrivateSubnetA
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnetA ] ]
+      Name: !Sub ${AWS::StackName}-PrivateSubnetA
   PrivateSubnetB:
     Condition: BuildPrivateB
     Description: Second Private Subnet
     Value: !Ref PrivateSubnetB
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnetB ] ]
+      Name: !Sub ${AWS::StackName}-PrivateSubnetB
   PrivateSubnetC:
     Condition: BuildPrivateC
-    Description: Second Private Subnet
+    Description: Third Private Subnet
     Value: !Ref PrivateSubnetC
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnetC ] ]
+      Name: !Sub ${AWS::StackName}-PrivateSubnetC
 
 
 
