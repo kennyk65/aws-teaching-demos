@@ -4,6 +4,17 @@ AWSTemplateFormatVersion: 2010-09-09
 # It sets up the VPC, RDS, and anything else expected to be present when your start lab 3.
 # Run this before running the arch6-lab3.template.yml
 
+Parameters:
+  MultiAz:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want the RDS DB instance to run in single node mode (false) or multi-AZ mode (true).  False starts faster.
+
+Conditions:
+  BuildRdsMultiAZ:  !Equals [ !Ref MultiAz, True ] 
 
 Resources:
 
@@ -188,7 +199,7 @@ Resources:
       Engine: MySQL
       MasterUsername: master
       MasterUserPassword: lab-password
-      MultiAZ: false                          # Just to make the lab setup a bit faster.
+      MultiAZ: !If [ BuildRdsMultiAZ, true, false ]                 
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups: [!Ref DBSecurityGroup]
       Tags:

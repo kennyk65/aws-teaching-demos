@@ -154,7 +154,7 @@ Resources:
       - DeviceIndex: '0'
         AssociatePublicIpAddress: 'true'                              # We will need a public IP address
         SubnetId: !Ref PublicSubnet                                   # We should sit in a public subnet.
-        GroupSet: [!Ref: AppSg]                                       # Attach the security group
+        GroupSet: [!Ref AppSg]                                       # Attach the security group
       UserData:      #  What to run:
         Fn::Base64: !Sub |
           #!/bin/bash
