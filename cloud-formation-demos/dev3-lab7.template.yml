@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+# Implement Lab 7 of AWS Dev 3
+
+Resources:
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Join ['', [!Ref 'AWS::StackName', "-PollyNotesPool" ]]
+      Policies:
+        PasswordPolicy:     # Since this is a demo, make relaxed password requirements.
+          MinimumLength: 6
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false      
+        # 'STANDARD ATTRIBUTEs' like email are unchecked by default
+      
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: PollyNotesAngular
+      GenerateSecret: false       
+      UserPoolId: !Ref CognitoUserPool
+
+  # TODO: BETTER TO THIS MANUALLY, NO WAY TO SET PASSWORD.
+  # This is creating a sample user named 'robert' with a password of 'robert':
+  # CognitoUserPoolUser:
+  #   Type: AWS::Cognito::UserPoolUser
+  #   Properties:
+  #     Username: student
+  #     #  TODO:  HOW TO SET A PASSWORD.
+  #     UserPoolId: !Ref CognitoUserPool
+
+
+  DynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: pollynotes
+      AttributeDefinitions:
+      - AttributeName: userId
+        AttributeType: S
+      - AttributeName: noteId
+        AttributeType: S
+      # - AttributeName: note
+      #   AttributeType: S
+      KeySchema:
+      - AttributeName: userId
+        KeyType: HASH
+      - AttributeName: noteId
+        KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  S3CodeBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: polly-notes-code-ken-krueger
+
+  S3WebBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: polly-notes-web-ken-krueger
+
+  S3MP3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: polly-notes-mp3-ken-krueger
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-lambda_ddb_s3_polly" ]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the LambdaFunctionRole.
+  #  permissions for CloudWatch Logs, dynamodb, s3.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-lambda_ddb_s3_polly" ]]
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - dynamodb:DeleteItem
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:Query
+          - dynamodb:UpdateItem
+          - dynamodb:DescribeTable
+          - polly:SynthesizeSpeech
+          - s3:PutObject
+          - s3:GetObject
+          Resource: "*"
+      Roles: 
+      -  !Ref LambdaFunctionRole
+
+  # GET on /notes calls the PollyNotes-ListFunction
+  ListLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-ListFunction' ]] 
+      Description: PollyNotes-ListFunction
+      MemorySize: 1024
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: com.amazonaws.pollynotes.solution.ListFunctionSolution
+      Runtime: java8
+      CodeUri: 
+        Bucket: kk-courses
+        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+      # Events section defines what triggers the Lambda
+      Events:
+        # This will define an API Gateway resource that will call our function on a GET to /notes.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /notes
+            Method: GET
+
+  # POST on /notes calls the PollyNotes-CreateUpdateFunction
+  CreateUpdateLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-CreateUpdateFunction' ]] 
+      Description: PollyNotes-CreateUpdateFunction
+      MemorySize: 1024
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: com.amazonaws.pollynotes.solution.CreateUpdateFunctionSolution
+      Runtime: java8
+      CodeUri: 
+        Bucket: kk-courses
+        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+      # Events section defines what triggers the Lambda
+      Events:
+        # This will define an API Gateway resource that will call our function on a POST to /notes.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /notes
+            Method: POST
+
+  # GET on /notes/search calls the PollyNotes-SearchFunction
+  SearchLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-SearchFunction' ]] 
+      Description: PollyNotes-SearchFunction
+      MemorySize: 1024
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: com.amazonaws.pollynotes.solution.SearchFunctionSolution
+      Runtime: java8
+      CodeUri: 
+        Bucket: kk-courses
+        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+      # Events section defines what triggers the Lambda
+      Events:
+        # This will define an API Gateway resource that will call our function on a GET to /notes/search.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /notes/search
+            Method: GET
+
+  # DELETE on /notes/{id} calls the PollyNotes-DeleteFunction
+  DeleteLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-DeleteFunction' ]] 
+      Description: PollyNotes-DeleteFunction
+      MemorySize: 1024
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: com.amazonaws.pollynotes.solution.DeleteFunctionSolution
+      Runtime: java8
+      CodeUri: 
+        Bucket: kk-courses
+        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+      # Events section defines what triggers the Lambda
+      Events:
+        # This will define an API Gateway resource that will call our function on a DELETE to /notes/{id}.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /notes/{id}     # TODO: VERIFY THAT THIS WORKS
+            Method: DELETE
+            
+  # POST on /notes/{id} calls the PollyNotes-DictateFunction
+  DictateLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-DictateFunction' ]] 
+      Description: PollyNotes-DictateFunction
+      MemorySize: 1024
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: com.amazonaws.pollynotes.solution.DictateFunctionSolution
+      Runtime: java8
+      CodeUri: 
+        Bucket: kk-courses
+        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+      # Events section defines what triggers the Lambda
+      # TODO: SET THE ENVIRONMENT VARIABLE 
+      Events:
+        # This will define an API Gateway resource that will call our function on a POST to /notes/{id}.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /notes/{id}     # TODO: VERIFY THAT THIS WORKS
+            Method: POST
+            
+Outputs:
+
+  CognitoUserPoolId:
+    Description: Pool ID value which is needed when making API calls.  
+    Value: !Ref CognitoUserPool
+
+  CognitoUserPoolArn:
+    Description: ARN of the user pool.
+    Value: !GetAtt CognitoUserPool.Arn
+
+  CognitoClientId:
+    Description: Pool ID value which is needed when making API calls.  
+    Value: !Ref CognitoUserPoolClient
+
