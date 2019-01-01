@@ -2,13 +2,42 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
 # Implement Lab 7 of AWS Dev 3
+# Warning: This code can presently only run in us-east-1, since that is where the code bucket is.
+# WHAT YOU MUST DO:  Create the student/student user, copy the code into the web bucket.
+
+Parameters:
+  FirstDashLastName:
+    Type: String
+    Default: ken-krueger
+    Description: Your first name, a dash, and last name.  This will be used to name some S3 buckets.
+
+  CodeUriBucket: 
+    Type: String
+    Default: kk-courses
+    Description: S3 bucket in which you have placed your code (zip file)
+
+  CodeUriKey: 
+    Type: String
+    Default: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+    Description: object key inside your S3 bucket where your code is located.
+
+
+Globals:  # This section defines settings that we don't want to repeat over and over in each Lambda.
+  Function:
+    MemorySize: 1024
+    Timeout: 4
+    Runtime: java8
+    CodeUri: 
+      Bucket: !Ref CodeUriBucket
+      Key: !Ref CodeUriKey
+
 
 Resources:
 
   CognitoUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: !Join ['', [!Ref 'AWS::StackName', "-PollyNotesPool" ]]
+      UserPoolName: !Sub ${AWS::StackName}-PollyNotesPool
       Policies:
         PasswordPolicy:     # Since this is a demo, make relaxed password requirements.
           MinimumLength: 6
@@ -38,14 +67,12 @@ Resources:
   DynamoDbTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: pollynotes
+      TableName: pollynotes   # Unfortunately, the table name is hard-coded in the Lambda functions.
       AttributeDefinitions:
       - AttributeName: userId
         AttributeType: S
       - AttributeName: noteId
         AttributeType: S
-      # - AttributeName: note
-      #   AttributeType: S
       KeySchema:
       - AttributeName: userId
         KeyType: HASH
@@ -58,23 +85,65 @@ Resources:
   S3CodeBucket:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: polly-notes-code-ken-krueger
+      BucketName: !Sub polly-notes-code-${FirstDashLastName}
 
   S3WebBucket:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: polly-notes-web-ken-krueger
+      BucketName: !Sub polly-notes-web-${FirstDashLastName}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: false
+        BlockPublicPolicy: false
 
   S3MP3Bucket:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: polly-notes-mp3-ken-krueger
+      BucketName: !Sub polly-notes-mp3-${FirstDashLastName}
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: false
+        BlockPublicPolicy: false
+      CorsConfiguration:
+        CorsRules: 
+        - AllowedHeaders:
+            - "*"
+          AllowedMethods:
+            - GET
+          AllowedOrigins:
+            - "*"
+
+  S3BucketPolicyWeb:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3WebBucket
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - s3:GetObject
+          Resource: !Sub ${S3WebBucket.Arn}/*
+          Principal: "*"
+
+  S3BucketPolicyMp3:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3MP3Bucket
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - s3:GetObject
+          Resource: !Sub ${S3MP3Bucket.Arn}/*
+          Principal: "*"
 
   # This Role allows the Lambda function to make API calls if needed.
   LambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-lambda_ddb_s3_polly" ]]
+      RoleName: !Sub ${AWS::StackName}-lambda_ddb_s3_polly
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -88,7 +157,7 @@ Resources:
   LambdaFunctionPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-lambda_ddb_s3_polly" ]]
+      PolicyName: !Sub ${AWS::StackName}-lambda_ddb_s3_polly
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -110,122 +179,352 @@ Resources:
       Roles: 
       -  !Ref LambdaFunctionRole
 
+  TheApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      EndpointConfiguration: REGIONAL
+      DefinitionBody:   # THIS IS ALL SWAGGER:
+        securityDefinitions:
+          PollyNotesPool:
+            type: apiKey
+            name: Authorization
+            in: header
+            x-amazon-apigateway-authtype: cognito_user_pools
+            x-amazon-apigateway-authorizer:
+              providerARNs:
+              # TODO 1: Replace with your Cognito User Pool ARN (in between the quotes "")
+              - !GetAtt  CognitoUserPool.Arn
+              type: cognito_user_pools
+        swagger: "2.0"
+        info:
+          title: PollyNotesAPI
+        paths:
+          /notes:
+            get:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              parameters:
+              - name: text
+                in: query
+                required: false
+                type: string
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+              security:
+              - PollyNotesPool: []
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_templates
+                httpMethod: POST
+                requestTemplates:
+                  application/json: "{  \"userId\": \"$context.authorizer.claims.sub\" }"
+                contentHandling: CONVERT_TO_TEXT
+                type: aws
+                uri: !Sub arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${ListLambda.Arn}/invocations
+            post:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              parameters:
+              - in: body
+                name: NoteCreateModel
+                required: true
+                schema:
+                  $ref: "#/definitions/NoteCreateModel"
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+              security:
+              - PollyNotesPool: []
+              x-amazon-apigateway-request-validator: "Validate body"
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_templates
+                httpMethod: POST
+                requestTemplates:
+                  application/json: "{\r\n\
+                    \"userId\": \"$context.authorizer.claims.sub\",\r\n\
+                    \"noteId\": \"$input.params('id')\",\r\n\
+                    \"note\": $input.json('$.note')\r\n
+                    }"
+                contentHandling: CONVERT_TO_TEXT
+                type: aws
+                uri: !Sub arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${CreateUpdateLambda.Arn}/invocations
+            options:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'POST,GET,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_match
+                requestTemplates:
+                  application/json: "{\"statusCode\": 200}"
+                type: mock
+          /notes/search:
+            get:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              parameters:
+              - name: text
+                in: query
+                required: false
+                type: string
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+              security:
+              - PollyNotesPool: []
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_templates
+                httpMethod: POST
+                requestTemplates:
+                  application/json: "{\r\n\
+                    \"userId\": \"$context.authorizer.claims.sub\",\r\n\
+                    \"noteId\": \"$input.params('id')\"\r\n\
+                    }"
+                contentHandling: CONVERT_TO_TEXT
+                type: aws
+                uri: !Sub arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${SearchLambda.Arn}/invocations
+            options:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_match
+                requestTemplates:
+                  application/json: "{\"statusCode\": 200}"
+                type: mock
+          /notes/{id}:
+            post:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              parameters:
+              - name: id
+                in: path
+                required: true
+                type: string
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+              security:
+              - PollyNotesPool: []
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_templates
+                httpMethod: POST
+                requestTemplates:
+                  application/json: "{\r\n
+                    \"voiceId\": $input.json('$.voice'),\r\n \
+                    \"note\": {\r\n \
+                    \"userId\": \"$context.authorizer.claims.sub\",\r\n \ 
+                    \"noteId\": \"$input.params('id')\"\r\n \
+                    }\r\n \
+                    }"
+                contentHandling: CONVERT_TO_TEXT
+                type: aws
+                uri: !Sub arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${DictateLambda.Arn}/invocations
+            delete:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              parameters:
+              - name: id
+                in: path
+                required: true
+                type: string
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+              security:
+              - PollyNotesPool: []
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_templates
+                httpMethod: POST
+                requestTemplates:
+                  application/json: "{\r\n\
+                    \"userId\": \"$context.authorizer.claims.sub\",\r\n\
+                    \"noteId\": \"$input.params('id')\"\r\n\
+                    }"
+                contentHandling: CONVERT_TO_TEXT
+                type: aws
+                uri: !Sub arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${DeleteLambda.Arn}/invocations
+            options:
+              consumes: [ application/json ]
+              produces: [ application/json ]
+              responses:
+                "200":
+                  description: "200 response"
+                  schema:
+                    $ref: "#/definitions/Empty"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,POST,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: when_no_match
+                requestTemplates:
+                  application/json: "{\"statusCode\": 200}"
+                type: mock
+        definitions:
+          Empty:
+            type: object
+            title: "Empty Schema"
+          NoteCreateModel:
+            type: "object"
+            required:
+            - "note"
+            properties:
+              note:
+                type: string
+              noteId:
+                type: string
+            title: "Note Create Model"
+        x-amazon-apigateway-request-validators:
+          Validate body:
+            validateRequestParameters: false
+            validateRequestBody: true
+
+
   # GET on /notes calls the PollyNotes-ListFunction
   ListLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-ListFunction' ]] 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotes-ListFunction
       Description: PollyNotes-ListFunction
-      MemorySize: 1024
-      Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: com.amazonaws.pollynotes.solution.ListFunctionSolution
-      Runtime: java8
-      CodeUri: 
-        Bucket: kk-courses
-        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
-      # Events section defines what triggers the Lambda
-      Events:
-        # This will define an API Gateway resource that will call our function on a GET to /notes.
-        MyApi:
-          Type: Api
-          Properties:
-            Path: /notes
-            Method: GET
 
   # POST on /notes calls the PollyNotes-CreateUpdateFunction
   CreateUpdateLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-CreateUpdateFunction' ]] 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotes-CreateUpdateFunction
       Description: PollyNotes-CreateUpdateFunction
-      MemorySize: 1024
-      Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: com.amazonaws.pollynotes.solution.CreateUpdateFunctionSolution
-      Runtime: java8
-      CodeUri: 
-        Bucket: kk-courses
-        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
-      # Events section defines what triggers the Lambda
-      Events:
-        # This will define an API Gateway resource that will call our function on a POST to /notes.
-        MyApi:
-          Type: Api
-          Properties:
-            Path: /notes
-            Method: POST
 
   # GET on /notes/search calls the PollyNotes-SearchFunction
   SearchLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-SearchFunction' ]] 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotes-SearchFunction
       Description: PollyNotes-SearchFunction
-      MemorySize: 1024
-      Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: com.amazonaws.pollynotes.solution.SearchFunctionSolution
-      Runtime: java8
-      CodeUri: 
-        Bucket: kk-courses
-        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
-      # Events section defines what triggers the Lambda
-      Events:
-        # This will define an API Gateway resource that will call our function on a GET to /notes/search.
-        MyApi:
-          Type: Api
-          Properties:
-            Path: /notes/search
-            Method: GET
 
   # DELETE on /notes/{id} calls the PollyNotes-DeleteFunction
   DeleteLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-DeleteFunction' ]] 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotes-DeleteFunction
       Description: PollyNotes-DeleteFunction
-      MemorySize: 1024
-      Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: com.amazonaws.pollynotes.solution.DeleteFunctionSolution
-      Runtime: java8
-      CodeUri: 
-        Bucket: kk-courses
-        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
-      # Events section defines what triggers the Lambda
-      Events:
-        # This will define an API Gateway resource that will call our function on a DELETE to /notes/{id}.
-        MyApi:
-          Type: Api
-          Properties:
-            Path: /notes/{id}     # TODO: VERIFY THAT THIS WORKS
-            Method: DELETE
             
   # POST on /notes/{id} calls the PollyNotes-DictateFunction
   DictateLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-PollyNotes-DictateFunction' ]] 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotes-DictateFunction
       Description: PollyNotes-DictateFunction
-      MemorySize: 1024
-      Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: com.amazonaws.pollynotes.solution.DictateFunctionSolution
-      Runtime: java8
-      CodeUri: 
-        Bucket: kk-courses
-        Key: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
-      # Events section defines what triggers the Lambda
-      # TODO: SET THE ENVIRONMENT VARIABLE 
-      Events:
-        # This will define an API Gateway resource that will call our function on a POST to /notes/{id}.
-        MyApi:
-          Type: Api
-          Properties:
-            Path: /notes/{id}     # TODO: VERIFY THAT THIS WORKS
-            Method: POST
-            
+      Environment:
+        Variables:
+          MP3_BUCKET_NAME: !Ref S3MP3Bucket
+
 Outputs:
 
   CognitoUserPoolId:
