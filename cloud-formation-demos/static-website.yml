@@ -9,9 +9,9 @@ AWSTemplateFormatVersion: 2010-09-09
 # WARNING:  The Certificate creation requires manual intervention.  
 #   CloudFormation event will output a CREATE_IN_PROGRESS event with information on the DNS record set thay you must manually put in Rt53.
 #   It will look something like "Content of DNS Record is: {Name: _ca702...7b77.kenkrueger.net.,Type: CNAME,Value: _54a64...fe8.tljzshvwok.acm-validations.aws.}".  
-#   You must manually create a CNAME record in Rt53 with these values before stack creation resumes.  Ugh. 
-# Warning:  Route53 Record sets are not cleaned up on stack delete.  You'll have to do this manually.
-# AT PRESENT this only works for https://kenkrueger.net/index.html.
+#   You must manually create a CNAME record in Rt53 with these values before stack creation resumes.  You have to do the same thing for the www record set.  Ugh. 
+# Warning:  Route53 Record sets are not cleaned up on stack delete.  You'll have to do this manually.  Ugh.
+# THINGS TO DO:  Get origin access identity working, get a nice error page on notfound, automatically populate bucket with simple web page.
 
 Parameters:
 
