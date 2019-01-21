@@ -27,18 +27,6 @@ Resources:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: !Sub ${HostedZoneName}
-      WebsiteConfiguration:
-        IndexDocument: index.html
-
-  # This www bucket represents a sub-domain.  It simply redirects traffic to the main.  Contains nothing.
-  WwwS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties: 
-      BucketName: !Sub www.${HostedZoneName}
-      WebsiteConfiguration:
-        RedirectAllRequestsTo:
-          Protocol: https
-          HostName: !Sub ${HostedZoneName}
 
   # This policy allows anyone in the world to make GET requests against the bucket.
   MainS3BucketPolicy:
@@ -81,12 +69,10 @@ Resources:
           TargetOriginId: 1       # This is required, but no guidance on what it wants.
           ViewerProtocolPolicy : redirect-to-https
         Origins:
-        -  DomainName:  !GetAtt MainS3Bucket.DomainName
-#        -  DomainName:  !Select [1, !Split ["://", !GetAtt MainS3Bucket.WebsiteURL]]
-           Id: 1                                           # This is required, but no documentation on what it is.
-           S3OriginConfig: {}
-          # - CustomOriginConfig:
-          #     OriginProtocolPolicy: https-only
+        - Id: 1                                           # This is required, but no documentation on what it is.
+          DomainName:  !GetAtt MainS3Bucket.DomainName    # This is the S3 REST endpoint, not the static website endpoint.  The static website can't support HTTPS.
+          S3OriginConfig: {}
+        DefaultRootObject: index.html                       # S3 static website settings are ignored when using the REST endpoint, so we need to specify a landing page.
         PriceClass: PriceClass_100                          # Cheapest.  US, Canada, Europe.
         ViewerCertificate:
           AcmCertificateArn: !Ref Cert
@@ -105,12 +91,10 @@ Resources:
           TargetOriginId: 1       # This is required, but no guidance on what it wants.
           ViewerProtocolPolicy : redirect-to-https
         Origins:
-          - S3OriginConfig: {}
-#            DomainName:  !Select [1, !Split ["://", !GetAtt WwwS3Bucket.WebsiteURL]]
-            DomainName:  !GetAtt WwwS3Bucket.DomainName
-            Id: 1                                           # This is required, but no documentation on what it is.
-          # - CustomOriginConfig:
-          #     OriginProtocolPolicy: https-only
+        - Id: 1                                           # This is required, but no documentation on what it is.
+          DomainName:  !GetAtt MainS3Bucket.DomainName    # S3 REST endpoint, not website endpoint, to support HTTPS.
+          S3OriginConfig: {}
+        DefaultRootObject: index.html                       # Not sure why this is needed since defined on bucket
         PriceClass: PriceClass_100                          # Cheapest.  US, Canada, Europe.
         ViewerCertificate:
           AcmCertificateArn: !Ref Cert
@@ -125,8 +109,6 @@ Resources:
       Name: !Ref HostedZoneName 
       Type: A
       AliasTarget: 
-        # DNSName: !GetAtt MainS3Bucket.WebsiteURL
-        # HostedZoneId: !FindInMap [ S3Website, !Ref "AWS::Region", HostedZoneId]   # HostedZoneId for S3 Website buckets is a complex set value, see Mappings.
         DNSName: !GetAtt MainCloudFrontDistribution.DomainName
         HostedZoneId: Z2FDTNDATAQYW2   # HostedZoneId for CloudFront is this hard-coded value.  See https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-route53-aliastarget.html
 
@@ -138,8 +120,6 @@ Resources:
       Name: !Sub www.${HostedZoneName} 
       Type: A
       AliasTarget: 
-        # DNSName: !GetAtt WwwS3Bucket.WebsiteURL
-        # HostedZoneId: !FindInMap [ S3Website, !Ref "AWS::Region", HostedZoneId]    # HostedZoneId for S3 Website buckets is a complex set value, see Mappings.
         DNSName: !GetAtt WwwCloudFrontDistribution.DomainName
         HostedZoneId: Z2FDTNDATAQYW2   # HostedZoneId for CloudFront is this hard-coded value.  See https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-route53-aliastarget.html
 
