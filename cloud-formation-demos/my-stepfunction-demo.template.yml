@@ -36,17 +36,17 @@ Resources:
             }
           }
         }        
-      RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref StepFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
-
+      RoleArn: !GetAtt StepFunctionRole.Arn
+      
   # Now, some simple Lambda functions.  Each one simply adds to the words of a Beatles' song:
   ADayInTheLife1:
-    Type: "AWS::Lambda::Function"
+    Type: AWS::Lambda::Function
     Properties: 
       FunctionName: ADayInTheLife1
       Description: Part of a StepFunction demo
       MemorySize: 128
       Timeout: 4
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: nodejs6.10
       Handler: index.handler
       Code:
@@ -66,13 +66,13 @@ Resources:
 
 
   ADayInTheLife2:
-    Type: "AWS::Lambda::Function"
+    Type: AWS::Lambda::Function
     Properties: 
       FunctionName: ADayInTheLife2
       Description: Part of a StepFunction demo
       MemorySize: 128
       Timeout: 4
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: nodejs6.10
       Handler: index.handler
       Code:
@@ -92,13 +92,13 @@ Resources:
 
 
   ADayInTheLife3:
-    Type: "AWS::Lambda::Function"
+    Type: AWS::Lambda::Function
     Properties: 
       FunctionName: ADayInTheLife3
       Description: Part of a StepFunction demo
       MemorySize: 128
       Timeout: 4
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: nodejs6.10
       Handler: index.handler
       Code:
@@ -118,13 +118,13 @@ Resources:
 
 
   ADayInTheLife4:
-    Type: "AWS::Lambda::Function"
+    Type: AWS::Lambda::Function
     Properties: 
       FunctionName: ADayInTheLife4
       Description: Part of a StepFunction demo
       MemorySize: 128
       Timeout: 4
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: nodejs6.10
       Handler: index.handler
       Code:
@@ -148,12 +148,12 @@ Resources:
     Type: AWS::IAM::Role
     Properties: 
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "lambda.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the LambdaFunctionRole.
   # Basic permissions for CloudWatch Logs, expand as needed.
@@ -162,7 +162,7 @@ Resources:
     Properties: 
       PolicyName: LambdaFunctionPolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -177,9 +177,9 @@ Resources:
     Type: AWS::IAM::Role
     Properties: 
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
             Service: !Join [ "", [ "states.", !Ref "AWS::Region", ".amazonaws.com" ] ]
           Action: "sts:AssumeRole"
@@ -191,7 +191,7 @@ Resources:
     Properties: 
       PolicyName: StepFunctionPolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
