@@ -12,6 +12,7 @@ AWSTemplateFormatVersion: 2010-09-09
 #   You must manually create a CNAME record in Rt53 with these values before stack creation resumes.  You have to do the same thing for the www record set.  Ugh. 
 # Warning:  Route53 Record sets are not cleaned up on stack delete.  You'll have to do this manually.  Ugh.
 # THINGS TO DO:  Get origin access identity working, get a nice error page on notfound, automatically populate bucket with simple web page.
+# See:  https://medium.freecodecamp.org/simple-site-hosting-with-amazon-s3-and-https-5e78017f482a for background.
 
 Parameters:
 
