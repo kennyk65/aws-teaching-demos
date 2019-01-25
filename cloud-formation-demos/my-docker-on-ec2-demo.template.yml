@@ -5,6 +5,11 @@ AWSTemplateFormatVersion: '2010-09-09'
       
 Parameters:
   
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
+
   DockerImage:
     Type: String
     Default: kennyk65/spring-cloud-aws-environment-demo
@@ -16,30 +21,6 @@ Parameters:
     Description: You will need a VPC w/ subnets created by another stack, i.e. base-network-stack.yml
 
 
-Mappings:
-  #  This is just the Amazon Linux AMI:
-  AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-1ecae776
-    us-east-2:
-      AMI: ami-15e9c770      
-    us-west-1:
-      AMI: ami-d114f295
-    us-west-2:
-      AMI: ami-e7527ed7
-    eu-west-1:
-      AMI: ami-a10897d6
-    eu-central-1:
-      AMI: ami-a8221fb5
-    sa-east-1:
-      AMI: ami-b52890a8
-    ap-southeast-1:
-      AMI: ami-68d8e93a
-    ap-southeast-2:
-      AMI: ami-fd9cecc7
-    ap-northeast-1:
-      AMI: ami-cbf90ecb
-
 
 Resources:
 
@@ -49,7 +30,7 @@ Resources:
     Properties:
       GroupDescription: Security Group for Web server
       VpcId: 
-        Fn::ImportValue: !Sub ${NetworkStack}:VPC
+        Fn::ImportValue: !Sub ${NetworkStack}-VPC
       Tags:
       - Key: Name
         Value: WebServerSecurityGroup
@@ -64,7 +45,7 @@ Resources:
   LaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      ImageId: !Ref AmazonLinuxAMI
       InstanceType: t2.micro          # Any instance type will do
       SecurityGroups:
       - !Ref WebServerSecurityGroup   # Plug in the security group.
@@ -87,8 +68,8 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier:
-      - Fn::ImportValue: !Sub ${NetworkStack}:PrivateSubnetA
-      - Fn::ImportValue: !Sub ${NetworkStack}:PrivateSubnetB
+      - Fn::ImportValue: !Sub ${NetworkStack}-PrivateSubnetA
+      - Fn::ImportValue: !Sub ${NetworkStack}-PrivateSubnetB
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: 1        
       MaxSize: 4
@@ -120,8 +101,8 @@ Resources:
       Name: ALB
       Scheme: internet-facing
       Subnets:
-      - Fn::ImportValue: !Sub ${NetworkStack}:PublicSubnetA
-      - Fn::ImportValue: !Sub ${NetworkStack}:PublicSubnetB
+      - Fn::ImportValue: !Sub ${NetworkStack}-PublicSubnetA
+      - Fn::ImportValue: !Sub ${NetworkStack}-PublicSubnetB
       SecurityGroups: [!Ref WebServerSecurityGroup]
   # Listen on port 80, pass all traffic to our only TargetGroup:
   ALBListener:
@@ -151,7 +132,7 @@ Resources:
     Properties:
       Name: ALBTargetGroup
       VpcId: 
-        Fn::ImportValue: !Sub ${NetworkStack}:VPC
+        Fn::ImportValue: !Sub ${NetworkStack}-VPC
       Port: 80
       Protocol: HTTP
       HealthCheckProtocol: HTTP
