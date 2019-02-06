@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 3.
+# It expects a 4 subnet VPC with RDS to exist before running.  See arch6-lab3-base.template.yml.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - VPC
+          - PublicSubnets
+          - PrivateSubnets
+          - PrivateKeyName
+          - RoleNameInventoryApp
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select the VPC to be used by the Load Balancer.  
+
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select two or more PUBLIC subnets to be used by the Load Balancer's nodes.
+
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select two or more PRIVATE subnets to be used by the AutoScale Group.
+
+  PrivateKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH access to the instance later.  Just in case.
+
+  RoleNameInventoryApp:
+    Type: String
+    Description:  The name of the Role setup for use by the Inventory App's ECS instances.
+    Default: Inventory-App-Role3
+
+
+Mappings:
+  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-04681a1dbd79675a5
+    us-east-2:
+      AMI: ami-0cf31d971a3ca20d6
+    us-west-1:
+      AMI: ami-0782017a917e973e7
+    us-west-2:
+      AMI: ami-6cd6f714
+
+
+Resources:
+
+  # Security Group for the load balancer.  Allow HTTP / HTTPS from anywhere:
+  LbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Inventory-LB
+      GroupDescription: Security Group for Load Balancer
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Inventory-LB
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  AppSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Inventory-App
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Inventory-App
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnets
+      SecurityGroups: [!Ref LbSg ]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: Inventory-App
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  # Attach EC2Role's permissions to each ECS Instance.
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref RoleNameInventoryApp]
+
+  # Launch Configuration for our web server running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: Inventory-LC
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
+      InstanceType: t2.micro 
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroups: [ !Ref AppSg ]
+      UserData:      
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Install Apache Web Server and PHP
+          yum install -y httpd mysql
+          amazon-linux-extras install -y php7.2
+          # Download Lab files
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.2.1/lab-1-webapp/scripts/inventory-app.zip
+          unzip inventory-app.zip -d /var/www/html/
+          # Download and install the AWS SDK for PHP
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
+          unzip aws -d /var/www/html
+          # Turn on web server
+          chkconfig httpd on
+          service httpd start 
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: Inventory-ASG
+      VPCZoneIdentifier: !Ref PrivateSubnets
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 2        
+      MaxSize: 2
+      DesiredCapacity: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:  [ !Ref ALBTargetGroup ]
+      Tags:
+      - Key: Name
+        Value: Inventory App
+        PropagateAtLaunch: 'true'
+
+Outputs:
+  ECSALB:
+    Description: Your ALB DNS URL
+    Value: !Join ['', ["http://", !GetAtt [ALB, DNSName]]]

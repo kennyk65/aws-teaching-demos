@@ -1,131 +1,46 @@
-AWSTemplateFormatVersion: 2010-09-09
+---
+AWSTemplateFormatVersion: '2010-09-09'
+      
+# This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 1.
+# The main difference is the IAM Role and DB subnet groups are created within this template.
+# To run you'll only need an existing VPC, Default will do.
 
-# This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 2.
-# The main difference is the IAM Role
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - PrivateSubnets
+          - PrivateKeyName
+          - AmazonLinuxAMI
 
 Parameters:
   PrivateKeyName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: The name of the private key file to use for SSH/RDP access to the instance, if needed.
 
-Mappings:
-  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
-  AmazonLinuxAMI:
-    us-east-1: 
-      AMI: ami-04681a1dbd79675a5    # Virginia
-    us-east-2:
-      AMI: ami-0cf31d971a3ca20d6    # Ohio
-    us-west-1:
-      AMI: ami-0782017a917e973e7    # N California
-    us-west-2:
-      AMI: ami-6cd6f714             # Oregon
-    ap-south-1:
-      AMI: ami-00b6a8a2bd28daf19    # Mumbai
-    ap-northeast-2:
-      AMI: ami-012566705322e9a8e    # Seoul
-    ap-southeast-1:
-      AMI: ami-01da99628f381e50a    # Singapore
-    ap-southeast-2:
-      AMI: ami-00e17d1165b9dd3ec    # Sydney
-    ap-northeast-1:
-      AMI: ami-08847abae18baa040    # Tokyo
-    ca-central-1:
-      AMI: ami-ce1b96aa             # Montreal
-    eu-central-1:
-      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
-    eu-west-1:
-      AMI: ami-0bdb1d6c15a40392c    # Ireland
-    eu-west-2:
-      AMI: ami-e1768386             # London
-    eu-west-3:
-      AMI: ami-06340c8c12baa6a09    # Paris
-    sa-east-1:
-      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select the Lab VPC to use for the lab
 
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+    
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select 2 subnets in your selected VPC, RDS instance will run here.
+
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
 
 Resources:
-
-  # First, a VPC:
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsSupport: 'true'
-      EnableDnsHostnames: 'true'
-      Tags:
-      - Key: Name
-        Value: Lab VPC
-        
-  # Our VPC will need internet access:      
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    DependsOn: VPC
-  AttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    # Notice how you can't attach an IGW to a VPC unless both are created:
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-
-  # Now some subnets, 1 public and 1 private:
-  PublicSubnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.0.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
-      Tags:
-      - Key: Name
-        Value: Public Subnet 
-  PrivateSubnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/23
-      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
-      Tags:
-      - Key: Name
-        Value: Private Subnet 
-        
-  # Some route tables for our subnets:        
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: Public Route Table
-  PublicRoute1:   # Public route table has direct routing to IGW:
-    Type: AWS::EC2::Route
-    DependsOn: AttachGateway
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-      
-  # Here is a private route table:
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: Private Route Table
-
-  
-  # Attach the public subnets to public route tables, 
-  # and attach the private subnets to private route tables:    
-  PublicSubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet
-      RouteTableId: !Ref PublicRouteTable
-  PrivateSubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet
-      RouteTableId: !Ref PrivateRouteTable
 
   # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
   AppSg:
@@ -142,11 +57,26 @@ Resources:
         ToPort: '80'
         CidrIp: 0.0.0.0/0
 
+  # Security Group for the RDS instance.  Allow port 3306 but only from the AppSg.
+  DbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for RDS
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: DB-SG
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        SourceSecurityGroupId: !Ref AppSg
+
   # web server:
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      ImageId: !Ref AmazonLinuxAMI                                    # We lookup AMI via the SSM-provided value
       KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
       InstanceType: t2.micro                                          # Any instance type will do
       IamInstanceProfile: !Ref EC2InstanceProfile
@@ -154,7 +84,8 @@ Resources:
       - DeviceIndex: '0'
         AssociatePublicIpAddress: 'true'                              # We will need a public IP address
         SubnetId: !Ref PublicSubnet                                   # We should sit in a public subnet.
-        GroupSet: [!Ref AppSg]                                       # Attach the security group
+        GroupSet:
+        - Ref: AppSg                                                  # Attach the security group
       UserData:      #  What to run:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -162,20 +93,50 @@ Resources:
           yum install -y httpd mysql
           amazon-linux-extras install -y php7.2
           # Download Lab files
-          wget https://us-west-2-tcdev.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.0.0/lab-2-vpc/scripts/inventory-app.zip
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.2.1/lab-1-webapp/scripts/inventory-app.zip
           unzip inventory-app.zip -d /var/www/html/
           # Download and install the AWS SDK for PHP
           wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
           unzip aws -d /var/www/html
           # Turn on web server
           chkconfig httpd on
-          service httpd start
+          service httpd start          
+
+  # RDS instances need to know which subnets they are allowed to run in:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: Lab DB Subnet Group
+      DBSubnetGroupName: Lab DB Subnet Group
+      SubnetIds: !Ref PrivateSubnets
+      Tags:
+        - Key: Name
+          Value: DBSubnetGroup
+          
+  RDSDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: inventory
+      DBInstanceIdentifier: inventory-db
+      AllocatedStorage: 5
+      DBInstanceClass: db.t2.micro
+      Engine: MySQL
+      MasterUsername: master
+      MasterUserPassword: lab-password
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DbSg
+      Tags:
+        - Key: Name
+          Value: inventory-db
+
 
   # EC2 instance will need to talk to SSM to read parameters:
   InstanceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: Inventory-App-Role2
+      RoleName: Inventory-App-Role
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -203,7 +164,13 @@ Resources:
       Roles: [!Ref InstanceRole]
 
 
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:
   EC2InstancePublicIP:
     Description: The IP address for EC2 instance.
     Value: !Join ['', ["http://", !GetAtt WebServer.PublicIp ]]
+
+  DbEndpoint:
+    Description: The endpoint of the RDS instance we created.
+    Value: !GetAtt RDSDatabase.Endpoint.Address
