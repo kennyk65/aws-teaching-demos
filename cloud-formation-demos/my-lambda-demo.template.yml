@@ -12,7 +12,7 @@ Resources:
       Description: Example Lambda from CloudFormation
       MemorySize: 128
       Timeout: 4
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: nodejs6.10
       Handler: index.justatest
       Code:

@@ -57,7 +57,7 @@ Resources:
       Description: Function that takes a CSV file uploaded to the given bucket and imports the data to DynamoDB
       MemorySize: 128
       Timeout: 10
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt LambdaFunctionRole.Arn 
       Runtime: python2.7
       Handler: index.lambda_handler
       Code:

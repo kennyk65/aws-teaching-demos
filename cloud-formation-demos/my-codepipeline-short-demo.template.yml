@@ -181,14 +181,14 @@ Resources:
 
   # This is the CodePipeline with its stages:
   MyPipe:
-    Type: "AWS::CodePipeline::Pipeline"
+    Type: AWS::CodePipeline::Pipeline
     Properties:
       Name: MyPipe
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
       RestartExecutionOnUpdate: true
-      RoleArn: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref CodePipelineRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      RoleArn: !GetAtt CodePipelineRole.Arn
       Stages: 
         # Stage 1:  Get the source from GitHub:
         - Name: Source

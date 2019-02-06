@@ -47,7 +47,7 @@ Resources:
       Description: A (Java) Lambda function that produces sample sensor records for a Kinesis stream
       MemorySize: 256
       Timeout: 15
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref RecordProducerRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt RecordProducerRole.Arn
       Runtime: java8
       Handler: com.example.lambda.SensorReadingsProducerHandler
       Code:
@@ -64,7 +64,7 @@ Resources:
       Description: A (Java) Lambda function that processes sensor records from a Kinesis stream
       MemorySize: 256
       Timeout: 15
-      Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref RecordConsumerRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
+      Role: !GetAtt RecordConsumerRole.Arn
       Runtime: java8
       Handler: com.example.lambda.SensorRecordConsumerHandler
       Code:

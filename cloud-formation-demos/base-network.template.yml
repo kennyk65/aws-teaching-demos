@@ -15,6 +15,7 @@ Metadata:
           - NumberOfAZs
           - PrivateSubnets
           - NATType
+          - AmazonLinuxAMI
 
 Parameters:
   PrivateSubnets:
@@ -42,6 +43,12 @@ Parameters:
     Default:  "NAT Gateway"
     Description:  What type of NAT to use for private instances to communicate with the internet.  A single EC2 instance can be used as a NAT, or you can use the AWS NAT Gateway (managed, scalable, more expensive).  This setting will be IGNORED if you do not build private subnets.
 
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: Only used when using an EC2-based NAT.  You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
+
+
 Conditions:
   BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
   BuildPublicB:         !Not [ !Equals [ !Ref NumberOfAZs, 1 ]]  
@@ -50,31 +57,6 @@ Conditions:
   BuildPrivateC:        !And [ !Equals [ !Ref NumberOfAZs, 3 ], !Equals [ !Ref PrivateSubnets, True ] ]
   BuildNATGateway:      !And [ !Equals [ !Ref PrivateSubnets, True ], !Equals [ !Ref NATType, "NAT Gateway" ] ]
   BuildNATInstance:     !And [ !Equals [ !Ref PrivateSubnets, True ], !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
-
-
-Mappings:
-  #  This is the Amazon Linux 2 AMI.  Adjust these values as needed, they can change a few times per year:
-  AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-04681a1dbd79675a5    # N Virginia
-    us-east-2:
-      AMI: ami-0cf31d971a3ca20d6    # Ohio      
-    us-west-1:
-      AMI: ami-0782017a917e973e7    # N California
-    us-west-2:
-      AMI: ami-6cd6f714             # Oregon
-    eu-west-1:
-      AMI: ami-0bdb1d6c15a40392c    # Ireland
-    eu-central-1:
-      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
-    sa-east-1:
-      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
-    ap-southeast-1:
-      AMI: ami-01da99628f381e50a    # Singaport
-    ap-southeast-2:
-      AMI: ami-00e17d1165b9dd3ec    # Sydney
-    ap-northeast-1:
-      AMI: ami-08847abae18baa040    # Tokyo
 
 
 Resources:
@@ -269,7 +251,7 @@ Resources:
     Condition: BuildNATInstance
     DependsOn: PublicRoute1                                           # Must have route to IGW established.
     Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
+      ImageId: !Ref AmazonLinuxAMI  
       InstanceType: t2.small                                          # Any instance type is fine
       NetworkInterfaces:
       - DeviceIndex: '0'

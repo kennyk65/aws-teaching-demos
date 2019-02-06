@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template publishes some of my favorite demos into AWS Service Catalog.
+# Once there it is easier to launch the stacks through Service Catalog then to hunt for the
+# templates in my file system
+
+Parameters:
+  PrincipalARN:
+    Description:  The IAM user, group, or role that will be given permission to provision the products in the resulting Portfolio.  Replace the ARN you see here with one appropriate to your account.  I suggest a user or group to make demonstration easy.
+    Type:  String
+    Default:  arn:aws:iam::011673140073:group/everybody
+
+
+Resources:
+
+  # A Portfolio is a collection of products that belong together:
+  ClassroomDemoPortfolio:
+    Type: AWS::ServiceCatalog::Portfolio
+    Properties:
+      ProviderName: Hilltop Technology
+      Description: A set of demo stacks suitable for various classroom demos
+      DisplayName: Classroom Demos
+      AcceptLanguage: en
+
+  # Who is allowed to create products in this portfolio?
+  PortfolioPermission:
+    Type: AWS::ServiceCatalog::PortfolioPrincipalAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      PrincipalARN: !Ref PrincipalARN
+      PrincipalType: IAM                  # Lordy, there's only one possible value, and it is required...
+
+
+  # This Product build a VPC with Subnets under your direction:
+  NetworkInABox:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See https://www.infoq.com/articles/aws-vpc-cloudformation for background on this template article.
+      Description: A VPC with Subnets on-demand.  Choice between public and private, number of subnets, etc.  See https://www.infoq.com/articles/aws-vpc-cloudformation for background article.
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: NetworkInABox
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/base-network.template.yml
+          Name: v1
+
+  # Associate product with Portfolio.  (why can't this just be a property of the Product?)
+  PortfolioNetworkInABox:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref NetworkInABox
+
+  # This Demo builds an EC2 instance running a Docker image you specify:
+  DockerOnEc2Demo:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-docker-on-ec2-demo.template.yml
+      Description: This launches an EC2 instance and runs a Docker image on it.  You can take a look at the instance's user data to see how it is done.
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: DockerOnEc2Demo
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-docker-on-ec2-demo.template.yml
+          Name: v1
+
+  PortfolioDockerOnEc2Demo:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref DockerOnEc2Demo
+
+  # This Demo builds a simple Step Functions example 
+  StepFunctionsDemo:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-stepfunction-demo.template.yml
+      Description: This product produces a simple Simple Step-Function demo.  The step function calls 4 separate lambda functions in sequence to piece together the words to the Beatles "A Day In the Life" song - featuring Ringo.
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: StepFunctionsDemo
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-stepfunction-demo.template.yml
+          Name: v1
+
+  PortfolioStepFunctionsDemo:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref StepFunctionsDemo
+
+  # Elastic Beanstalk Rolling Deployment Demo
+  EBRollingDemo:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-elasticbeanstalk-rolling-demo.template.yml
+      Description: This product produces an Elastic Beanstalk application / environment with 4 instances.  Two versions of the app are available, v1 and v2.  When deploying v2 you can watch the rolling behavior.
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: EBRollingDemo
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-elasticbeanstalk-rolling-demo.template.yml
+          Name: v1
+
+  PortfolioEBRollingDemoDemo:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref EBRollingDemo
+
+  # Elastic Beanstalk BlueGreen Deployment Demo
+  EBBlueGreenDemo:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-elasticbeanstalk-bluegreen-demo.template.yml
+      Description: This product produces an Elastic Beanstalk application with two environments, a 'blue' mapped to a production url, and a 'green' mapped to a staging url.  Environment swap switches the two.
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: EBBlueGreenDemo
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-elasticbeanstalk-bluegreen-demo.template.yml
+          Name: v1
+
+  PortfolioEBBlueGreenDemo:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref EBBlueGreenDemo
+
+  # Systems Manager Demo
+  SystemsManagerDemo:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-systems-manager-demo.template.yml
+      Description: This product creates 4 EC2 instances running the SSM agent.  Use these as targets for session manager, EC2 run command, whatever.
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: SystemsManagerDemo
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-systems-manager-demo.template.yml
+          Name: v1
+
+  PortfolioSystemsManagerDemo:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref SystemsManagerDemo
+
+  # SAM Demo
+  SAMDemo:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-sam-demo.template.yml
+      Description: This product creates an API Gateway backed by an imaginitive "Hello World" Lambda function.  
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: SAMDemo
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-sam-demo.template.yml
+          Name: v1
+
+  PortfolioSAMDemo:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref ClassroomDemoPortfolio
+      ProductId: !Ref SAMDemo
+
+
+

@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template sets up an HTTPS website hosted in an S3 bucket.
+# Must Register your domain separately and manually through Rt53
+# Note that the hosted zone must already exist, not practical to create a hosted zone via CloudFormation.
+# This template also assumes the hosted zone is not already configured for some other use-case; you are on your own there.
+# Note: It can take several minutes for your website to become available due to DNS updates, plus CloudFront can take 15 minutes.
+# REGION RESTRICTION:  us-east-1 only.  This is only because CloudFront will only accept ACM certs from US East.  Ugh.
+# WARNING:  The Certificate creation requires manual intervention.  
+#   CloudFormation event will output a CREATE_IN_PROGRESS event with information on the DNS record set thay you must manually put in Rt53.
+#   It will look something like "Content of DNS Record is: {Name: _ca702...7b77.kenkrueger.net.,Type: CNAME,Value: _54a64...fe8.tljzshvwok.acm-validations.aws.}".  
+#   You must manually create a CNAME record in Rt53 with these values before stack creation resumes.  You have to do the same thing for the www record set.  Ugh. 
+# Warning:  Route53 Record sets are not cleaned up on stack delete.  You'll have to do this manually.  Ugh.
+# THINGS TO DO:  Get origin access identity working, get a nice error page on notfound, automatically populate bucket with simple web page.
+# See:  https://medium.freecodecamp.org/simple-site-hosting-with-amazon-s3-and-https-5e78017f482a for background.
+
+Parameters:
+
+  HostedZoneName:
+    Description:  The domain name, previously registered via Route 53, which you want to use for your web site.  
+    Type:  String
+    Default:  kenkrueger.net
+
+Resources:
+
+  # Main bucket.  Contains your static web content; .html, .js, .css, etc.
+  MainS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub ${HostedZoneName}
+
+  # This policy allows anyone in the world to make GET requests against the bucket.
+  MainS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Sub ${HostedZoneName}
+      PolicyDocument: 
+        Statement:
+          Effect: Allow
+          Action: s3:GetObject
+          Resource: !Sub ${MainS3Bucket.Arn}/*
+          Principal: "*"
+
+  #  Certificate to support secured http.  This cert is free as long as it is used with a resource like a CloudFront distribution:
+  #  TODO:  HOW TO SPECIFY WWW.
+  Cert:
+    Type: AWS::CertificateManager::Certificate
+    Properties: 
+      DomainName: !Ref HostedZoneName
+      ValidationMethod: DNS
+      SubjectAlternativeNames:
+      - !Sub "www.${HostedZoneName}"
+      DomainValidationOptions:
+      - DomainName: !Ref HostedZoneName
+        ValidationDomain: !Ref HostedZoneName
+      - DomainName: !Sub "www.${HostedZoneName}"
+        ValidationDomain: !Sub "www.${HostedZoneName}"
+
+  # Cloudfront distribution;
+  MainCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig: 
+        Enabled: true
+        Aliases:
+        - !Sub ${HostedZoneName}
+        DefaultCacheBehavior:
+          ForwardedValues:
+            QueryString: true
+          TargetOriginId: 1       # This is required, but no guidance on what it wants.
+          ViewerProtocolPolicy : redirect-to-https
+        Origins:
+        - Id: 1                                           # This is required, but no documentation on what it is.
+          DomainName:  !GetAtt MainS3Bucket.DomainName    # This is the S3 REST endpoint, not the static website endpoint.  The static website can't support HTTPS.
+          S3OriginConfig: {}
+        DefaultRootObject: index.html                       # S3 static website settings are ignored when using the REST endpoint, so we need to specify a landing page.
+        PriceClass: PriceClass_100                          # Cheapest.  US, Canada, Europe.
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Cert
+          SslSupportMethod: sni-only
+
+  WwwCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig: 
+        Enabled: true
+        Aliases:
+        - !Sub www.${HostedZoneName}
+        DefaultCacheBehavior:
+          ForwardedValues:
+            QueryString: true
+          TargetOriginId: 1       # This is required, but no guidance on what it wants.
+          ViewerProtocolPolicy : redirect-to-https
+        Origins:
+        - Id: 1                                           # This is required, but no documentation on what it is.
+          DomainName:  !GetAtt MainS3Bucket.DomainName    # S3 REST endpoint, not website endpoint, to support HTTPS.
+          S3OriginConfig: {}
+        DefaultRootObject: index.html                       # Not sure why this is needed since defined on bucket
+        PriceClass: PriceClass_100                          # Cheapest.  US, Canada, Europe.
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Cert
+          SslSupportMethod: sni-only
+
+  #  This route 53 record set ammends our existing hosted zone.  It sends traffic to our main bucket.
+  #  Note that the hosted zone must already exist, not practical to create a hosted zone via CloudFormation.
+  MainS3RecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      HostedZoneName: !Sub ${HostedZoneName}.           # That dot on the end is important. 
+      Name: !Ref HostedZoneName 
+      Type: A
+      AliasTarget: 
+        DNSName: !GetAtt MainCloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2   # HostedZoneId for CloudFront is this hard-coded value.  See https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-route53-aliastarget.html
+
+  #  This route 53 record set ammends our existing hosted zone.  It handles the 'www' subdomain, passing such traffic to the www.* bucket, which redirects to the main bucket.
+  WwwS3RecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      HostedZoneName: !Sub ${HostedZoneName}.           # That dot on the end is important. 
+      Name: !Sub www.${HostedZoneName} 
+      Type: A
+      AliasTarget: 
+        DNSName: !GetAtt WwwCloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2   # HostedZoneId for CloudFront is this hard-coded value.  See https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-route53-aliastarget.html
+
+Outputs:
+
+  DnsName:
+    Description: Website
+    Value: !Join ['', ["https://", !Ref HostedZoneName ]]
+
+  Route53:
+    Description:  Just a shortcut to the Route53 Console.
+    Value:  https://console.aws.amazon.com/route53/
+
+  CloudFront:
+    Description:  Shortcut to the CloudFront Console.
+    Value:    https://console.aws.amazon.com/cloudfront/home?region=us-east-1#distributions
+
+  CloudFrontDistributionMain:
+    Description:  Shortcut to the main CloudFront distribution in the Console.
+    Value: !Sub https://console.aws.amazon.com/cloudfront/home?region=${AWS::Region}#distribution-settings:${MainCloudFrontDistribution}
+
+  CloudFrontDistributionWww:
+    Description:  Shortcut to the www CloudFront distribution in the Console.
+    Value: !Sub https://console.aws.amazon.com/cloudfront/home?region=${AWS::Region}#distribution-settings:${WwwCloudFrontDistribution}
