@@ -58,67 +58,45 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select at least two public subnets in your selected VPC.
 
-Mappings:
-  #  This is just the Amazon Linux AMI:
-  AmazonLinuxAMI:
-    us-east-1:
-      AMI: ami-1ecae776
-    us-west-1:
-      AMI: ami-d114f295
-    us-west-2:
-      AMI: ami-e7527ed7
-    eu-west-1:
-      AMI: ami-a10897d6
-    eu-central-1:
-      AMI: ami-a8221fb5
-    sa-east-1:
-      AMI: ami-b52890a8
-    ap-southeast-1:
-      AMI: ami-68d8e93a
-    ap-southeast-2:
-      AMI: ami-fd9cecc7
-    ap-northeast-1:
-      AMI: ami-cbf90ecb
-
 
 Resources:
 
   # This Role allows CodeBuild to do certain things on our behalf.
   # See the policy for the interesting stuff:
   CodeBuildRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
       RoleName: CodeBuildRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codebuild.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Role allows CodePipeline to make certain things on our behalf:
   # See the policy for the interesting stuff:
   CodePipelineRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
       RoleName: CodePipelineRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codepipeline.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodeBuildRole.
   # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodeBuildPolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
       PolicyName: CodeBuildPolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -132,11 +110,11 @@ Resources:
   # This Policy is attached to the CodePipelineRole.
   # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodePipelinePolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
       PolicyName: CodePipelinePolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
@@ -153,7 +131,7 @@ Resources:
 
   # General Bucket where CodePipeline will store things:
   S3:
-    Type: "AWS::S3::Bucket"
+    Type: AWS::S3::Bucket
     Properties: 
       BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region", "-", !Ref "AWS::AccountId"]]
 
@@ -162,7 +140,7 @@ Resources:
   # Pipeline, so no need for details on Source and Artifacts.  Most of the details
   # on how to to the build itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
   MyBuild:
-    Type: "AWS::CodeBuild::Project"
+    Type: AWS::CodeBuild::Project
     Properties: 
       Name: MyBuild
       Description: Demo of CodeBuild with CodeDeploy pipeline.
@@ -171,7 +149,7 @@ Resources:
       Artifacts:
         Type: CODEPIPELINE       
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/java:openjdk-8
         PrivilegedMode: false
