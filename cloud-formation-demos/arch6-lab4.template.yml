@@ -36,7 +36,7 @@ Parameters:
   RoleNameInventoryApp:
     Type: String
     Description:  The name of the Role setup for use by the Inventory App's ECS instances.
-    Default: Inventory-App-Role3
+    Default: Inventory-App-Role
 
 
 Mappings:
@@ -147,14 +147,15 @@ Resources:
           yum install -y httpd mysql
           amazon-linux-extras install -y php7.2
           # Download Lab files
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.2.1/lab-1-webapp/scripts/inventory-app.zip
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.3.5/lab-2-webapp/scripts/inventory-app.zip
           unzip inventory-app.zip -d /var/www/html/
           # Download and install the AWS SDK for PHP
           wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
           unzip aws -d /var/www/html
           # Turn on web server
           chkconfig httpd on
-          service httpd start 
+          service httpd start
+
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup

@@ -211,7 +211,7 @@ Resources:
   InstanceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: Inventory-App-Role3
+      RoleName: Inventory-App-Role
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
