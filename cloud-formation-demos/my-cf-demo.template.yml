@@ -318,8 +318,8 @@ Resources:
       VPCZoneIdentifier: [ !Ref PrivateSubnet1,  !Ref PrivateSubnet2 ]
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
-      MaxSize: 3
-      DesiredCapacity: 1
+      MaxSize: 4
+      DesiredCapacity: 2
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       TargetGroupARNs:  [ !Ref ALBTargetGroup ]
