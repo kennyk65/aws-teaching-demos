@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Demonstrates running a fleet of on-demand / spot instances using a EC2 Fleet
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Network Configuration"
+        Parameters: 
+          - VpcId
+          - PublicSubnetIds
+
+Parameters:
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances access to the Internet.
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select 2 public, internet-facing subnets in your selected VPC
+
+  AmazonLinux2AMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
+
+Resources:
+
+
+
+  # Security Group for the instances.  Allow inbound ports for the ELB to use:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
+      GroupDescription: ECS Security Group
+      VpcId: !Ref VpcId
+
+  #  Inbound rules for HTTP on 80.  
+  SecurityGroupHTTPinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0     # This is pretty wide open.  
+ 
+  # This LogsGroup will be useful when several containers emit output:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', [!Ref 'AWS::StackName', "-ECSLogGroup" ]]
+      RetentionInDays: 3
+
+  EC2Fleet:
+    Type: AWS::EC2::EC2Fleet
+    Properties:
+      LaunchTemplateConfigs: 
+        - LaunchTemplateSpecification: 
+            LaunchTemplateId: !Ref LaunchTemplate
+            Version: 1
+          Overrides:    # These instances types will be used INSTEAD OF what our template says.
+            - InstanceType: t2.nano
+            - InstanceType: t2.micro
+            - InstanceType: t3.micro
+            - InstanceType: t3.small 
+            - Priority: 1            # Docs are conflicting, say it should be a whole number but then say double.
+              InstanceType: t2.nano
+              SubnetId: !Sel [0, !Ref PublicSubnetIds]
+              WeightedCapacity: 1     # Not a weight, a discrete integer amount.
+            - Priority: 2
+              InstanceType: t2.nano
+              SubnetId: !Sel [1, !Ref PublicSubnetIds]
+              WeightedCapacity: 1  
+            - Priority: 3            
+              InstanceType: t3.micro
+              SubnetId: !Sel [0, !Ref PublicSubnetIds]
+              WeightedCapacity: 1    
+            - Priority: 4
+              InstanceType: t3.micro
+              SubnetId: !Sel [1, !Ref PublicSubnetIds]
+              WeightedCapacity: 1 
+      OnDemandOptions: 
+        AllocationStrategy: prioritized # default value.  Could do lowest price.
+      SpotOptions: 
+        AllocationStrategy: lowestPrice     # only possible value and default
+        InstanceInterruptionBehavior: terminate # default is terminate.  Presumably other possible values are stop and hibernate
+        InstancePoolsToUseCount: 3              # May be similar to the "SpotInstancePools"
+      TagSpecifications: 
+        - ResourceType: fleet    # Docs incorrectly say it is optional.  Docs incorrectly state instance is allowable value
+          Tags:
+          - Key: Name
+            Value: Cluster Instance
+      TargetCapacitySpecification:  # Unfortunately, you can't express yourself in %s
+        DefaultTargetCapacityType: spot
+        OnDemandTargetCapacity: 2
+        SpotTargetCapacity: 8
+        TotalTargetCapacity: 10 
+      ExcessCapacityTerminationPolicy: termination  # termination or no-termination.  Docs wouldn't say.Terminate instances when target size decreases.  Not sure of possible values or  Don't know default.
+      ReplaceUnhealthyInstances: true       # Don't know possible values or default
+      TerminateInstancesWithExpiration: false  # Unknown values or default value.
+      Type: maintain  # maintain (default), instant, and request.  Maintain is most like a regular ASG.
+      ValidUntil:  "2033-01-01T01:00:00Z"   # If you don't put a value, all requests will cease in 7 days.
+
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-LaunchTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinux2AMI
+        SecurityGroupIds:  [!Ref SecurityGroup]
+    #    InstanceType: t2.micro     # Ordinarily we'd specify instance type in the launch template, but our ASG's mixed instance policy will override it anyway.
+        # InstanceInitiatedShutdownBehavior: String
+        # DisableApiTermination: Boolean
+
+        # Not allowed to use instance market options with
+        # InstanceMarketOptions: 
+        #   MarketType: spot
+        #   SpotOptions: 
+        #     SpotInstanceType: one-time # or persistent.  Can only be "one-time" when used with ASG.
+        #     #InstanceInterruptionBehavior: # terminate, hibernate, or stop.  Default is terminate.  hibernate requires agent install.
+        #     # MaxPrice: # Allow default to on-demand price
+        UserData: 
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install java-1.8.0 -y
+            wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/spring-cloud-aws-environment-demo-1.war
+            /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+            java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
+
+
+  # # The LaunchConfiguration for the cluster:      
+  # LaunchConfig:
+  #   Type: AWS::AutoScaling::LaunchConfiguration
+  #   Properties:
+  #     ImageId: !Ref AmazonLinux2AMI
+  #     SecurityGroups: [!Ref SecurityGroup]
+  #     InstanceType: t2.micro 
+  #     UserData:
+  #       Fn::Base64: !Sub |
+  #         #!/bin/bash
+  #         yum update -y
+  #         yum install java-1.8.0 -y
+  #         wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/spring-cloud-aws-environment-demo-1.war
+  #         /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+  #         java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
+
+  # An Application Load Balancer, with all of its sub-components:
+  # CHEAPER TO CONDUCT INITIAL EXPERIMENTS WITHOUT CREATING THE Alb EACH TIME.
+#   ALB:
+#     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+#     Properties:
+#       Name: ALB
+#       Scheme: internet-facing
+#       Subnets: !Ref PublicSubnetIds
+#       SecurityGroups: [!Ref SecurityGroup ]
+#   # Listen on port 80, pass all traffic to our only TargetGroup:
+#   ALBListener:
+#     Type: AWS::ElasticLoadBalancingV2::Listener
+#     Properties:
+#       Port: 80
+#       Protocol: HTTP
+#       LoadBalancerArn: !Ref ALB
+#       DefaultActions:
+#       - Type: forward
+#         TargetGroupArn: !Ref ALBTargetGroup
+#   # TargetGroup
+#   ALBTargetGroup:
+#     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+#     Properties:
+#       Name: App
+#       VpcId: !Ref VpcId
+#       Port: 80
+#       Protocol: HTTP
+#       HealthCheckProtocol: HTTP
+#       HealthCheckPath: /
+#       HealthCheckIntervalSeconds: 10
+#       HealthCheckTimeoutSeconds: 5
+#       HealthyThresholdCount: 2
+#       UnhealthyThresholdCount: 2
+
+# # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+# Outputs:
+
+#   ELBEndpoint:
+#     Description: The URL for our Elastic Load Balancer.
+#     Value: !Join ['', ["http://", !GetAtt ALB.DNSName ]]
