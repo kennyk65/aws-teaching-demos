@@ -12,17 +12,17 @@ Mappings:
   #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
   AmazonLinuxAMI:
     us-east-1: 
-      AMI: ami-04681a1dbd79675a5    # Virginia
+      AMI: ami-0de53d8956e8dcf80    # Virginia
     us-east-2:
-      AMI: ami-0cf31d971a3ca20d6    # Ohio
+      AMI: ami-02bcbb802e03574ba    # Ohio
     us-west-1:
-      AMI: ami-0782017a917e973e7    # N California
+      AMI: ami-0019ef04ac50be30f    # N California
     us-west-2:
-      AMI: ami-6cd6f714             # Oregon
+      AMI: ami-061392db613a6357b    # Oregon
     ap-south-1:
-      AMI: ami-00b6a8a2bd28daf19    # Mumbai
+      AMI: ami-0889b8a448de4fc44    # Mumbai
     ap-northeast-2:
-      AMI: ami-012566705322e9a8e    # Seoul
+      AMI: ami-047f7b46bd6dd5d84    # Seoul
     ap-southeast-1:
       AMI: ami-01da99628f381e50a    # Singapore
     ap-southeast-2:
@@ -138,8 +138,8 @@ Resources:
         Value: App-SG
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
+        FromPort: 80
+        ToPort: 80
         CidrIp: 0.0.0.0/0
 
   # web server:
