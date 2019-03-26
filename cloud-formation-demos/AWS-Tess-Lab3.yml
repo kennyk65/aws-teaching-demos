@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Automatically creates Technical Essentials Lab 2.
+# You must have lab 1 created first, and provide its stack name here.
+
+Parameters:
+
+  Lab1Stack:
+    Type:  String
+    Description:  The name of the stack from Lab 1.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
+    Default: lab1
+
+  Lab2Stack:
+    Type:  String
+    Description:  The name of the stack from Lab 2.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
+    Default: lab2
+
+  AmazonLinux2AMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
+
+
+Resources:
+
+  # Launch Configuration for our web server running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AmazonLinux2AMI                   # We lookup AMI in the region map
+      InstanceType: t2.micro                          # Any instance type will do
+      SecurityGroups: 
+        - Fn::ImportValue: !Sub ${Lab1Stack}:WebSecurityGroup  # Plug in the security group.
+      UserData:                     #  This code Installs a Spring Boot app. Notice a different way to signal completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          yum -y install httpd php mysql php-mysql
+          chkconfig httpd on
+          service httpd start
+          if [ ! -f /var/www/html/lab-app.tgz ]; then
+          cd /var/www/html
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.5.2/lab-1-build-a-web-server/scripts/lab-app.tgz
+          tar xvfz lab-app.tgz
+          chown apache:root /var/www/html/rds.conf.php
+          fi
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub ${Lab1Stack}:PrivateSubnet1
+        - Fn::ImportValue: !Sub ${Lab1Stack}:PrivateSubnet2
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
+      MaxSize: 4
+      DesiredCapacity: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:  [ !Ref ALBTargetGroup ]
+      Tags:
+      - Key: Name
+        Value: AppServer
+        PropagateAtLaunch: true
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB
+      Scheme: internet-facing
+      Subnets: 
+        - Fn::ImportValue: !Sub ${Lab1Stack}:PublicSubnet1
+        - Fn::ImportValue: !Sub ${Lab1Stack}:PublicSubnet2
+      SecurityGroups: 
+        - Fn::ImportValue: !Sub ${Lab1Stack}:WebSecurityGroup  # Plug in the security group.
+
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: App
+      VpcId: 
+        Fn::ImportValue: !Sub ${Lab1Stack}:VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 12
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !Join ['', ["http://", !GetAtt ALB.DNSName ]]

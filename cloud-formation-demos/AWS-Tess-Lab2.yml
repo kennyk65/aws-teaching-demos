@@ -8,14 +8,14 @@ Parameters:
   Lab1Stack:
     Type:  String
     Description:  The name of the stack from Lab 1.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
-    Default: Lab1
+    Default: lab1
 
   DBAllocatedStorage:
-    Default: '5'
+    Default: 5
     Description: The size of the database (Gb)
     Type: Number
-    MinValue: '5'
-    MaxValue: '1024'
+    MinValue: 5
+    MaxValue: 1024
     ConstraintDescription: must be between 5 and 1024Gb.
 
   DBInstanceClass:

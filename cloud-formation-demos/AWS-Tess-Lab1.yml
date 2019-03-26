@@ -10,37 +10,11 @@ Parameters:
     Default: 10.0.0.0/16
     AllowedValues:
       - 10.0.0.0/16
-Mappings:
-  AWSRegionToAMI:
-    us-east-1:
-      AMI: ami-c58c1dd3
-    us-east-2:
-      AMI: ami-4191b524
-    us-west-1:
-      AMI: ami-7a85a01a
-    us-west-2:
-      AMI: ami-4836a428
-    ca-central-1:
-      AMI: ami-0bd66a6f
-    eu-west-1:
-      AMI: ami-01ccc867
-    eu-west-2:
-      AMI: ami-b6daced2
-    eu-central-1:
-      AMI: ami-b968bad6
-    sa-east-1:
-      AMI: ami-37cfad5b
-    ap-southeast-1:
-      AMI: ami-fc5ae39f
-    ap-southeast-2:
-      AMI: ami-162c2575
-    ap-south-1:
-      AMI: ami-52c7b43d
-    ap-northeast-1:
-      AMI: ami-923d12f5
-    ap-northeast-2:
-      AMI: ami-9d15c7f3
 
+  AmazonLinux2AMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
 Resources:
   VPC:
@@ -155,7 +129,7 @@ Resources:
   WebInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region', AMI ]
+      ImageId: !Ref AmazonLinux2AMI
       InstanceType: t2.micro
       NetworkInterfaces:
         - DeviceIndex: '0'
@@ -168,14 +142,13 @@ Resources:
           Value: Web Server 1
       UserData: 
         Fn::Base64: !Sub |
-          #!/bin/bash -ex 
-          yum -y update
+          #!/bin/bash -ex
           yum -y install httpd php mysql php-mysql
           chkconfig httpd on
-          /etc/init.d/httpd start
+          service httpd start
           if [ ! -f /var/www/html/lab-app.tgz ]; then
           cd /var/www/html
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.3.2/lab-2-configure-website-datastore/scripts/lab-app.tgz
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.5.2/lab-1-build-a-web-server/scripts/lab-app.tgz
           tar xvfz lab-app.tgz
           chown apache:root /var/www/html/rds.conf.php
           fi
@@ -183,7 +156,7 @@ Resources:
   NATInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region', AMI ]
+      ImageId: !Ref AmazonLinux2AMI
       InstanceType: t2.micro
       NetworkInterfaces:
         - DeviceIndex: '0'
@@ -321,6 +294,18 @@ Outputs:
     Value: !Ref VPC
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", VPC ] ]
+
+  PublicSubnet1:
+    Description: First Public Subnet
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnet1 ] ]
+
+  PublicSubnet2:
+    Description: Second Public Subnet
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnet2 ] ]
 
   PrivateSubnet1:
     Description: First Private Subnet
