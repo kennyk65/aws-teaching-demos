@@ -338,6 +338,69 @@ Resources:
         Count: 1
         Timeout: PT10M
 
+  StepScalingOut: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      MetricAggregationType: Average
+      EstimatedInstanceWarmup: 120        #  Estimated time for new instance to contribute to metrics.  Used in step scaling policies.
+      StepAdjustments: 
+        - MetricIntervalLowerBound: 0     #  If breach between 70 & 90, increase by 1
+          MetricIntervalUpperBound: 20
+          ScalingAdjustment: 1
+        - MetricIntervalLowerBound: 20    #  If breach over 90, increase by 2
+          ScalingAdjustment: 2
+
+  StepScalingIn: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      MetricAggregationType: Average
+      StepAdjustments: 
+        - MetricIntervalLowerBound: 0     #  If breach is any size, decrease by 1.
+#          MetricIntervalUpperBound: 100
+          ScalingAdjustment: -1
+
+  # Fire alarm when average CPU > 70 for one 5 minute period.  Fire scale out policy.
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fire alarm when ASG's average CPU > 70 for one 5 minute period.  Fire scale out policy.
+      AlarmActions: 
+        - !Ref StepScalingOut
+      Statistic: Average
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 70
+      EvaluationPeriods: 1
+      Period: 300
+
+  # Fire alarm when average CPU < 10 for two 5 minute periods.  Fire scale in policy.
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fire alarm when ASG's average CPU < 10 for two 5 minute period.s  Fire scale in policy.
+      AlarmActions: 
+        - !Ref StepScalingIn
+      Statistic: Average
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+      Threshold: 10
+      EvaluationPeriods: 2
+      Period: 300
+
   # An Application Load Balancer, with all of its sub-components:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
