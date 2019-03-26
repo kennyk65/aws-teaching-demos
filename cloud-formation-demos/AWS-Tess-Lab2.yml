@@ -26,6 +26,14 @@ Parameters:
       - db.t2.micro
     ConstraintDescription: must select a valid database instance type.
 
+  MultiAZDatabase:
+    Default: false
+    Description: Do you want the database to have a master-standby arrangement?  Stack starts faster if you don't
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
 Resources:
 
 
@@ -64,7 +72,7 @@ Resources:
       Engine: MySQL
       MasterUsername: master
       MasterUserPassword: lab-password
-      MultiAZ: true
+      MultiAZ: !Ref MultiAZDatabase
       DBSubnetGroupName: !Ref dbsubnetgroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup

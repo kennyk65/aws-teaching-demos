@@ -62,6 +62,65 @@ Resources:
         Value: AppServer
         PropagateAtLaunch: true
 
+  StepScalingOut: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      MetricAggregationType: Average
+      EstimatedInstanceWarmup: 120        #  Estimated time for new instance to contribute to metrics.  Used in step scaling policies.
+      StepAdjustments: 
+        - MetricIntervalLowerBound: 0     #  Any size breach, increase by 1 (alarm triggers all scaling)
+          ScalingAdjustment: 1
+
+  StepScalingIn: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      MetricAggregationType: Average
+      StepAdjustments: 
+        - MetricIntervalLowerBound: 0     #  If breach is any size, decrease by 1.
+          ScalingAdjustment: -1
+
+  # Fire alarm when average CPU > 60 for one 5 minute period.  Fire scale out policy.
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fire alarm when ASG's average CPU > 60 for one 5 minute period.  Fire scale out policy.
+      AlarmActions: 
+        - !Ref StepScalingOut
+      Statistic: Average
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 60
+      EvaluationPeriods: 1
+      Period: 300
+
+  # Fire alarm when average CPU < 20 for one 5 minute periods.  Fire scale in policy.
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fire alarm when ASG's average CPU < 20 for one 5 minute period.  Fire scale in policy.
+      AlarmActions: 
+        - !Ref StepScalingIn
+      Statistic: Average
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+      Threshold: 20
+      EvaluationPeriods: 1
+      Period: 300
+
   # An Application Load Balancer, with all of its sub-components:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
