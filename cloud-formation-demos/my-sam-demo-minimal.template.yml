@@ -7,7 +7,7 @@ Resources:
     Properties:
       CodeUri: s3://kk-uploads-oregon/lambda-helloworld.js.zip
       Handler: lambda-helloworld.justatest
-      Runtime: nodejs6.10
+      Runtime: nodejs8.10
       Environment:
         Variables: 
           S3_BUCKET: bucket-name
