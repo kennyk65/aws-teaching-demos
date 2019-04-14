@@ -1,0 +1,269 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# See https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/browser-invoke-lambda-function-example.html
+# Run this CloudFormation tempate in Oregon.  Other regions will require some code adjustment.
+# Download and extract this zip:  https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/javascript/example_code/lambda/tutorial/slotassets.zip
+# Edit the index.html file.  Replace the Cognito Identity Pool value with the output of your stack.
+# Upload this file and all the other contents of the ZIP to your newly created bucket.
+# Access the web application via the Website URL output of your stack.
+
+Parameters:
+
+  S3BucketName:
+    Description:  The name of the S3 bucket for you website.  Must be globally unique.  
+    Type:  String
+    Default:  kk-slotmachine
+
+Resources:
+
+  # Main bucket.  
+  MainS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub ${S3BucketName}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+
+  # This policy allows anyone in the world to make GET requests against the bucket.
+  MainS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref MainS3Bucket
+      PolicyDocument: 
+        Statement:
+          Effect: Allow
+          Action: s3:GetObject
+          Resource: !Sub ${MainS3Bucket.Arn}/*
+          Principal: "*"
+
+  CognitoIdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub SlotMachine_Pool_${AWS::StackName}
+      AllowUnauthenticatedIdentities: true
+
+  # This Role allows the main Lambda function to be invoked:
+  # It only needs permissions to read dynamoDB and write to its own log files
+  RoleSlotMachineLambda:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub SlotMachine-LambdaRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # This role is for our custom resource / setup lambda.
+  # It needs to write to dynamoDB and its own log files.      
+  RoleSetupLambda:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub SlotMachine-Setup-LambdaRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+
+  # This role allows a Cognito Identity Pool - authenticated principal to call our main Lambda.
+  # It needs permission to invoke our lambda.
+  UnauthenticatedPrincipalRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub SlotMachine-UnauthenticatedPrincipal-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Federated: cognito-identity.amazonaws.com
+          Action: sts:AssumeRoleWithWebIdentity
+
+
+  AllowInvokeFunction:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub AllowCognitoUnauthInvokeLambda-${AWS::StackName}
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - lambda:InvokeFunction
+          Resource: !GetAtt SlotMachineLambda.Arn
+      Roles: 
+        - !Ref UnauthenticatedPrincipalRole
+
+  # IdentityPoolRoleAttachment:
+  #   Type: AWS::Cognito::IdentityPoolRoleAttachment
+  #   Properties:
+  #     IdentityPoolId: !Sub ${AWS::Region}:${CognitoIdentityPool}
+  #     Roles: 
+  #       !Sub unauthenticated:${UnauthenticatedPrincipalRole}
+      
+
+  # NodeJS function is fired by JS on web page whenever someone pulls the slot machine handle:
+  SlotMachineLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: slotpull
+      Description: Slot Machine function, fired by website..
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt RoleSlotMachineLambda.Arn
+      Runtime: nodejs8.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          /*
+            Copyright 2010-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+            This file is licensed under the Apache License, Version 2.0 (the "License").
+            You may not use this file except in compliance with the License. A copy of
+            the License is located at
+              http://aws.amazon.com/apache2.0/
+            This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+            CONDITIONS OF ANY KIND, either express or implied. See the License for the
+            specific language governing permissions and limitations under the License.
+          */
+          'use strict';
+          // Configuring the AWS SDK
+          var AWS = require('aws-sdk');
+          exports.handler = (event, context, callback) => {
+          // Define the object that will hold the data values returned
+          var slotResults = {
+            'isWinner' : false,
+            'leftWheelImage' : {'file' : {S: ''}},
+            'middleWheelImage' : {'file' : {S: ''}},
+            'rightWheelImage' : {'file' : {S: ''}}
+          };
+          // define parameters JSON for retrieving slot pull data from the database
+          var thisPullParams = {
+            Key: {
+            "slotPosition": {
+              N: ""
+              }
+            },
+            TableName: "slot_machine_images"
+          };
+          // create DynamoDB service object
+          var request = new AWS.DynamoDB({apiVersion: '2012-08-10'});
+          // =============================LEFT===========================================
+          // set a random number 0-9 for the left slot position
+          thisPullParams.Key.slotPosition.N = Math.floor(Math.random()*10).toString();
+          // call DynamoDB to retrieve the image to use for the Left slot result
+          var myLeftPromise = request.getItem(thisPullParams).promise().then(function(data) {
+              return data.Item.imageFile.S}, function() {console.log("Database read error on left wheel.")});
+          // =============================MIDDLE===========================================
+              // set a random number 0-9 for the middle slot position
+          thisPullParams.Key.slotPosition.N = Math.floor(Math.random()*10).toString();
+          // call DynamoDB to retrieve the image to use for the Left slot result
+          var myMiddlePromise = request.getItem(thisPullParams).promise().then(function(data) {
+            return data.Item.imageFile.S}, function() {console.log("Database read error on middle wheel.")});
+          // =============================RIGHT===========================================
+          // set a random number 0-9 for the slot position
+          thisPullParams.Key.slotPosition.N = Math.floor(Math.random()*10).toString();
+          // call DynamoDB to retrieve the image to use for the Left slot result
+          var myRightPromise = request.getItem(thisPullParams).promise().then(function(data) {
+            return data.Item.imageFile.S}, function() {console.log("Database read error on right wheel.")});
+          Promise.all([myLeftPromise, myMiddlePromise, myRightPromise]).then(function(values) {
+              slotResults.leftWheelImage.file.S = values[0];
+              slotResults.middleWheelImage.file.S = values[1];
+              slotResults.rightWheelImage.file.S = values[2];
+              // if all three values are identical, the spin is a winner
+              if ((values[0] === values[1]) && (values[0] === values[2])) {
+                  slotResults.isWinner = true;
+              }
+              // return the JSON result to the caller of the Lambda function
+              callback(null, slotResults);
+          });
+          };
+
+  DynamoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: slot_machine_images
+      AttributeDefinitions:
+        - AttributeName: slotPosition
+          AttributeType: N
+      KeySchema: 
+        - AttributeName: slotPosition
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # A bit crazy that an application like this needs a dynamoDB table, but here we are.  This function populates it:
+  PopulateTableFunction:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: PopulateTheTable
+      Description: Populate the talbe
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt RoleSetupLambda.Arn
+      Runtime: nodejs8.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          var AWS = require('aws-sdk');
+          var response = require('cfn-response');
+          var ddb = new AWS.DynamoDB({apiVersion: '2012-08-10'});
+          function post (position,image) {
+            var params = {TableName: 'slot_machine_images', Item: {'slotPosition' : {N: position}, 'imageFile' : {S: image}}};
+            ddb.putItem(params, function(err, data) {
+              if (err) {
+                console.log("Error", err);
+              } else {
+                console.log("Success", data);
+              }
+            });
+          }
+          //  Main function handler.  Populate table:
+          exports.handler = (event, context, callback) => {
+            post('0','spad_a.png');
+            post('1','spad_k.png');
+            post('2','spad_q.png');
+            post('3','spad_j.png');
+            post('4','hart_a.png');
+            post('5','hart_k.png');
+            post('6','hart_q.png');
+            post('7','hart_j.png');
+            post('8','diam_a.png');
+            post('9','diam_k.png');
+            post('10','diam_q.png');
+            post('11','diam_j.png');
+            post('12','club_a.png');
+            post('13','club_k.png');
+            post('14','club_q.png');
+            post('15','club_j.png');
+            response.send(event, context,response.SUCCESS);
+          }
+
+  FireLambdaPopulateTable:
+    Type: Custom::FireLambda
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt PopulateTableFunction.Arn
+
+
+Outputs:
+
+  IdentityPoolId:
+    Description: Cognito Identity Pool ID
+    Value: !Ref CognitoIdentityPool
+
+  WebsiteUrl:
+    Description:  URL of the website
+    Value: !GetAtt MainS3Bucket.WebsiteURL
