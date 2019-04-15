@@ -106,6 +106,8 @@ Resources:
       Roles: 
         - !Ref UnauthenticatedPrincipalRole
 
+  ## WARNING:  ACCORDING TO AWS TECHNICAL SUPPORT, YOU CANNOT ATTACH AN IDENTITY POOL TO A ROLE THROUGH CLOUDFORMATION.
+  ## YOU HAVE TO DO THIS MANUALLY.
   # IdentityPoolRoleAttachment:
   #   Type: AWS::Cognito::IdentityPoolRoleAttachment
   #   Properties:
