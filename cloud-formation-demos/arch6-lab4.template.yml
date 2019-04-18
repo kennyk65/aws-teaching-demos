@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-# This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 3.
-# It expects a 4 subnet VPC with RDS to exist before running.  See arch6-lab3-base.template.yml.
+# This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 4.
+# It expects a 4 subnet VPC with RDS to exist before running.  See arch6-lab4-base.template.yml.
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
