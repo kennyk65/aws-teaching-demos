@@ -2,8 +2,11 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
 # Implement Lab 7 of AWS Dev 3
-# Warning: This code can presently only run in us-east-1, since that is where the code bucket is.
-# WHAT YOU MUST DO:  Create the student/student user, copy the code into the web bucket.
+# Warning: This code can presently only run in us-east-1, since that is where the (default) code bucket is.
+# WHAT YOU MUST DO because this template can't do them for you:  
+#  1. Create the student/student user in the Cognito user pool.
+#  2. Alter the main.bundle.js in the website code with Cognito Pool ID and App Client ID.
+#  3. Copy / upload the website code into the web bucket.
 
 Parameters:
   FirstDashLastName:
@@ -19,6 +22,7 @@ Parameters:
   CodeUriKey: 
     Type: String
     Default: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
+    # Default: aws-dev-3/lab-7-end-to-end-lab-1.0.0.jar 
     Description: object key inside your S3 bucket where your code is located.
 
 
@@ -520,10 +524,48 @@ Resources:
       FunctionName: !Sub ${AWS::StackName}-PollyNotes-DictateFunction
       Description: PollyNotes-DictateFunction
       Role: !GetAtt LambdaFunctionRole.Arn
-      Handler: com.amazonaws.pollynotes.solution.DictateFunctionSolution
+      Handler: com.amazonaws.pollynotes.functions.DictateFunction
+      Timeout: 14
       Environment:
         Variables:
           MP3_BUCKET_NAME: !Ref S3MP3Bucket
+
+  # Permission to invoke Lambda function from API Gateway:
+  LambdaInvokePermissionList:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ListLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  LambdaInvokePermissionCreateUpdate:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt CreateUpdateLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  LambdaInvokePermissionSearch:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SearchLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  LambdaInvokePermissionDelete:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt DeleteLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  LambdaInvokePermissionDictate:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt DictateLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
 
 Outputs:
 
@@ -539,3 +581,14 @@ Outputs:
     Description: Pool ID value which is needed when making API calls.  
     Value: !Ref CognitoUserPoolClient
 
+  WebsiteUrl:
+    Description:  Link to the website bucket.
+    Value: !GetAtt S3WebBucket.WebsiteURL
+
+  CreateUserCommand1:
+    Description:  Run this at the command line to create the user
+    Value:  !Sub aws cognito-idp sign-up --client-id ${CognitoUserPoolClient} --username student --password student --region ${AWS::Region}
+
+  CreateUserCommand2:
+    Description:  Run this at the command line to confirm the user
+    Value:  !Sub aws cognito-idp admin-confirm-sign-up --user-pool-id ${CognitoUserPool} --username student --region ${AWS::Region}
