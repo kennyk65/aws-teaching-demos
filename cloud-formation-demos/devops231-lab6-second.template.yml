@@ -1,0 +1,294 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Run this template on your own account after the 'initial' template is done
+# and AFTER you have built docker images and uploaded them to ECR.
+
+Parameters:
+
+  ECRsiteURIPram:
+    Description: The ECR Repo URI for the MadLib/Website. (:latest Tag will be applied)
+    Type: String
+  ECRapiURIPram:
+    Description: The ECR Repo URI for the MadLib/API. (:latest Tag will be applied)
+    Type: String
+  ECRsaveURIPram:
+    Description: The ECR Repo URI for the MadLib/Save. (:latest Tag will be applied)
+    Type: String
+  BaseStack:
+    Description: The Name of the Stack that Qwiklabs had Launched for you
+    Type: String
+
+    
+Mappings:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-08111162
+    us-east-2:
+      AMI: ami-06547163
+    us-west-1:
+      AMI: ami-1b0f7d7b
+    us-west-2:
+      AMI: ami-f0091d91
+    eu-west-1:
+      AMI: ami-31328842
+    eu-central-1:
+      AMI: ami-e2df388d
+    ap-northeast-1:
+      AMI: ami-f80e0596
+    ap-northeast-2:
+      AMI: ami-6598510b
+    ap-southeast-1:
+      AMI: ami-c9b572aa
+    ap-southeast-2:
+      AMI: ami-f2210191
+    sa-east-1:
+      AMI: ami-1e159872
+
+Resources:
+
+  NodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref NodeRole]
+  NodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ec2.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: ecs-service
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: ['ecs:CreateCluster', 'ecs:DeregisterContainerInstance', 'ecs:DiscoverPollEndpoint',
+              'ecs:Poll', 'ecs:RegisterContainerInstance', 'ecs:StartTelemetrySession',
+              'ecs:Submit*', 'logs:CreateLogStream', 'logs:PutLogEvents', 'ecr:*']
+            Resource: '*'
+
+
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for ALB
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  ClusterSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MadLib ECS Cluster Security Group
+      VpcId: !Ref VpcId
+  ClusterSGHTTPinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ClusterSG
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+  ClusterSGALBports:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ClusterSG
+      IpProtocol: tcp
+      FromPort: 31000
+      ToPort: 61000
+      SourceSecurityGroupId: !Ref ClusterSG
+  staticSGALBports:   # Allow traffic from 80 - 82 as long as the source is our own cluster.
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ClusterSG
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 82
+      SourceSecurityGroupId: !Ref ClusterSG
+
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB
+      Scheme: internet-facing
+      Subnets:  !Ref SubnetIds
+      SecurityGroups: [!Ref WebServerSecurityGroup ]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: App
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  WebSiteTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: WebSiteTG80
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200
+      Tags:
+        - Key: Name
+          Value: WebSite-TG-80
+
+  apiTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: apiTG81
+      VpcId: !Ref VpcId
+      Port: 81
+      Protocol: HTTP
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /get_random_word/      
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 404
+      Tags:
+        - Key: Name
+          Value: api-TG-81
+
+  saveTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: saveTG82
+      VpcId: !Ref VpcId
+      Port: 82
+      Protocol: HTTP
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /save_paragraph/      
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 404
+      Tags:
+        - Key: Name
+          Value: save-TG-82
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: MadLib-Cluster-lab6
+
+  ClusterAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+    Properties:
+      TargetGroupARNs:
+        - !Ref WebSiteTG
+        - !Ref apiTG
+        - !Ref saveTG
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchConfigurationName: !Ref ClusterNodes
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      Tags:
+       - Key: Name
+         Value: ECS Cluster Node - AutoScaled
+         PropagateAtLaunch: true
+       - Key: ENV
+         Value: Production
+         PropagateAtLaunch: true
+       - Key: App
+         Value: DevOps - Lab 6
+         PropagateAtLaunch: true
+
+  ClusterNodes:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [AmazonLinuxAMI, !Ref 'AWS::Region', AMI]
+      SecurityGroups: [!Ref ClusterSG]
+      InstanceType: m5.large
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+
+          yum install -y ecs-init
+          yum install -y aws-cfn-bootstrap
+
+          echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+
+          service docker start
+          start ecs
+
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ClusterAutoScalingGroup --region ${AWS::Region}
+
+  # Website repository:
+  WebsiteRepo:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: madlib/websitex
+
+  # Save repository:
+  SaveRepo:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: madlib/savex
+
+  # API repository:
+  ApiRepo:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: madlib/apix
+
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+
+  RepoWebsite:
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${WebsiteRepo}:latest
+
+  SaveWebsite:
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${SaveRepo}:latest
+
+  ApiWebsite:
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ApiRepo}:latest
+
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !Join ['', ["http://", !GetAtt ALB.DNSName ]]
