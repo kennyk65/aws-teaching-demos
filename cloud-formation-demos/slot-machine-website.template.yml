@@ -106,14 +106,14 @@ Resources:
       Roles: 
         - !Ref UnauthenticatedPrincipalRole
 
-  ## WARNING:  ACCORDING TO AWS TECHNICAL SUPPORT, YOU CANNOT ATTACH AN IDENTITY POOL TO A ROLE THROUGH CLOUDFORMATION.
-  ## YOU HAVE TO DO THIS MANUALLY.
-  # IdentityPoolRoleAttachment:
-  #   Type: AWS::Cognito::IdentityPoolRoleAttachment
-  #   Properties:
-  #     IdentityPoolId: !Sub ${AWS::Region}:${CognitoIdentityPool}
-  #     Roles: 
-  #       !Sub unauthenticated:${UnauthenticatedPrincipalRole}
+  # Attach the role to the identity pool:
+  IdentityPoolRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref CognitoIdentityPool
+      Roles: 
+        unauthenticated:
+          !GetAtt UnauthenticatedPrincipalRole.Arn
       
 
   # NodeJS function is fired by JS on web page whenever someone pulls the slot machine handle:
