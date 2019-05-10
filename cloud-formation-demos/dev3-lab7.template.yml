@@ -4,11 +4,10 @@ Transform: AWS::Serverless-2016-10-31
 # Implement Lab 7 of AWS Dev 3
 # Warning: This code can presently only run in us-east-1, since that is where the (default) code bucket is.
 # WHAT YOU MUST DO because this template can't do them for you:  
-#  1. Create the student/student user in the Cognito user pool.  See the Output commands that do this.
-#  2. Download the website code from here: (http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip) and unzip.
-#  3. Alter the main.bundle.js within the website code with Cognito Pool ID, App Client ID, and API Gateway URL.
-#  4. Upload the modified website code into the web bucket.
-#  5. Have fun.
+#  1. Download the website code from here: (http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip) and unzip.
+#  2. Alter the main.bundle.js within the website code with Cognito Pool ID, App Client ID, and API Gateway URL.
+#  3. Upload the modified website code into the web bucket.
+#  4. Have fun.
 
 Parameters:
   FirstDashLastName:
@@ -568,6 +567,104 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
 
+
+  # This function will take care of some miscellaneous lab work for us, like setting up the test user
+  CustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotesCustomResource
+      Description: Handles miscellaneous tasks associated with lab 7.
+      Role: !GetAtt CustomResourceRole.Arn
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          import boto3
+
+          print('Loading function')
+          cognito = boto3.client('cognito-idp')
+          
+          # Entry point:
+          def lambda_handler(event, context):
+              print("Received event: " + json.dumps(event, indent=2))
+              responseData = {}
+
+              try:
+                  # Get the CloudFormation request type
+                  requestType = event['RequestType']
+                  cognitoUserPoolId = event['ResourceProperties']['CognitoUserPoolId']
+                  cognitoClientId = event['ResourceProperties']['CognitoClientId']
+
+                  # If creating...
+                  if requestType == 'Create':
+                      #  Create a test user in our Cognito user pool and confirm it
+                      cognito.sign_up(
+                          ClientId=cognitoClientId,
+                          Username='student',
+                          Password='student',
+                      )            
+                      print("Created user.")
+                      cognito.admin_confirm_sign_up(
+                          UserPoolId=cognitoUserPoolId,
+                          Username='student'
+                      )            
+                      print("User confirmed.")
+
+                  # Unless something blew up, we should wander into this code:
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                  print('Error occurred in Custom Resource.' + repr(e))
+                  responseData['Reason'] = 'Exception occurred in custom resource: ' + repr(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+      MemorySize: 128     
+      Timeout: 5         # Usually runs in less than one second.
+      Runtime: python3.7
+      Handler: index.lambda_handler
+
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-PollyNotesCustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the CustomResourceRole.
+  # Basic permissions for CloudWatch Logs, plus Cognito.
+  CustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-PollyNotesCustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - cognito-idp:*
+          Resource: "*"
+      Roles: 
+        -  !Ref CustomResourceRole   
+
+  # This custom resource calls our Lambda function:
+  HelperCustomResource:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLambda.Arn
+      CognitoUserPoolId: !Ref CognitoUserPool
+      CognitoClientId: !Ref CognitoUserPoolClient
+      
 
 Outputs:
 
