@@ -4,9 +4,11 @@ Transform: AWS::Serverless-2016-10-31
 # Implement Lab 7 of AWS Dev 3
 # Warning: This code can presently only run in us-east-1, since that is where the (default) code bucket is.
 # WHAT YOU MUST DO because this template can't do them for you:  
-#  1. Create the student/student user in the Cognito user pool.
-#  2. Alter the main.bundle.js in the website code with Cognito Pool ID and App Client ID.
-#  3. Copy / upload the website code into the web bucket.
+#  1. Create the student/student user in the Cognito user pool.  See the Output commands that do this.
+#  2. Download the website code from here: (http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip) and unzip.
+#  3. Alter the main.bundle.js within the website code with Cognito Pool ID, App Client ID, and API Gateway URL.
+#  4. Upload the modified website code into the web bucket.
+#  5. Have fun.
 
 Parameters:
   FirstDashLastName:
@@ -267,7 +269,7 @@ Resources:
                 requestTemplates:
                   application/json: "{\r\n\
                     \"userId\": \"$context.authorizer.claims.sub\",\r\n\
-                    \"noteId\": \"$input.params('id')\",\r\n\
+                    \"noteId\": $input.json('$.noteId'),\r\n\
                     \"note\": $input.json('$.note')\r\n
                     }"
                 contentHandling: CONVERT_TO_TEXT
