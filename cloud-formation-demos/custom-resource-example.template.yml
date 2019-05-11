@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This demonstrates a simple custom resource which calculates a value and returns it.
+# It demonstrates how to pass values to and from a custom resource Lambda function.
+# It can also be used to intentionally demonstrate error behavior, if you tell it to fail. 
+
+Parameters:
+
+  DoYouWantToSucceed:
+    Default:  true 
+    AllowedValues: ['true','false']
+    Description:  Use true to see what a success case looks like, false to see how to handle an error.
+    Type:  String
+
+  FirstNumber:
+    Default: 2
+    Type: Number 
+    Description: First value.
+
+  SecondNumber:
+    Default: 2
+    Type: Number 
+    Description: Second value.
+
+  Operator:
+    Type:  String
+    Default: "*"
+    AllowedValues:  ["+","-","*","/"]
+    Description: Choose whether to add, subtract, multiply, or divide the two numbers.
+
+Resources:
+
+
+  # This function will take care of some miscellaneous lab work for us, like setting up the test user
+  CustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CustomResourceLambda
+      Description: Handles miscellaneous tasks associated with lab 7.
+      Role: !GetAtt CustomResourceRole.Arn
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+
+          print('Loading function')
+
+          # Entry point:
+          def lambda_handler(event, context):
+              print("Received event: " + json.dumps(event, indent=2))
+              responseData = {}
+
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              doYouWantToSucceed = event['ResourceProperties']['doYouWantToSucceed']
+              first = float(event['ResourceProperties']['firstNumber'])
+              second = float(event['ResourceProperties']['secondNumber'])
+              operator = event['ResourceProperties']['operator']
+
+              #  First, look at the flag for throwing an error or not.  
+              #  This flag is for experimenting with error behavior:
+              if doYouWantToSucceed == 'false':
+                  print('Blowing up...')
+                  responseData['Reason'] = 'We were asked to create a failure.'
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                  return
+
+              # If creating or updating...
+              result = 0
+              if requestType == 'Create' or requestType == 'Update':
+                  print('Calculating ' + str(first) + operator + str(second))
+
+                  if operator == "*":
+                      result = first * second
+                  if operator == "/":
+                      result = first / second
+                  if operator == "+":
+                      result = first + second
+                  if operator == "-":
+                      result = first - second
+
+              responseData['result'] = result
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              return result
+
+      MemorySize: 128     
+      Timeout: 1         # Usually runs in less than one second.
+      Runtime: python3.7
+      Handler: index.lambda_handler
+
+
+  # Role attached to Lambda:
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # Policy attached to Role.  Basic permissions for CloudWatch Logs,
+  CustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref CustomResourceRole   
+
+  # This custom resource calls our Lambda function:
+  HelperCustomResource:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLambda.Arn
+      doYouWantToSucceed: !Ref DoYouWantToSucceed
+      firstNumber: !Ref FirstNumber
+      secondNumber: !Ref SecondNumber
+      operator: !Ref Operator
+
+Outputs:
+  Result:
+    Description: Result of calculation
+    Value: !GetAtt HelperCustomResource.result
+      
