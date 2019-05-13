@@ -3,11 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 
 # Implement Lab 7 of AWS Dev 3
 # Warning: This code can presently only run in us-east-1, since that is where the (default) code bucket is.
-# WHAT YOU MUST DO because this template can't do them for you:  
-#  1. Download the website code from here: (http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip) and unzip.
-#  2. Alter the main.bundle.js within the website code with Cognito Pool ID, App Client ID, and API Gateway URL.
-#  3. Upload the modified website code into the web bucket.
-#  4. Have fun.
+# Note that custom resource python code is creating the test user (student) and populating the web bucket.
 
 Parameters:
   FirstDashLastName:
@@ -30,7 +26,7 @@ Parameters:
 Globals:  # This section defines settings that we don't want to repeat over and over in each Lambda.
   Function:
     MemorySize: 1024
-    Timeout: 4
+    Timeout: 8
     Runtime: java8
     CodeUri: 
       Bucket: !Ref CodeUriBucket
@@ -58,16 +54,6 @@ Resources:
       ClientName: PollyNotesAngular
       GenerateSecret: false       
       UserPoolId: !Ref CognitoUserPool
-
-  # TODO: BETTER TO THIS MANUALLY, NO WAY TO SET PASSWORD.
-  # This is creating a sample user named 'robert' with a password of 'robert':
-  # CognitoUserPoolUser:
-  #   Type: AWS::Cognito::UserPoolUser
-  #   Properties:
-  #     Username: student
-  #     #  TODO:  HOW TO SET A PASSWORD.
-  #     UserPoolId: !Ref CognitoUserPool
-
 
   DynamoDbTable:
     Type: AWS::DynamoDB::Table
@@ -569,11 +555,11 @@ Resources:
 
 
   # This function will take care of some miscellaneous lab work for us, like setting up the test user
-  CustomResourceLambda:
+  CustomResourceTestUserLambda:
     Type: AWS::Lambda::Function
     Properties: 
-      FunctionName: !Sub ${AWS::StackName}-PollyNotesCustomResource
-      Description: Handles miscellaneous tasks associated with lab 7.
+      FunctionName: !Sub ${AWS::StackName}-PollyNotesTestUserCustomResource
+      Description: Sets up the test user for lab 7.
       Role: !GetAtt CustomResourceRole.Arn
       Code:
         ZipFile: !Sub |
@@ -583,42 +569,152 @@ Resources:
 
           print('Loading function')
           cognito = boto3.client('cognito-idp')
-          
+
           # Entry point:
           def lambda_handler(event, context):
               print("Received event: " + json.dumps(event, indent=2))
               responseData = {}
 
-              try:
-                  # Get the CloudFormation request type
-                  requestType = event['RequestType']
-                  cognitoUserPoolId = event['ResourceProperties']['CognitoUserPoolId']
-                  cognitoClientId = event['ResourceProperties']['CognitoClientId']
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              cognitoUserPoolId = event['ResourceProperties']['CognitoUserPoolId']
+              cognitoClientId = event['ResourceProperties']['CognitoClientId']
+              apiGatewayUrl = event['ResourceProperties']['ApiGatewayUrl']
 
-                  # If creating...
-                  if requestType == 'Create':
+              if requestType == 'Create':
+                  try:
                       #  Create a test user in our Cognito user pool and confirm it
                       cognito.sign_up(
-                          ClientId=cognitoClientId,
-                          Username='student',
-                          Password='student',
+                          ClientId=cognitoClientId, Username='student', Password='student'
                       )            
                       print("Created user.")
                       cognito.admin_confirm_sign_up(
-                          UserPoolId=cognitoUserPoolId,
-                          Username='student'
+                          UserPoolId=cognitoUserPoolId, Username='student'
                       )            
                       print("User confirmed.")
+                  except Exception as e:
+                      msg = 'Error creating / confirming user.  Exception is {}'.format(repr(e))
+                      print(msg)
+                      responseData['Reason'] = msg
+                      cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
 
-                  # Unless something blew up, we should wander into this code:
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
-              except Exception as e:
-                  print('Error occurred in Custom Resource.' + repr(e))
-                  responseData['Reason'] = 'Exception occurred in custom resource: ' + repr(e)
-                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
 
       MemorySize: 128     
       Timeout: 5         # Usually runs in less than one second.
+      Runtime: python3.7
+      Handler: index.lambda_handler
+
+
+  # This function will setup the web content in our S3 web bucket
+  CustomResourceWebContentLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-PollyNotesWebContentCustomResource
+      Description: Handles miscellaneous tasks associated with lab 7.
+      Role: !GetAtt CustomResourceRole.Arn
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          import boto3
+          from zipfile import ZipFile 
+          import string
+          import os
+          import mimetypes
+
+          print('Loading function')
+          s3 = boto3.client('s3')
+
+          # Entry point:
+          def lambda_handler(event, context):
+            print("Received event: " + json.dumps(event, indent=2))
+            responseData = {}
+
+            # Get the CloudFormation request type
+            requestType = event['RequestType']
+            rp = event['ResourceProperties']
+            usrPool = rp['CognitoUserPoolId']
+            clientId = rp['CognitoClientId']
+            apiGatewayUrl = rp['ApiGatewayUrl']
+            webCodeSourceBucket = rp['WebCodeSourceBucket']
+            webCodeSourceKey = rp['WebCodeSourceKey']
+            destinationBucket = rp['DestinationBucket']
+
+            if requestType == 'Create' or requestType == 'Update':
+                print ('Downloading ' + webCodeSourceBucket + "/" + webCodeSourceKey )
+                zip_file_name = "/tmp/web.zip"
+                unzip_location =  "/tmp"
+                try:
+                    s3.download_file(webCodeSourceBucket, webCodeSourceKey, zip_file_name)
+                except Exception as e:
+                    msg = 'Error downloading object {} from bucket {}. Check region.  Exception is {}.'.format(webCodeSourceKey, webCodeSourceBucket,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+                print ('Unzipping ' + zip_file_name )
+                try:
+                    with ZipFile(zip_file_name, 'r') as zip: 
+                        zip.extractall(unzip_location) 
+                except Exception as e:
+                    msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+                js_file_name = "/tmp/polly-notes-web-bucket-root/main.bundle.js"
+                print('Altering contents of ' + js_file_name) 
+                try:
+                    data = ""
+                    # Read the file contents into memory:
+                    with open(js_file_name,'r') as f:
+                      data = f.read()
+
+                    # Search and replace:
+                    data = data.replace("API_GATEWAY_INVOKE_URL = \"https://your-api-url\"","API_GATEWAY_INVOKE_URL = '" + apiGatewayUrl + "'")
+                    data = data.replace("COGNITO_POOL_ID = 'us-east-1-xxxxxxxxxxx'","COGNITO_POOL_ID = '" + usrPool + "'" )
+                    data = data.replace("COGNITO_APP_CLIENT_ID = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'", "COGNITO_APP_CLIENT_ID = '" + clientId + "'" )
+
+                    # Save
+                    with open(js_file_name,'w') as f:
+                      f.write(data)
+                except Exception as e:
+                    msg = 'Error altering {}.  Exception is {}.'.format(js_file_name,e)
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+                print ('Uploading ' + unzip_location + " to " + destinationBucket )
+                try:
+                    for root,dirs,files in os.walk(unzip_location):
+                        for file in files:
+                            mime_type = mimetypes.guess_type(file)[0]
+                            if mime_type is None:
+                              mime_type = "binary/octet-stream"
+                            prefix = root.replace(unzip_location,"",1)
+                            prefix = prefix.replace("/polly-notes-web-bucket-root/","")
+                            prefix = prefix.replace("/polly-notes-web-bucket-root","")
+                            if len(prefix) > 0:
+                                prefix = prefix + '/'
+                            print("uploading from {} to {}".format(os.path.join(root,file),prefix+file))
+                            s3.upload_file(os.path.join(root,file),destinationBucket,prefix + file,ExtraArgs={'ContentType': mime_type})
+
+                except Exception as e:
+                    msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(destinationBucket,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+
+            # Unless something blew up, we should wander into this code:
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+
+      MemorySize: 128     
+      Timeout: 15         # Uploads and downloads take a bit of time.
       Runtime: python3.7
       Handler: index.lambda_handler
 
@@ -652,19 +748,36 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             - cognito-idp:*
+            - s3:*
           Resource: "*"
       Roles: 
         -  !Ref CustomResourceRole   
 
   # This custom resource calls our Lambda function:
-  HelperCustomResource:
+  HelperCustomResourceTestUserLambda:
     Type: Custom::helper
     DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
     Properties:
-      ServiceToken: !GetAtt CustomResourceLambda.Arn
+      ServiceToken: !GetAtt CustomResourceTestUserLambda.Arn
       CognitoUserPoolId: !Ref CognitoUserPool
       CognitoClientId: !Ref CognitoUserPoolClient
-      
+      ApiGatewayUrl: http://lalalala
+      WebCodeSourceBucket: us-west-2-tcprod
+      WebCodeSourceKey: courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
+      DestinationBucket: !Ref S3WebBucket
+
+  HelperCustomResourceWebContentLambda:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    Properties:
+      ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
+      CognitoUserPoolId: !Ref CognitoUserPool
+      CognitoClientId: !Ref CognitoUserPoolClient
+      ApiGatewayUrl: !Sub https://${TheApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+      WebCodeSourceBucket: us-west-2-tcprod
+      WebCodeSourceKey: courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
+      DestinationBucket: !Ref S3WebBucket
+
 
 Outputs:
 
@@ -679,15 +792,19 @@ Outputs:
   CognitoClientId:
     Description: Pool ID value which is needed when making API calls.  
     Value: !Ref CognitoUserPoolClient
-
+    
+  ApiGatewayProductionStageUrl:
+    Description: The URL to use in your web code to point at the API gateway endpoint.  
+    Value: !Sub https://${TheApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+    
   WebsiteUrl:
     Description:  Link to the website bucket.
     Value: !GetAtt S3WebBucket.WebsiteURL
 
-  CreateUserCommand1:
-    Description:  Run this at the command line to create the user
-    Value:  !Sub aws cognito-idp sign-up --client-id ${CognitoUserPoolClient} --username student --password student --region ${AWS::Region}
+  # CreateUserCommand1:
+  #   Description:  Run this at the command line to create the user
+  #   Value:  !Sub aws cognito-idp sign-up --client-id ${CognitoUserPoolClient} --username student --password student --region ${AWS::Region}
 
-  CreateUserCommand2:
-    Description:  Run this at the command line to confirm the user
-    Value:  !Sub aws cognito-idp admin-confirm-sign-up --user-pool-id ${CognitoUserPool} --username student --region ${AWS::Region}
+  # CreateUserCommand2:
+  #   Description:  Run this at the command line to confirm the user
+  #   Value:  !Sub aws cognito-idp admin-confirm-sign-up --user-pool-id ${CognitoUserPool} --username student --region ${AWS::Region}
