@@ -55,7 +55,7 @@ Parameters:
   DockerRepository:
     Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
     Type: String
-    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo
 
   ContainerName:
     Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
@@ -446,7 +446,7 @@ Resources:
       ExecutionRoleArn: !GetAtt EcsTaskRole.Arn
       Cpu: 256                            # Required in Fargate, optional otherwise.
       Memory: 512                             # Required in Fargate, optional otherwise.
-      NetworkMode: awsvpc                            # Required for Fargate, can default otherwise.
+      NetworkMode: awsvpc                            # Required for Fargate, ironic because this is the only option in Fargate.
       RequiresCompatibilities:  
          - !If [DeployToFargate, FARGATE, EC2]  # Must be Fargate on Fargate
       ContainerDefinitions:
@@ -463,7 +463,7 @@ Resources:
             awslogs-stream-prefix: SpringEnvironmentDemo
         PortMappings:
         - ContainerPort: 8080     # The embedded Tomcat inside this container likes to listen on 8080.
-          HostPort: !If [DeployToFargate, 8080, 80]  # Fargate doesn't do port mapping, values must match.  Otherwise this means the host must have port 80 available, which influences if you can update a running container.
+          HostPort: !If [DeployToFargate, 8080, 80]  # Fargate network mode can only be awsvpc, which implies the host port = container port, so no port mapping.  Otherwise this means the host must have port 80 available, which influences if you can update a running container.
 
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:
