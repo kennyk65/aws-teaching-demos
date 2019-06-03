@@ -5,4 +5,3 @@ mv *.jar app.jar
 chmod +x app.jar
 ln -s /opt/app/app.jar /etc/init.d/demoapp
 service demoapp start
-
