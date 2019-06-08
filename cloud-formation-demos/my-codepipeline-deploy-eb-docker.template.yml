@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # This is a  codepipeline demo that 
 # 1) grabs code from GitHub on change 
-# 2) packages and tests using paralell actions 
+# 2) packages and tests using parallel actions 
 # 3) Docker-izes it, and stores in ECR
 # 4) deploys it to ElasticBeanstalk
 
@@ -64,7 +64,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -78,7 +78,7 @@ Resources:
   CodeBuildPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}--CodeBuildPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -104,7 +104,7 @@ Resources:
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelineRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -118,7 +118,7 @@ Resources:
   CodePipelinePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-CodePipelinePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -145,7 +145,7 @@ Resources:
   BeanstalkServiceRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkServiceRole  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -158,7 +158,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: BeanstalkServicePolicy
+      PolicyName: !Sub ${AWS::StackName}-BeanstalkServicePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -178,12 +178,28 @@ Resources:
       Roles: 
         -  !Ref BeanstalkServiceRole
 
+  # This Role allows the EC2 Instance created by Elastic Beanstalk to make ECR calls.
+  BeanstalkInstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-BeanstalkInstanceRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+
   # General Bucket where CodePipeline will store things:
   # Warning: This will need to be deleted manually before you can delete the stack.
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}${AWS::Region}
 
 
 
@@ -192,7 +208,7 @@ Resources:
   MavenBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenBuild" ]]
+      Name: !Sub ${AWS::StackName}-MavenBuild
       Description: Maven build, packaging only (tests are run separately)
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -226,7 +242,7 @@ Resources:
   DockerBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-DockerBuild" ]]
+      Name: !Sub ${AWS::StackName}-DockerBuild
       Description: Docker image build + push
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -261,10 +277,8 @@ Resources:
                   - echo Pushing the Docker images...
                   - docker push $REPOSITORY_URI:latest
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
-                  - echo Copying .dockercfg to S3 so it can be used by ElasticBeanstalk when pulling from private ECR repository
-                  - aws s3 cp ~/.dockercfg s3://${S3}/.dockercfg
                   - echo Creating the Dockerrun.aws.json file needed by ElasticBeanstalk
-                  - printf '{"AWSEBDockerrunVersion":"1", "Authentication":{"Bucket":"${S3}","Key":".dockercfg"},"Image":{"Name":"%s"},"Ports":[{"ContainerPort":8080,"HostPort":80}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
+                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":8080,"HostPort":80}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
             artifacts:
                 files: Dockerrun.aws.json
       Environment:
@@ -279,7 +293,7 @@ Resources:
   MavenTests:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenTests" ]]
+      Name: !Sub ${AWS::StackName}-MavenTests
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -306,7 +320,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Join ['', [!Ref 'AWS::StackName', "-PipeFromGitHubToECS" ]]
+      Name: !Sub ${AWS::StackName}-PipeFromGitHubToECS
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
@@ -398,7 +412,7 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: TestApplication
+      ApplicationName: !Sub ${AWS::StackName}-TestApplication
       Description: Quick live-test environment for the app.
 
   MyBeanstalkEnvironment:
@@ -417,6 +431,17 @@ Resources:
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !Ref BeanstalkServiceRole
+
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref EBInstanceProfile
+
+  EBInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      InstanceProfileName: !Sub ${AWS::StackName}-InstanceProfile
+      Roles: [!Ref BeanstalkInstanceRole ]
+
 
 Outputs:
   CodeBuild:
