@@ -53,7 +53,7 @@ Resources:
       EnableDnsHostnames: 'true'
       Tags:
       - Key: Name
-        Value: Lab VPC
+        Value: Demo VPC
         
   # Our VPC will need internet access:      
   InternetGateway:
@@ -171,17 +171,17 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '1024'
+        FromPort: 0
+        ToPort: 1024
         CidrIp: !GetAtt VPC.CidrBlock
       SecurityGroupEgress:
       - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '65535'
+        FromPort: 0
+        ToPort: 65535
         CidrIp: 0.0.0.0/0
       - IpProtocol: udp
-        FromPort: '0'
-        ToPort: '65535'
+        FromPort: 0
+        ToPort: 65535
         CidrIp: 0.0.0.0/0
 
   # Here is a SecurityGroup for the Bastion server:
@@ -198,8 +198,8 @@ Resources:
         Value: CloudFormationResource
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
+        FromPort: 22
+        ToPort: 22
         CidrIp: !Ref BastionSecurityCIDR    # Note how we reference an input parameter
 
   # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
@@ -216,13 +216,10 @@ Resources:
         Value: CloudFormationResource
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
+        FromPort: 80
+        ToPort: 80
         CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
-        CidrIp: !Join [ '', [ !GetAtt BastionServer.PrivateIp, "/32" ]]
+
       
   # This instance is our Bastion server
   BastionServer:
@@ -232,8 +229,8 @@ Resources:
       InstanceType: t2.micro                                          # Any size is fine
       KeyName: !Ref BastionHostKeyName                                # Use the keypair from the input parameters
       NetworkInterfaces:
-      - DeviceIndex: '0'
-        AssociatePublicIpAddress: 'true'                              # We will need a public IP address
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true                                # We will need a public IP address
         SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
         GroupSet:
         - Ref: BastionServerSecurityGroup                             # Attach the security group
@@ -253,12 +250,12 @@ Resources:
       KeyName: !Ref BastionHostKeyName                                # We use the Key specified in input parameters
       InstanceType: t2.small                                          # Any instance type is fine
       NetworkInterfaces:
-      - DeviceIndex: '0'
+      - DeviceIndex: 0
         SubnetId: !Ref PublicSubnet1                                  # Any public subnet is fine
-        AssociatePublicIpAddress: 'true'                              # We will definitely need a public IP address
+        AssociatePublicIpAddress: true                              # We will definitely need a public IP address
         GroupSet:
         - Ref: NATSecurityGroup                                       # Plug in the security group
-      SourceDestCheck: 'false'                                        # NATs don't work if EC2 tries the match source addresses with destinations.
+      SourceDestCheck: false                                        # NATs don't work if EC2 tries the match source addresses with destinations.
       Tags:
       - Key: Name
         Value: NAT
@@ -319,7 +316,7 @@ Resources:
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
       MaxSize: 4
-      DesiredCapacity: 2
+      DesiredCapacity: 4
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       TargetGroupARNs:  [ !Ref ALBTargetGroup ]
@@ -442,4 +439,4 @@ Outputs:
 
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !Join ['', ["http://", !GetAtt ALB.DNSName ]]
+    Value: !Sub http://${ALB.DNSName}
