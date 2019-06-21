@@ -19,6 +19,11 @@ Parameters:
     Type: String
     Default: spring-cloud-aws-cloudwatch-demo-1.war
 
+  EmailAddress:
+    Description: Eamail address to send alerts to
+    Type: String
+    Default: kenkrueger65@gmail.com
+
 
 Resources:
 
@@ -26,7 +31,7 @@ Resources:
   BeanstalkServiceRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: CloudWatchBeanstalkServiceRole  
+      RoleName: !Sub CloudWatchBeanstalkServiceRole-${AWS::StackName}  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -39,7 +44,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CloudWatchBeanstalkServicePolicy
+      PolicyName: !Sub CloudWatchBeanstalkServicePolicy-${AWS::StackName}
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -63,7 +68,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: CloudWatchBeanstalkAppRole  
+      RoleName: !Sub CloudWatchBeanstalkAppRole-${AWS::StackName}
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -76,7 +81,7 @@ Resources:
   BeanstalkAppPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CloudWatchBeanstalkAppPolicy
+      PolicyName: !Sub CloudWatchBeanstalkAppPolicy-${AWS::StackName}
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -99,7 +104,7 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: !Join ['', ["CloudWatchDemo", !Ref "AWS::StackName" ]]
+      ApplicationName: !Sub CloudWatchDemo-${AWS::StackName}
 
   # How to get the code:
   MyVersion:
@@ -155,9 +160,50 @@ Resources:
     Type: AWS::IAM::InstanceProfile
     Properties: 
       InstanceProfileName: CloudWatchBeanstalkInstanceProfile
-      Roles:
-      - !Ref BeanstalkAppRole 
+      Roles: [!Ref BeanstalkAppRole] 
+
+  # Topic to send email alerts to, when boredom is excessive:
+  SnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: Boredom Alert! 
+      TopicName: BoredomAlert
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
+
+  # # Un-comment this to make use a metrics filter to collect the metric;
+  # # The metric filter assumes the name of the EB environment, and is specific to Tomcat application logs.
+  # MetricFilter:
+  #   Type: AWS::Logs::MetricFilter
+  #   Properties: 
+  #     # This log group is assumed to be created by the EB environment:
+  #     LogGroupName: /aws/elasticbeanstalk/CloudWatchDemo/var/log/web-1.log
+  #     # Line of output looks like:  "...com.example.MonitoringService  : Boredom Level: 68"
+  #     FilterPattern: "[..., boredom=Boredom, level=\"Level:\", amount]"
+  #     # Extract the actual boredom amount as our metric:
+  #     MetricTransformations: 
+  #       - MetricName: BoredomLevelFromLog
+  #         MetricNamespace: Training
+  #         MetricValue: $amount
+
+  # # Uncomment this to raise an alarm on high boredom
+  # # Fire alarm when Boredom becomes excessive:
+  # HighBoredomAlarm:
+  #   Type: AWS::CloudWatch::Alarm
+  #   Properties:
+  #     AlarmDescription: Fire alarm when boredom goes over 90%
+  #     Statistic: Average
+  #     Namespace: Training
+  #     MetricName: BoredomLevel
+  #     ComparisonOperator: GreaterThanThreshold
+  #     Threshold: 90
+  #     EvaluationPeriods: 1
+  #     Period: 60
+  #     AlarmActions:
+  #       - !Ref SnsTopic
+
 
 Outputs:
   ProductionURL:
-    Value: !Join ['', ["http://", !GetAtt EBEnvironment.EndpointURL ]]
+    Value: !Sub http://${EBEnvironment.EndpointURL}
