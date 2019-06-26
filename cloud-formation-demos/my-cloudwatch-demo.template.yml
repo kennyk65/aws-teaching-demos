@@ -124,11 +124,12 @@ Resources:
       VersionLabel: !Ref MyVersion
       EnvironmentName: CloudWatchDemo
       CNAMEPrefix: !Ref Prefix
-      SolutionStackName: "64bit Amazon Linux 2018.03 v2.7.4 running Java 8"
+      SolutionStackName: "64bit Amazon Linux 2018.03 v3.1.6 running Tomcat 8.5 Java 8"
+
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:application
           OptionName: "Application Healthcheck URL"
-          Value: /health
+          Value: /
 
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
@@ -150,27 +151,14 @@ Resources:
           OptionName: RetentionInDays
           Value: 3                                # Keep logs a few days.
 
-        - Namespace: aws:elasticbeanstalk:application:environment
-          OptionName: SERVER_PORT
-          Value: 5000                             # Spring Boot likes to listen on 8080, but EB expects 5000.  Easier to change Boot and EB.
-
 
   # Attaches the role to the instance:
   MyBeanstalkInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties: 
-      InstanceProfileName: CloudWatchBeanstalkInstanceProfile
+      InstanceProfileName: !Sub BeanstalkInstanceProfile-${AWS::StackName}  
       Roles: [!Ref BeanstalkAppRole] 
 
-  # Topic to send email alerts to, when boredom is excessive:
-  SnsTopic:
-    Type: AWS::SNS::Topic
-    Properties: 
-      DisplayName: Boredom Alert! 
-      TopicName: BoredomAlert
-      Subscription:
-        - Endpoint: !Ref EmailAddress
-          Protocol: email
 
   # # Un-comment this to make use a metrics filter to collect the metric;
   # # The metric filter assumes the name of the EB environment, and is specific to Tomcat application logs.
@@ -183,8 +171,8 @@ Resources:
   #     FilterPattern: "[..., boredom=Boredom, level=\"Level:\", amount]"
   #     # Extract the actual boredom amount as our metric:
   #     MetricTransformations: 
-  #       - MetricName: BoredomLevelFromLog
-  #         MetricNamespace: Training
+  #       - MetricNamespace: Training
+  #         MetricName: BoredomLevelFromLog
   #         MetricValue: $amount
 
   # # Uncomment this to raise an alarm on high boredom
@@ -202,6 +190,16 @@ Resources:
   #     Period: 60
   #     AlarmActions:
   #       - !Ref SnsTopic
+
+  # # Topic to send email alerts to, when boredom is excessive:
+  # SnsTopic:
+  #   Type: AWS::SNS::Topic
+  #   Properties: 
+  #     DisplayName: Boredom Alert! 
+  #     TopicName: BoredomAlert
+  #     Subscription:
+  #       - Endpoint: !Ref EmailAddress
+  #         Protocol: email
 
 
 Outputs:
