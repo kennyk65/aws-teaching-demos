@@ -124,8 +124,8 @@ Resources:
       VersionLabel: !Ref MyVersion
       EnvironmentName: CloudWatchDemo
       CNAMEPrefix: !Ref Prefix
-      SolutionStackName: "64bit Amazon Linux 2018.03 v3.1.6 running Tomcat 8.5 Java 8"
-
+      # SolutionStackName: "64bit Amazon Linux 2018.03 v3.1.6 running Tomcat 8.5 Java 8" # Doesn't stream required log file
+      SolutionStackName: "64bit Amazon Linux 2018.03 v2.7.4 running Java 8"
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:application
           OptionName: "Application Healthcheck URL"
@@ -142,6 +142,10 @@ Resources:
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: EnvironmentType
           Value: SingleInstance                   # No load balancer please.
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SERVER_PORT
+          Value: 5000                             # Spring Boot likes to listen on 8080, but EB expects 5000.  Easier to change Boot and EB.
 
         - Namespace: aws:elasticbeanstalk:cloudwatch:logs
           OptionName: StreamLogs
@@ -181,9 +185,9 @@ Resources:
   #   Type: AWS::CloudWatch::Alarm
   #   Properties:
   #     AlarmDescription: Fire alarm when boredom goes over 90%
-  #     Statistic: Average
   #     Namespace: Training
   #     MetricName: BoredomLevel
+  #     Statistic: Average
   #     ComparisonOperator: GreaterThanThreshold
   #     Threshold: 90
   #     EvaluationPeriods: 1
