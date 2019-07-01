@@ -124,8 +124,7 @@ Resources:
       VersionLabel: !Ref MyVersion
       EnvironmentName: CloudWatchDemo
       CNAMEPrefix: !Ref Prefix
-      # SolutionStackName: "64bit Amazon Linux 2018.03 v3.1.6 running Tomcat 8.5 Java 8" # Doesn't stream required log file
-      SolutionStackName: "64bit Amazon Linux 2018.03 v2.7.4 running Java 8"
+      SolutionStackName: "64bit Amazon Linux 2018.03 v2.8.6 running Java 8"
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:application
           OptionName: "Application Healthcheck URL"
