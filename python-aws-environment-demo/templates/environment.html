@@ -1,0 +1,121 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<title>AWS Test Web Server Application</title>
+<link rel="stylesheet" href="css/screen.css" type="text/css" media="screen" title="default" />
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous"/>
+
+</head>
+
+<body> 
+
+<!-- start content -->
+<center>
+<div id="content" class="container">
+			<center>
+				<img src="/static/AWS_Logo_Web_200px.png" />
+				<br/>
+				<br/>
+
+<div class="panel panel-default">
+  <!-- Default panel contents -->
+  <div class="panel-heading">
+  <h2>Instance Metadata</h2>
+  <p>(From the locally installed metadata service http://169.254.169.254/latest)</p></div>
+	
+	<table id="content-table" class="table">
+	<tr>
+		<th></th>
+		<th>Metadata</th>
+		<th>Value</th>
+	</tr>
+	<tr>
+		<td>	<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>
+		Instance</td>
+		<td>ID:<br/>Type:<br/>AMI:<br/>Action:</td>
+		<td>
+			<span>{{metadata['instanceId']}}</span><br/>
+			<span >{{metadata['instanceType']}}</span><br/>
+			<span >{{metadata['amiId']}}</span><br/>
+			<span >{{metadata['instanceAction']}}</span><br/>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<span class="glyphicon glyphicon-home" aria-hidden="true"></span>
+			Local
+		</td>
+		<td>IP:<br/>Hostname:<br/></td>
+		<td>
+			<span >{{metadata['localIpv4']}}</span><br/>
+			<span >{{metadata['localHostname']}}</span>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<span class="glyphicon glyphicon-cloud" aria-hidden="true"></span>
+			Public
+		</td>
+		<td>IP:<br/>Hostname:<br/></td>
+		<td>
+			<span >{{metadata['publicIpv4']}}</span><br/>
+			<span >{{metadata['publicHostname']}}</span>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<span class="glyphicon glyphicon-search" aria-hidden="true"></span>
+			Hostname
+		</td>
+		<td/>
+		<td>
+			<span >{{metadata['hostname']}}</span>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<span class="glyphicon glyphicon-tag" aria-hidden="true"></span>
+			mac
+		</td>
+		<td/>
+		<td>
+			<span >{{metadata['mac']}}</span>
+		</td>
+	</tr>
+	<tr>
+		<td>	<span class="glyphicon glyphicon-leaf" aria-hidden="true"></span>
+		Reservation ID</td>
+		<td/>
+		<td>
+			<span >{{metadata['reservationId']}}</span>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<span class="glyphicon glyphicon-ban-circle" aria-hidden="true"></span>
+			Security Groups
+		</td>
+		<td/>
+		<td>
+			<span >{{metadata['securityGroups']}}</span>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<span class="glyphicon glyphicon-bookmark" aria-hidden="true"></span>
+			Placement
+		</td>
+		<td>Availability Zone</td>
+		<td><span >{{metadata['availabilityZone']}}</span></td>
+	</tr>
+	</table>
+</div>
+</center>
+<!--  end content -->
+</div>
+</center>
+ 
+</body>
+</html>
