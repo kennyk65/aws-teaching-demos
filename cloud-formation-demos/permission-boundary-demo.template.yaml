@@ -5,6 +5,22 @@ AWSTemplateFormatVersion: 2010-09-09
 # This role can do anything in IAM, like creating other roles, policies, etc.
 # BUT anything they create will be subject to the permission boundary.
 
+Parameters:
+  UsePermissionBoundaries:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want the roles to be setup with permission boundaries?  When false, the role we create will be able to exceed their own permissions.
+
+  RolePrefix:
+    Type: String
+    Default: MyPrefix
+    Description: The first few letters of the role names that our principal will be allowed to create, update, and delete.
+
+Conditions:
+  PermissionBoundariesCondition:        !Equals [ !Ref UsePermissionBoundaries, True ] 
 
 Resources:
 
@@ -13,6 +29,9 @@ Resources:
     Type: AWS::IAM::Role
     Properties: 
       RoleName: AverageDeveloperRole
+      ManagedPolicyArns: 
+        - !Ref AverageDeveloperBasicPolicy
+        - !If [PermissionBoundariesCondition, !Ref AverageDeveloperBoundedPolicy, !Ref AverageDeveloperUnboundedPolicy]
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -22,19 +41,85 @@ Resources:
           Action: sts:AssumeRole
 
 
-  # This controls what the AverageDeveloperRole can do
-  AverageDeveloperPolicy:
-    Type: AWS::IAM::Policy
+  # Basic permissions that someone should always be allowed to do:
+  AverageDeveloperBasicPolicy:
+    Type: AWS::IAM::ManagedPolicy
     Properties: 
-      PolicyName: AverageDeveloperPolicy
+      ManagedPolicyName: AverageDeveloperBasicPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - iam:List*
+            - iam:Get*
+            - s3:*
+          Resource: 
+            - "*"
+
+
+  # This controls what the AverageDeveloperRole can do.  
+  # It's too powerful, a developer can exceed their own permissions by using it to create other powerful roles:
+  AverageDeveloperUnboundedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      ManagedPolicyName: AverageDeveloperUnboundedPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
             - iam:*
-            - s3:*
           Resource: 
             - "*"
-      Roles: 
-        -  !Ref AverageDeveloperRole
+
+  # This alternative Policy controls what the AverageDeveloperRole can do.
+  # It has boundaries, it allows manipulation of roles only if they have a permission boundary, and only certain prefixes:
+  AverageDeveloperBoundedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      ManagedPolicyName: AverageDeveloperBoundedPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          # Your stuff must be prefixed and reference a permission boundary:
+          - Effect: Allow
+            Action: 
+              - iam:CreateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
+          # You can only muck with your own stuff:
+          - Effect: Allow
+            Action: 
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*"
+          - Effect: Allow
+            Action: 
+              - iam:DeleteRole
+              - iam:UpdateRole
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
+
+  #  This is the policy a central administrator would set to ultimately limit 
+  #  what the Developer created roles / policies could do.
+  PermissionBoundaryPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      ManagedPolicyName: CentrallyAdministeredRestrictions
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - s3:*
+            - iam:List*
+          Resource: 
+            - "*"
