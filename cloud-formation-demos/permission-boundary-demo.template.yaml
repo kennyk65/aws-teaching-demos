@@ -113,7 +113,7 @@ Resources:
   PermissionBoundaryPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties: 
-      ManagedPolicyName: CentrallyAdministeredRestrictions
+      ManagedPolicyName: PermissionBoundaryPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
