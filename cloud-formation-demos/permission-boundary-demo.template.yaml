@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template demonstrates a permission boundary.
+# The role "AverageDeveloperRole" will be assumable by users within the account.
+# This role can do anything in IAM, like creating other roles, policies, etc.
+# BUT anything they create will be subject to the permission boundary.
+
+
+Resources:
+
+  # AverageDeveloperRole can be assumed by any user or role in the account:
+  AverageDeveloperRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: AverageDeveloperRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action: sts:AssumeRole
+
+
+  # This controls what the AverageDeveloperRole can do
+  AverageDeveloperPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: AverageDeveloperPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - iam:*
+            - s3:*
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref AverageDeveloperRole
