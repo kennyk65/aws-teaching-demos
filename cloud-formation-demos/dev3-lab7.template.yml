@@ -14,12 +14,11 @@ Parameters:
   CodeUriBucket: 
     Type: String
     Default: kk-courses
-    Description: S3 bucket in which you have placed your code (zip file)
+    Description: S3 bucket in which you have placed the Lambda function code (zip file)
 
   CodeUriKey: 
     Type: String
     Default: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
-    # Default: aws-dev-3/lab-7-end-to-end-lab-1.0.0.jar 
     Description: object key inside your S3 bucket where your code is located.
 
 
@@ -579,7 +578,6 @@ Resources:
               requestType = event['RequestType']
               cognitoUserPoolId = event['ResourceProperties']['CognitoUserPoolId']
               cognitoClientId = event['ResourceProperties']['CognitoClientId']
-              apiGatewayUrl = event['ResourceProperties']['ApiGatewayUrl']
 
               if requestType == 'Create':
                   try:
@@ -761,10 +759,6 @@ Resources:
       ServiceToken: !GetAtt CustomResourceTestUserLambda.Arn
       CognitoUserPoolId: !Ref CognitoUserPool
       CognitoClientId: !Ref CognitoUserPoolClient
-      ApiGatewayUrl: http://lalalala
-      WebCodeSourceBucket: us-west-2-tcprod
-      WebCodeSourceKey: courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
-      DestinationBucket: !Ref S3WebBucket
 
   HelperCustomResourceWebContentLambda:
     Type: Custom::helper
