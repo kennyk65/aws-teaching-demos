@@ -24,6 +24,25 @@ Parameters:
     Type: String
     Default: kenkrueger65@gmail.com
 
+  UseMetricsFilter:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want to setup a metrics filter?  Recommend demonstrating without it first.
+
+  UseAlarm:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want to setup an alarm and notification?  Recommend demonstrating this last.
+
+Conditions:
+  ImplementMetricsFilter:   !Equals [ !Ref UseMetricsFilter, True ] 
+  ImplementAlarm:           !Equals [ !Ref UseAlarm, True ] 
 
 Resources:
 
@@ -163,47 +182,49 @@ Resources:
       Roles: [!Ref BeanstalkAppRole] 
 
 
-  # # Un-comment this to make use a metrics filter to collect the metric;
-  # # The metric filter assumes the name of the EB environment, and is specific to Tomcat application logs.
-  # MetricFilter:
-  #   Type: AWS::Logs::MetricFilter
-  #   Properties: 
-  #     # This log group is assumed to be created by the EB environment:
-  #     LogGroupName: /aws/elasticbeanstalk/CloudWatchDemo/var/log/web-1.log
-  #     # Line of output looks like:  "...com.example.MonitoringService  : Boredom Level: 68"
-  #     FilterPattern: "[..., boredom=Boredom, level=\"Level:\", amount]"
-  #     # Extract the actual boredom amount as our metric:
-  #     MetricTransformations: 
-  #       - MetricNamespace: Training
-  #         MetricName: BoredomLevelFromLog
-  #         MetricValue: $amount
+  # Un-comment this to make use a metrics filter to collect the metric;
+  # The metric filter assumes the name of the EB environment, and is specific to Tomcat application logs.
+  MetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Condition: ImplementMetricsFilter
+    Properties: 
+      # This log group is assumed to be created by the EB environment:
+      LogGroupName: /aws/elasticbeanstalk/CloudWatchDemo/var/log/web-1.log
+      # Line of output looks like:  "...com.example.MonitoringService  : Boredom Level: 68"
+      FilterPattern: "[..., boredom=Boredom, level=\"Level:\", amount]"
+      # Extract the actual boredom amount as our metric:
+      MetricTransformations: 
+        - MetricNamespace: Training
+          MetricName: BoredomLevelFromLog
+          MetricValue: $amount
 
-  # # Uncomment this to raise an alarm on high boredom
-  # # Fire alarm when Boredom becomes excessive:
-  # HighBoredomAlarm:
-  #   Type: AWS::CloudWatch::Alarm
-  #   Properties:
-  #     AlarmDescription: Fire alarm when boredom goes over 90%
-  #     Namespace: Training
-  #     MetricName: BoredomLevel
-  #     Statistic: Average
-  #     ComparisonOperator: GreaterThanThreshold
-  #     Threshold: 90
-  #     EvaluationPeriods: 1
-  #     Period: 60
-  #     AlarmActions:
-  #       - !Ref SnsTopic
+  # Uncomment this to raise an alarm on high boredom
+  # Fire alarm when Boredom becomes excessive:
+  HighBoredomAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ImplementAlarm
+    Properties:
+      AlarmDescription: Fire alarm when boredom goes over 90%
+      Namespace: Training
+      MetricName: BoredomLevel
+      Statistic: Average
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 90
+      EvaluationPeriods: 1
+      Period: 60
+      AlarmActions:
+        - !Ref SnsTopic
 
-  # # Topic to send email alerts to, when boredom is excessive:
-  # SnsTopic:
-  #   Type: AWS::SNS::Topic
-  #   Properties: 
-  #     DisplayName: Boredom Alert! 
-  #     TopicName: BoredomAlert
-  #     Subscription:
-  #       - Endpoint: !Ref EmailAddress
-  #         Protocol: email
-
+  # Topic to send email alerts to, when boredom is excessive:
+  SnsTopic:
+    Type: AWS::SNS::Topic
+    Condition: ImplementAlarm
+    Properties: 
+      DisplayName: Boredom Alert! 
+      TopicName: BoredomAlert
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
 
 Outputs:
   ProductionURL:

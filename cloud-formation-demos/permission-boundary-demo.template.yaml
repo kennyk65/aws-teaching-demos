@@ -54,6 +54,7 @@ Resources:
             - iam:List*
             - iam:Get*
             - s3:*
+            - cloudformation:*
           Resource: 
             - "*"
 
@@ -83,7 +84,8 @@ Resources:
         Version: 2012-10-17
         Statement: 
           # Your stuff must be prefixed and reference a permission boundary:
-          - Effect: Allow
+          - Sid: AnyRolesYouCreateOrModifyMustReferencePermissionBoundary
+            Effect: Allow
             Action: 
               - iam:CreateRole
               - iam:AttachRolePolicy
@@ -94,19 +96,22 @@ Resources:
               StringEquals:
                 iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
           # You can only muck with your own stuff:
-          - Effect: Allow
+          - Sid: YouCanOnlyCreatePoliciesStampedWithYourPrefix
+            Effect: Allow
             Action: 
               - iam:CreatePolicy
               - iam:CreatePolicyVersion
               - iam:DeletePolicyVersion
             Resource: 
               - !Sub "arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*"
-          - Effect: Allow
+          - Sid: YouCanOnlyMessWithRolesHavingYourPrefix
+            Effect: Allow
             Action: 
               - iam:DeleteRole
               - iam:UpdateRole
             Resource: 
               - !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
+            
 
   #  This is the policy a central administrator would set to ultimately limit 
   #  what the Developer created roles / policies could do.

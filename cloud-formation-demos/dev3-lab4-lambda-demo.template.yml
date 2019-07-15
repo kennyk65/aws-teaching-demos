@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template replicates what is produced by students in the AWS Dev Lab 4.
+# Some Test files:
+#   http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.2/lab-4-lambda/scripts/numbers.txt
+# WARNING - Stack delete can't complete if S3 buckets are not empty.  Clean them out manually.
+
+
+Parameters:
+  TheInputBucketName:
+    Description: The bucket.  Must be globally unique.
+    Type: String
+    Default: calculator-input-kmk  
+
+
+Resources:
+
+  S3InputBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref TheInputBucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+        - Event: s3:ObjectCreated:*
+          Function: !GetAtt MyLambda.Arn 
+
+
+  # This NodeJS function takes the triggered input S3 object, transforms it, and uploads it to the output bucket.
+  MyLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: PythonCalculator
+      Description: Lambda triggered by S3 upload.
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: python3.6
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          "Lambda function Calculator exercise"
+          from __future__ import print_function
+          import re
+          import boto3
+
+          def lambda_handler(event, context):
+              "Process upload event"
+              bucket = event['Records'][0]["s3"]["bucket"]["name"]
+              key = event['Records'][0]["s3"]["object"]["key"]
+              result = "No numbers found in file"
+              print("Received event. Bucket: [%s], Key: [%s]" % (bucket, key))
+
+              # construct s3 client
+              s3 = boto3.client('s3')
+              response = s3.get_object(
+                  Bucket=bucket,
+                  Key=key
+              )
+
+              # get the object contents
+              file_contents = response['Body'].read().decode("utf-8").strip()
+              # find matches of all positive or negative numbers
+              numbers = [int(n) for n in re.findall(r"-?\d+", file_contents)]
+              if numbers:
+                  # caclulate min/max/average
+                  mn, mx, avg = min(numbers), max(numbers), sum(numbers)/len(numbers)
+                  result = "Min: %s Max: %s Average: %s" % (mn, mx, avg)
+
+              print("Result: %s" % result)
+              return result
+
+          # This is used for debugging, it will only execute when run locally
+          if __name__ == "__main__":
+              # local debugging, send a simulated event
+              # TODO 1: Update the event bucket name
+              fake_s3_event = {
+                  "Records": [
+                      {
+                          "s3": {
+                              "bucket": {
+                                  "name": "${TheInputBucketName}"
+                              },
+                              "object": {
+                                  "key": "numbers.txt"
+                              }
+                          }
+                      }
+                  ]
+              }
+
+              fake_context = []
+              lambda_handler(fake_s3_event, fake_context)
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: LambdaS3Role  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+          Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+
+  # Allows the S3 Bucket to invoke the Lambda function.
+  BucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref MyLambda
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::${TheInputBucketName}"
