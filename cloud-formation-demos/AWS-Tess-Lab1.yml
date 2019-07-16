@@ -113,6 +113,14 @@ Resources:
         - Key: Name
           Value: Private Route Table
 
+  PrivateRoute1:            # Private route table can access web via NAT (created below)
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      # Route traffic through the NAT Gateway:
+      NatGatewayId: !Ref NATGateway
+
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -153,52 +161,19 @@ Resources:
           chown apache:root /var/www/html/rds.conf.php
           fi
 
-  NATInstance:
-    Type: AWS::EC2::Instance
+  # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags: 
+      - Key: Name
+        Value: !Sub "NAT-${AWS::StackName}"
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
     Properties:
-      ImageId: !Ref AmazonLinux2AMI
-      InstanceType: t2.micro
-      NetworkInterfaces:
-        - DeviceIndex: '0'
-          AssociatePublicIpAddress: true
-          SubnetId: !Ref PublicSubnet1
-          GroupSet:
-            - !Ref NATSecurityGroup
-      SourceDestCheck: 'false'
-      Tags:
-        - Key: Name
-          Value: NAT Server
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash 
-          yum -y update 
-          echo 1 > /proc/sys/net/ipv4/ip_forward 
-          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects 
-          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE 
-          /sbin/iptables-save > /etc/sysconfig/iptables 
-          mkdir -p /etc/sysctl.d/ 
-          cat <<EOF > /etc/sysctl.d/nat.conf 
-          net.ipv4.ip_forward = 1 
-          net.ipv4.conf.eth0.send_redirects = 0 
-          EOF 
-
-  NATSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Enable internal access to the NAT device
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: NAT-Security-Group
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '0'
-          ToPort: '1024'
-          CidrIp: 10.0.3.0/24
-        - IpProtocol: tcp
-          FromPort: '0'
-          ToPort: '1024'
-          CidrIp: 10.0.4.0/24
+      Domain: VPC
 
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -217,72 +192,6 @@ Resources:
           FromPort: '22'
           ToPort: '22'
           CidrIp: 0.0.0.0/0
-
-  PrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !Ref NATInstance
-
-  LambdaVPCRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Policies:
-        - PolicyName: LambdaLogToCloudWatch
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: arn:aws:logs:*:*:*
-        - PolicyName: Lambda_VPC_Policy
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Sid: Stmt1506457719000
-                Effect: Allow
-                Action:
-                  - ec2:CreateDefaultVpc
-                  - ec2:DescribeVpcs
-                Resource:
-                  - '*'
-
-  LambdaCreateDefaultVPC:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: defaultvpc
-      Handler: defaultvpc.lambda_handler
-      MemorySize: '512'
-      Timeout: '120'
-      Role: !GetAtt 
-        - LambdaVPCRole
-        - Arn
-      Code:
-        S3Bucket: !Join 
-          - ''
-          - - !Ref 'AWS::Region'
-            - '-tcprod'
-        S3Key: courses/SharedLambda/defaultvpc.zip
-      Runtime: python2.7
-  MyDefaultVPC:
-    Type: 'Custom::MyDefaultVPC'
-    Properties:
-      ServiceToken: !GetAtt 
-        - LambdaCreateDefaultVPC
-        - Arn
 
 Outputs:
   IPAddress:
@@ -318,7 +227,6 @@ Outputs:
     Value: !Ref PrivateSubnet2
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnet2 ] ]
-
 
   WebSecurityGroup:
     Description: Id of the Web Security group.
