@@ -43,6 +43,7 @@ Resources:
       Threshold: 0
       EvaluationPeriods: 1
       Period: 300
+      TreatMissingData: notBreaching
       AlarmActions:
         - !Ref RootAccountUsageSnsTopic
 
