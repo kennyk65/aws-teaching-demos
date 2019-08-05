@@ -26,7 +26,9 @@ Parameters:
       
   AmazonLinuxAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    # CloudWatch Logs can't be configured on Amazon Linux 2, so use Amazon Linux 1:
+#    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-ebs
     Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
 Metadata: 
@@ -85,6 +87,18 @@ Resources:
           chmod +x ./install
           ./install auto
           service codedeploy-agent start
+          # Install CloudWatch Logs agent (optional):
+          yum install -y awslogs
+          #systemctl start awslogsd
+          service awslogs start
+          wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
+          wget https://s3.amazonaws.com/aws-codedeploy-us-east-1/cloudwatch/codedeploy_logs.conf
+          chmod +x ./awslogs-agent-setup.py
+          python awslogs-agent-setup.py -n -r ${AWS::Region} -c s3://aws-codedeploy-us-east-1/cloudwatch/awslogs.conf
+          mkdir -p /var/awslogs/etc/config
+          cp codedeploy_logs.conf /var/awslogs/etc/config/
+          #service awslogsd restart
+          service awslogs restart
           # Download and start Java/Spring app, signal completion:
           mkdir /opt/app
           cd /opt/app
@@ -96,7 +110,7 @@ Resources:
           service demoapp start
           # Signal CloudFormation that we are complete:
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          # TODO PUT THE CLOUDWATCH LOGS AGENT ON HERE TO MAKE DEBUGGING OF DEPLOYMENTS EASIER.
+          
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -176,6 +190,7 @@ Resources:
             Service: ec2.amazonaws.com
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy
+      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
       # Note that any other policies required for the instance to do its job would be defined here as well. 
 
   # CodeDeploy application:
