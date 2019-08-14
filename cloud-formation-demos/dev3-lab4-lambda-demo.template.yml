@@ -118,3 +118,8 @@ Resources:
       Principal: s3.amazonaws.com
       SourceAccount: !Ref "AWS::AccountId"
       SourceArn: !Sub "arn:aws:s3:::${TheInputBucketName}"
+
+Outputs:
+  SampleInputFile:
+    Description: File to download, unzip, and upload.
+    Value: http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.2/lab-4-lambda/scripts/numbers.txt
