@@ -44,7 +44,7 @@ Resources:
       AllowUnauthenticatedIdentities: true
 
   # This Role allows the main Lambda function to be invoked:
-  # It only needs permissions to read dynamoDB and write to its own log files
+  # It only needs permissions to write to its own log files
   RoleSlotMachineLambda:
     Type: AWS::IAM::Role
     Properties: 
@@ -57,11 +57,10 @@ Resources:
             Service: lambda.amazonaws.com
           Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
   # This role is for our custom resource / setup lambda.
-  # It needs to write to dynamoDB and its own log files.      
+  # It needs to write to its own log files.      
   RoleSetupLambda:
     Type: AWS::IAM::Role
     Properties: 
@@ -74,7 +73,6 @@ Resources:
             Service: lambda.amazonaws.com
           Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
         - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
 
   # This role allows a Cognito Identity Pool - authenticated principal to call our main Lambda.
@@ -140,124 +138,205 @@ Resources:
             specific language governing permissions and limitations under the License.
           */
           'use strict';
-          // Configuring the AWS SDK
-          var AWS = require('aws-sdk');
+
+          var faceCards = [
+            { n:'0', card: 'spad_a.png'},
+            { n:'1', card: 'spad_k.png'}, 
+            { n:'2', card: 'spad_q.png'}, 
+            { n:'3', card: 'spad_j.png'}, 
+            { n:'4', card: 'hart_a.png'}, 
+            { n:'5', card: 'hart_k.png'}, 
+            { n:'6', card: 'hart_q.png'}, 
+            { n:'7', card: 'hart_j.png'}, 
+            { n:'8', card: 'diam_a.png'}, 
+            { n:'9', card: 'diam_k.png'}, 
+            { n:'10', card: 'diam_q.png'}, 
+            { n:'11', card: 'diam_j.png'}, 
+            { n:'12', card: 'club_a.png'}, 
+            { n:'13', card: 'club_k.png'}, 
+            { n:'14', card: 'club_q.png'}, 
+            { n:'15', card: 'club_j.png'}
+          ];
+
           exports.handler = (event, context, callback) => {
-          // Define the object that will hold the data values returned
-          var slotResults = {
-            'isWinner' : false,
-            'leftWheelImage' : {'file' : {S: ''}},
-            'middleWheelImage' : {'file' : {S: ''}},
-            'rightWheelImage' : {'file' : {S: ''}}
-          };
-          // define parameters JSON for retrieving slot pull data from the database
-          var thisPullParams = {
-            Key: {
-            "slotPosition": {
-              N: ""
-              }
-            },
-            TableName: "slot_machine_images"
-          };
-          // create DynamoDB service object
-          var request = new AWS.DynamoDB({apiVersion: '2012-08-10'});
-          // =============================LEFT===========================================
-          // set a random number 0-9 for the left slot position
-          thisPullParams.Key.slotPosition.N = Math.floor(Math.random()*10).toString();
-          // call DynamoDB to retrieve the image to use for the Left slot result
-          var myLeftPromise = request.getItem(thisPullParams).promise().then(function(data) {
-              return data.Item.imageFile.S}, function() {console.log("Database read error on left wheel.")});
-          // =============================MIDDLE===========================================
-              // set a random number 0-9 for the middle slot position
-          thisPullParams.Key.slotPosition.N = Math.floor(Math.random()*10).toString();
-          // call DynamoDB to retrieve the image to use for the Left slot result
-          var myMiddlePromise = request.getItem(thisPullParams).promise().then(function(data) {
-            return data.Item.imageFile.S}, function() {console.log("Database read error on middle wheel.")});
-          // =============================RIGHT===========================================
-          // set a random number 0-9 for the slot position
-          thisPullParams.Key.slotPosition.N = Math.floor(Math.random()*10).toString();
-          // call DynamoDB to retrieve the image to use for the Left slot result
-          var myRightPromise = request.getItem(thisPullParams).promise().then(function(data) {
-            return data.Item.imageFile.S}, function() {console.log("Database read error on right wheel.")});
-          Promise.all([myLeftPromise, myMiddlePromise, myRightPromise]).then(function(values) {
-              slotResults.leftWheelImage.file.S = values[0];
-              slotResults.middleWheelImage.file.S = values[1];
-              slotResults.rightWheelImage.file.S = values[2];
-              // if all three values are identical, the spin is a winner
-              if ((values[0] === values[1]) && (values[0] === values[2])) {
-                  slotResults.isWinner = true;
-              }
-              // return the JSON result to the caller of the Lambda function
-              callback(null, slotResults);
-          });
+            // Define the object that will hold the data values returned
+            var slotResults = {
+              'isWinner' : false,
+              'leftWheelImage' : {'file' : {S: ''}},
+              'middleWheelImage' : {'file' : {S: ''}},
+              'rightWheelImage' : {'file' : {S: ''}}
+            };
+
+            // =============================LEFT===========================================
+            // set a random number 0-15 for the left slot position
+            var slot1 = Math.floor(Math.random()*15).toString();
+            slotResults.leftWheelImage.file.S = faceCards[slot1].card;
+
+            var slot2 = Math.floor(Math.random()*15).toString();
+            slotResults.middleWheelImage.file.S = faceCards[slot2].card;
+
+            var slot3 = Math.floor(Math.random()*15).toString();
+            slotResults.rightWheelImage.file.S = faceCards[slot3].card;
+
+            // if all three values are identical, the spin is a winner
+            if ((slot1 === slot2) && (slot2 === slot3)) {
+                slotResults.isWinner = true;
+            }
+            // return the JSON result to the caller of the Lambda function
+            callback(null, slotResults);
           };
 
-  DynamoTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: slot_machine_images
-      AttributeDefinitions:
-        - AttributeName: slotPosition
-          AttributeType: N
-      KeySchema: 
-        - AttributeName: slotPosition
-          KeyType: HASH
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
 
-  # A bit crazy that an application like this needs a dynamoDB table, but here we are.  This function populates it:
-  PopulateTableFunction:
+  # This function will setup the web content in our S3 web bucket
+  CustomResourceWebContentLambda:
     Type: AWS::Lambda::Function
     Properties: 
-      FunctionName: PopulateTheTable
-      Description: Populate the talbe
-      MemorySize: 128
-      Timeout: 4
-      Role: !GetAtt RoleSetupLambda.Arn
-      Runtime: nodejs8.10
-      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-WebContentCustomResource
+      Description: Populates S3 bucket with web content for our slot machine.
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 15         # Uploads and downloads take a bit of time.
+      Runtime: python3.7
+      Handler: index.lambda_handler
       Code:
         ZipFile: !Sub |
-          var AWS = require('aws-sdk');
-          var response = require('cfn-response');
-          var ddb = new AWS.DynamoDB({apiVersion: '2012-08-10'});
-          function post (position,image) {
-            var params = {TableName: 'slot_machine_images', Item: {'slotPosition' : {N: position}, 'imageFile' : {S: image}}};
-            ddb.putItem(params, function(err, data) {
-              if (err) {
-                console.log("Error", err);
-              } else {
-                console.log("Success", data);
-              }
-            });
-          }
-          //  Main function handler.  Populate table:
-          exports.handler = (event, context, callback) => {
-            post('0','spad_a.png');
-            post('1','spad_k.png');
-            post('2','spad_q.png');
-            post('3','spad_j.png');
-            post('4','hart_a.png');
-            post('5','hart_k.png');
-            post('6','hart_q.png');
-            post('7','hart_j.png');
-            post('8','diam_a.png');
-            post('9','diam_k.png');
-            post('10','diam_q.png');
-            post('11','diam_j.png');
-            post('12','club_a.png');
-            post('13','club_k.png');
-            post('14','club_q.png');
-            post('15','club_j.png');
-            response.send(event, context,response.SUCCESS);
-          }
+          from zipfile import ZipFile 
+          import json
+          import os
+          import cfnresponse
+          import mimetypes
+          import boto3
+          import urllib.request
 
-  FireLambdaPopulateTable:
-    Type: Custom::FireLambda
-    Version: 1.0
+          print('Loading function')
+
+          # Entry point:
+          def lambda_handler(event, context):
+              print("Received event: " + json.dumps(event, indent=2))
+
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              rp          = event['ResourceProperties']
+              region        = rp['region']
+              downloadUrl     = rp['downloadUrl']
+              identityPoolId    = rp['identityPoolId']
+              destinationBucket   = rp['destinationBucket']
+
+              unzip_location  = "/tmp/web"
+              responseData = {}
+              s3 = boto3.client('s3')
+
+              if requestType == 'Create' or requestType == 'Update':
+                print ('Downloading... ' )
+                try:
+                    zip_file_name, headers = urllib.request.urlretrieve(downloadUrl)          
+                except Exception as e:
+                    msg = 'Error downloading from {}.  Exception is {}.'.format(downloadUrl,e)
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+
+                print ('Unzipping...' )
+                try:
+                    with ZipFile(zip_file_name, 'r') as zip: 
+                        zip.extractall(unzip_location) 
+                except Exception as e:
+                    msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+
+                html_file_name = "/tmp/web/index.html"
+                print('Altering contents of {}...'.format(html_file_name))
+                try:
+                    data = ""
+                    # Read the file contents into memory:
+                    with open(html_file_name,'r') as f:
+                        data = f.read()
+
+                    # Search and replace:
+                    data = data.replace("IDENTITY_POOL_ID",identityPoolId)
+                    data = data.replace("us-west-2",region)
+
+                    # Save
+                    with open(html_file_name,'w') as f:
+                        f.write(data)
+                except Exception as e:
+                    msg = 'Error altering {}.  Exception is {}.'.format(html_file_name,e)
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+
+                print ('Uploading {} to {}'.format(unzip_location,destinationBucket))
+                try:
+                    for root,dirs,files in os.walk(unzip_location):
+                        for file in files:
+                            mime_type = mimetypes.guess_type(file)[0]
+                            if mime_type is None:
+                                mime_type = "binary/octet-stream"
+                            prefix = root.replace(unzip_location,"",1)
+                            if len(prefix) > 0:
+                                prefix = prefix + '/'
+                            print("uploading from {} to {}".format(os.path.join(root,file),prefix+file))
+                            s3.upload_file(os.path.join(root,file),destinationBucket,prefix + file,ExtraArgs={'ContentType': mime_type})
+
+                except Exception as e:
+                    msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(destinationBucket,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                print ('Upload complete.')
+              
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+              
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the CustomResourceRole.
+  # Basic permissions for CloudWatch Logs, plus S3.
+  CustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-PollyNotesCustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:Put*
+          Resource: "*"
+      Roles: 
+        -  !Ref CustomResourceRole   
+
+  # This custom resource calls our Lambda function:
+  HelperCustomResourceWebContentLambda:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
     Properties:
-      ServiceToken: !GetAtt PopulateTableFunction.Arn
+      ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
+      region: !Sub ${AWS::Region}
+      identityPoolId: !Ref CognitoIdentityPool
+      destinationBucket: !Ref MainS3Bucket
+      downloadUrl: "https://github.com/awsdocs/aws-doc-sdk-examples/raw/master/javascript/example_code/lambda/tutorial/slotassets.zip"
 
 
 Outputs:
