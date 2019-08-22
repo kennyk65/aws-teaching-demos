@@ -3,6 +3,10 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 # Setting up a simple EC2 environment behind a load balancer in which to install
 # the CodeDeploy agent plus basic java spring app to upgrade.
+# TODO:  Setup CloudWatch Logs on the EC2 instances.  
+#   The script to do this is already in UserData, BUT this script does not work on Amazon Linux 2.  
+#   Switching back to Amazon Linux 1 gets CloudWatch logs working, but breaks the way the Java service is started and updated, and I don't have time for that right now.  
+#   Support ticket opened to try to get the python script working: https://console.aws.amazon.com/support/cases?region=us-west-2#/6328474171/en
 
 Parameters:
   VpcId:
@@ -23,10 +27,11 @@ Parameters:
     MinValue: 1
     MaxValue: 4
     Description: Choose from 1 to 4, the number of web server instances you wish to launch in the auto-scale group.    
-
+      
   AmazonLinuxAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    # Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-ebs
     Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
 Metadata: 
@@ -40,7 +45,6 @@ Metadata:
           - InstancesKeyName
           - DesiredCapacity
           - AmazonLinuxAMI
-
 
 
 Resources:
@@ -80,13 +84,25 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum -y update
-          yum install -y ruby wget java
+          yum install -y ruby wget java awslogs 
           # Install CodeDeploy agent:
           cd /home/ec2-user
           wget https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install
           chmod +x ./install
           ./install auto
           service codedeploy-agent start
+          # Install CloudWatch Logs agent (optional):
+          yum install -y awslogs
+          systemctl start awslogsd
+          # service awslogs start      # amazon linux 1
+          wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
+          wget https://s3.amazonaws.com/aws-codedeploy-us-east-1/cloudwatch/codedeploy_logs.conf
+          chmod +x ./awslogs-agent-setup.py
+          python awslogs-agent-setup.py -n -r ${AWS::Region} -c s3://aws-codedeploy-us-east-1/cloudwatch/awslogs.conf
+          mkdir -p /var/awslogs/etc/config
+          cp codedeploy_logs.conf /var/awslogs/etc/config/
+          service awslogsd restart     
+          # service awslogs restart    # amazon linux 1
           # Download and start Java/Spring app, signal completion:
           mkdir /opt/app
           cd /opt/app
@@ -98,7 +114,15 @@ Resources:
           service demoapp start
           # Signal CloudFormation that we are complete:
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          # TODO PUT THE CLOUDWATCH LOGS AGENT ON HERE TO MAKE DEBUGGING OF DEPLOYMENTS EASIER.
+          # # Download and start Java/Spring app, signal completion, Amazon Linux 1:
+          # yum install java-1.8.0 -y
+          # wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/zero-downtime-old.jar
+          # mv zero-downtime-old.jar app.jar
+          # # Signal CloudFormation that we are complete:
+          # /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+          # # Start Java App:
+          # java -jar app.jar --server.port=80
+          
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -178,6 +202,7 @@ Resources:
             Service: ec2.amazonaws.com
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy
+      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
       # Note that any other policies required for the instance to do its job would be defined here as well. 
 
   # CodeDeploy application:

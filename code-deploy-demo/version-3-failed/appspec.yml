@@ -1,0 +1,20 @@
+version: 0.0
+#  This is a CodeDeploy AppSpec.yml file.
+#  It tells CodeDeploy how to install, start, stop, and update this application.
+os: linux
+files:
+  # A clumsy way to copy, but it gets the job done.
+  - source: /
+    destination: /opt/app
+hooks:
+  # This fires after revision is downloaded, before the files (above) are copied.
+  BeforeInstall:
+    - location: scripts/before_install.sh
+      timeout: 300
+      runas: root
+  # This fires after the files are copied:
+  ApplicationStart:
+    - location: scripts/application_start.sh
+      timeout: 300
+      runas: root
+
