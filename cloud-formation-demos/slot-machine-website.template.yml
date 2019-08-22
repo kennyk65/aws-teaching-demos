@@ -2,9 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # See https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/browser-invoke-lambda-function-example.html
 # Run this CloudFormation tempate in Oregon.  Other regions will require some code adjustment.
-# Download and extract this zip:  https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/javascript/example_code/lambda/tutorial/slotassets.zip
-# Edit the index.html file.  Replace the Cognito Identity Pool value with the output of your stack.
-# Upload this file and all the other contents of the ZIP to your newly created bucket.
 # Access the web application via the Website URL output of your stack.
 
 Parameters:
@@ -227,30 +224,23 @@ Resources:
               s3 = boto3.client('s3')
 
               if requestType == 'Create' or requestType == 'Update':
-                print ('Downloading... ' )
                 try:
+                    print ('Downloading... ' )
                     zip_file_name, headers = urllib.request.urlretrieve(downloadUrl)          
-                except Exception as e:
-                    msg = 'Error downloading from {}.  Exception is {}.'.format(downloadUrl,e)
-                    print(msg)
-                    responseData['Reason'] = msg
-                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+                    print ('Unzipping...' )
+                    try:
+                        with ZipFile(zip_file_name, 'r') as zip: 
+                            zip.extractall(unzip_location) 
+                    except Exception as e:
+                        msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
+                        print(msg)
+                        responseData['Reason'] = msg
+                        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
 
 
-                print ('Unzipping...' )
-                try:
-                    with ZipFile(zip_file_name, 'r') as zip: 
-                        zip.extractall(unzip_location) 
-                except Exception as e:
-                    msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
-                    print(msg)
-                    responseData['Reason'] = msg
-                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-
-
-                html_file_name = "/tmp/web/index.html"
-                print('Altering contents of {}...'.format(html_file_name))
-                try:
+                    html_file_name = "/tmp/web/index.html"
+                    print('Altering contents of {}...'.format(html_file_name))
                     data = ""
                     # Read the file contents into memory:
                     with open(html_file_name,'r') as f:
@@ -263,15 +253,8 @@ Resources:
                     # Save
                     with open(html_file_name,'w') as f:
                         f.write(data)
-                except Exception as e:
-                    msg = 'Error altering {}.  Exception is {}.'.format(html_file_name,e)
-                    print(msg)
-                    responseData['Reason'] = msg
-                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
 
-
-                print ('Uploading {} to {}'.format(unzip_location,destinationBucket))
-                try:
+                    print ('Uploading {} to {}'.format(unzip_location,destinationBucket))
                     for root,dirs,files in os.walk(unzip_location):
                         for file in files:
                             mime_type = mimetypes.guess_type(file)[0]
@@ -282,14 +265,18 @@ Resources:
                                 prefix = prefix + '/'
                             print("uploading from {} to {}".format(os.path.join(root,file),prefix+file))
                             s3.upload_file(os.path.join(root,file),destinationBucket,prefix + file,ExtraArgs={'ContentType': mime_type})
+                    print ('Upload complete.')
 
                 except Exception as e:
-                    msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(destinationBucket,repr(e))
+                    msg = 'Error occurred while setting up web content.  Exception is {}.'.format(repr(e))
                     print(msg)
                     responseData['Reason'] = msg
                     cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-                print ('Upload complete.')
-              
+
+              if requestType == 'Delete':
+                print ('Clean out bucket to enable delete... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
               # Unless something blew up, we should wander into this code:
               cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
 
@@ -323,6 +310,8 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             - s3:Put*
+            - s3:List*
+            - s3:Delete*
           Resource: "*"
       Roles: 
         -  !Ref CustomResourceRole   
