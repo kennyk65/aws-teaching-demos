@@ -59,7 +59,7 @@ Resources:
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI     # We lookup AMI in the region map
+      ImageId: !Ref AmazonLinuxAMI     # Obtain the AMI from the SSM Parameter
       InstanceType: t2.micro             # Any instance type will do
       KeyName: !Ref PrivateKeyName         # We get the keypair name from the input parameters
       NetworkInterfaces:
