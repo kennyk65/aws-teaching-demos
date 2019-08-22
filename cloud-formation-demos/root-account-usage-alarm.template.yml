@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template sets up a CloudWatch logs filter which detects
+# any usage of the root account.  The CIS benchmarks for AWS will consider it a 
+# security violation if you have no such alerting on your account.
+# See https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-standards.html#securityhub-standards-checks-3.3
+
+Parameters:
+
+  EmailAddress:
+    Description: Eamail address to send alerts to.  Alerts will be sent whenever the root account is used.
+    Type: String
+    Default: kenkrueger65@gmail.com
+
+  CloudTrailLogGroupName:
+    Description: The name of the CloudWatch Logs Group containing CloudTrail content.
+    Type: String
+    Default: CloudTrail/DefaultLogGroup
+
+Resources:
+
+  # This metric filter detects API calls made by the ROOT user.
+  # See https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-standards.html#securityhub-standards-checks-3.3
+  RootAccountUsageMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties: 
+      LogGroupName: !Ref CloudTrailLogGroupName
+      FilterPattern: "{$.userIdentity.type=\"Root\" && $.userIdentity.invokedBy NOT EXISTS && $.eventType !=\"AwsServiceEvent\"}"
+      MetricTransformations: 
+        - MetricNamespace: LogMetrics
+          MetricName: RootAccountUsed
+          MetricValue: 1
+
+  # Raise an alarm when the root account is used in a 5 minute period:
+  RootAccountUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: CIS-3.3-RootAccountUsage
+      Namespace: LogMetrics
+      MetricName: RootAccountUsed
+      Statistic: Sum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 1
+      Period: 300
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RootAccountUsageSnsTopic
+
+  # Topic to send email alerts to:
+  RootAccountUsageSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: RootAccountUsage! 
+      TopicName: RootAccountUsage
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
