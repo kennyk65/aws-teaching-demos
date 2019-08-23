@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Setup Queues and Topics for lab 5.
+
+Parameters:
+
+  EmailAddress:
+    Description: Eamail address to send SNS to
+    Type: String
+    Default: kenkrueger65@gmail.com
+
+  EmailSNSTopicName:
+    Type: String
+    Default: EmailSNSTopic
+    Description: SNS Topic for Email
+
+  OrderSNSTopicName:
+    Type: String
+    Default: OrderSNSTopic
+    Description: SNS Topic for Orders
+
+  MySQSQueueAName:
+    Type: String
+    Default: MySQSQueue_A
+    Description: First SQS Queue
+
+  MySQSQueueBName:
+    Type: String
+    Default: MySQSQueue_B
+    Description: First SQS Queue
+
+Resources:
+
+  SQSQueueA:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Ref MySQSQueueAName
+
+  SQSQueueB:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Ref MySQSQueueBName
+
+  EmailSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: EmailTopic
+      TopicName: !Ref EmailSNSTopicName
+      Subscription: 
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
+
+  OrderSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: OrderTopic
+      TopicName: !Ref OrderSNSTopicName
+      Subscription: 
+        - Endpoint: !GetAtt SQSQueueA.Arn
+          Protocol: sqs
+
+  # To enable raw message delivery, we must use a separate subscription element.
+  OrderToBSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: 
+      Endpoint: !GetAtt SQSQueueB.Arn   
+      Protocol: sqs
+      RawMessageDelivery: true
+      TopicArn: !Ref OrderSNSTopic
+
+Outputs:
+
+  EmailSNSTopicArn:
+    Value: !Ref EmailSNSTopic
+
+  OrderSNSTopicArn:
+    Value: !Ref OrderSNSTopic
+
