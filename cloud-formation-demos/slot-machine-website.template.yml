@@ -56,22 +56,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-  # This role is for our custom resource / setup lambda.
-  # It needs to write to its own log files.      
-  RoleSetupLambda:
-    Type: AWS::IAM::Role
-    Properties: 
-      RoleName: !Sub SlotMachine-Setup-LambdaRole-${AWS::StackName}
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
-
   # This role allows a Cognito Identity Pool - authenticated principal to call our main Lambda.
   # It needs permission to invoke our lambda.
   UnauthenticatedPrincipalRole:
@@ -230,7 +214,7 @@ Resources:
                         print(msg)
                         responseData['Reason'] = msg
                         cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-
+                        return
 
                     html_file_name = "/tmp/web/index.html"
                     print('Altering contents of {}...'.format(html_file_name))
@@ -265,6 +249,7 @@ Resources:
                     print(msg)
                     responseData['Reason'] = msg
                     cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                    return
 
               if requestType == 'Delete':
                 print ('Clean out bucket to enable delete... ' )
@@ -293,7 +278,7 @@ Resources:
   CustomResourcePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Sub ${AWS::StackName}-PollyNotesCustomResourcePolicy
+      PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
