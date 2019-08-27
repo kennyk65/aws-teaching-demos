@@ -211,24 +211,28 @@ Resources:
               # Get the CloudFormation request type
               requestType = event['RequestType']
               rp          = event['ResourceProperties']
-              queueUrl1 = rp['queueUrl1']
-              queueUrl2   = rp['queueUrl2']
-              queueUrl3     = rp['queueUrl3']
-              queueUrlFifo    = rp['queueUrlFifo']
-              snsTopicArn       = rp['snsTopicArn']
-              iotEndpoint         = rp['iotEndpoint']
-              downloadUrl           = rp['downloadUrl']
-              identityPoolId          = rp['identityPoolId']
-              destinationBucket         = rp['destinationBucket']
-              kinesisStreamName           = rp['kinesisStreamName']
+              queue1 = rp['queue1']
+              queue2   = rp['queue2']
+              queue3     = rp['queue3']
+              queueFifo    = rp['queueFifo']
+              snsTopicArn     = rp['snsTopicArn']
+              downloadUrl       = rp['downloadUrl']
+              identityPoolId      = rp['identityPoolId']
+              destinationBucket     = rp['destinationBucket']
+              kinesisStreamName       = rp['kinesisStreamName']
 
               unzip_location  = "/tmp"
               upload_location = unzip_location + "/Messaging/"
               responseData = {}
               s3 = boto3.client('s3')
+              iot = boto3.client('iot')
 
               if requestType == 'Create' or requestType == 'Update':
                 try:
+                    print ('Getting IoT Endpoint')
+                    iotEndpoint = iot.describe_endpoint(endpointType='iot:Data-ATS')['endpointAddress']
+                    print ('IoT endpoint is: ' + iotEndpoint)
+
                     print ('Downloading... ' )
                     zip_file_name, headers = urllib.request.urlretrieve(downloadUrl)          
 
@@ -252,10 +256,10 @@ Resources:
 
                     # Search and replace:
                     data = data.replace("REPLACE_WITH_COGNITO_IDENTITY_POOL_ID",identityPoolId)
-                    data = data.replace("REPLACE_WITH_QUEUE_URL_1",queueUrl1)
-                    data = data.replace("REPLACE_WITH_QUEUE_URL_2",queueUrl2)
-                    data = data.replace("REPLACE_WITH_QUEUE_URL_3",queueUrl3)
-                    data = data.replace("REPLACE_WITH_QUEUE_URL_FIFO",queueUrlFifo)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_1",queue1)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_2",queue2)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_3",queue3)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_FIFO",queueFifo)
                     data = data.replace("REPLACE_WITH_SNS_TOPIC_ARN",snsTopicArn)
                     data = data.replace("REPLACE_WITH_IOT_ENDPOINT",iotEndpoint)
                     data = data.replace("microservicesDrawingData",kinesisStreamName)
@@ -278,17 +282,17 @@ Resources:
                     print ('Upload complete.')
 
                 except Exception as e:
-                    msg = 'Error occurred while setting up web content.  Exception is {}.'.format(repr(e))
+                    msg = 'Error occurred setting up web content.  Exception {}.'.format(repr(e))
                     print(msg)
                     responseData['Reason'] = msg
                     cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
                     return
 
               if requestType == 'Delete':
-                print ('Clean out bucket to enable delete... ' )
+                print ('Cleaning out bucket... ' )
                 boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
 
-              # Unless something blew up, we should wander into this code:
+              # Unless something blew up, we should fall into this code:
               cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
 
               
@@ -320,6 +324,7 @@ Resources:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
+            - iot:Describe*
             - s3:Put*
             - s3:List*
             - s3:Delete*
@@ -336,12 +341,11 @@ Resources:
       identityPoolId: !Ref CognitoIdentityPool
       destinationBucket: !Ref MainS3Bucket
       downloadUrl: https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-3.zip
-      queueUrl1: !Ref DrawQueueStandard1
-      queueUrl2: !Ref DrawQueueStandard2
-      queueUrl3: !Ref DrawQueueStandard3
-      queueUrlFifo: !Ref DrawQueueFIFO
+      queue1: !Ref DrawQueueStandard1
+      queue2: !Ref DrawQueueStandard2
+      queue3: !Ref DrawQueueStandard3
+      queueFifo: !Ref DrawQueueFIFO
       snsTopicArn: !Ref DrawTopic
-      iotEndpoint:  TODO TODO TODO
       kinesisStreamName: !Ref KinesisStreamDrawingData
 
 
