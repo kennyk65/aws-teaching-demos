@@ -305,6 +305,21 @@ Resources:
       destinationBucket: !Ref MainS3Bucket
       downloadUrl: "https://github.com/awsdocs/aws-doc-sdk-examples/raw/master/javascript/example_code/lambda/tutorial/slotassets.zip"
 
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one for each Lambda function:
+  CloudwatchLogsGroupSlotMachine:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${SlotMachineLambda}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupCustomResource:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CustomResourceWebContentLambda}
+      RetentionInDays: 3
+
 
 Outputs:
 
