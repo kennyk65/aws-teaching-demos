@@ -54,6 +54,25 @@ Resources:
         - Endpoint: !GetAtt DrawQueueStandard3.Arn
           Protocol: sqs
 
+  # Allow SNS to send messages to the subscribed SQS queues:
+  SQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: sns.amazonaws.com
+            Action:
+              - sqs:SendMessage
+            Resource: '*'
+      Queues:
+        - !Ref DrawQueueStandard1
+        - !Ref DrawQueueStandard2
+        - !Ref DrawQueueStandard3
+        - !Ref DrawQueueFIFO
+
   # Kinesis stream, acting like a message queue:
   KinesisStreamDrawingData:
     Type: AWS::Kinesis::Stream
