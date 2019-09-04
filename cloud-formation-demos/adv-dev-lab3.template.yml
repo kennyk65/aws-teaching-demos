@@ -1,0 +1,498 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Re-creates lab 5 from Advanced Developer.
+# Access the web application via the Website URL output of your stack.
+# TODO: HAVE THIS TEMPLATE DOWNLOAD CODE FROM ORIGINAL SOURCE RATHER THAN MY BUCKET
+# TODO: WHY IS SNS TO SQS GETTING 403S.
+
+Parameters:
+
+  S3BucketName:
+    Description:  The name of the S3 bucket for you website.  Must be globally unique.  
+    Type:  String
+    Default:  microservices-lab3-
+
+  InputWebCode:
+    Description:  URL of the source web code to be downloaded and adjusted
+    Type: String
+    Default:  https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-3.zip
+
+Resources:
+
+  # Queues and Topics:
+  DrawQueueFIFO:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub  ${AWS::StackName}_drawqueue.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+  
+  DrawQueueStandard1:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}_drawqueue_1
+
+  DrawQueueStandard2:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}_drawqueue_2
+
+  DrawQueueStandard3:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}_drawqueue_3
+
+  DrawTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AWS::StackName}_MessageDuplicator
+      Subscription:
+        - Endpoint: !GetAtt DrawQueueStandard1.Arn
+          Protocol: sqs
+        - Endpoint: !GetAtt DrawQueueStandard2.Arn
+          Protocol: sqs
+        - Endpoint: !GetAtt DrawQueueStandard3.Arn
+          Protocol: sqs
+
+  # Allow SNS to send messages to the subscribed SQS queues:
+  SQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: sns.amazonaws.com
+            Action:
+              - sqs:SendMessage
+            Resource: '*'
+      Queues:
+        - !Ref DrawQueueStandard1
+        - !Ref DrawQueueStandard2
+        - !Ref DrawQueueStandard3
+        - !Ref DrawQueueFIFO
+
+  # Kinesis stream, acting like a message queue:
+  KinesisStreamDrawingData:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub ${AWS::StackName}_DrawingData
+      RetentionPeriodHours: 24
+      ShardCount: 1
+
+  # Main S3 bucket.  
+  MainS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub ${S3BucketName}
+      WebsiteConfiguration:
+        IndexDocument: sqs-standard.html
+
+  # This policy allows anyone in the world to make GET requests against the bucket.
+  MainS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref MainS3Bucket
+      PolicyDocument: 
+        Statement:
+          Effect: Allow
+          Action: s3:GetObject
+          Resource: !Sub ${MainS3Bucket.Arn}/*
+          Principal: "*"
+
+  # Cognito Pool allows un-authenticated web pages to have identities and assume role:
+  CognitoIdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub ${AWS::StackName}_Identity_Pool
+      AllowUnauthenticatedIdentities: true
+
+  # Attach the role to the identity pool:
+  IdentityPoolRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref CognitoIdentityPool
+      Roles: 
+        unauthenticated: !GetAtt UnauthenticatedPrincipalRole.Arn
+
+  # This role, and its embedded policies, determine 
+  # what the code in the web page is allowed to do:
+  UnauthenticatedPrincipalRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}_UnauthenticatedPrincipal
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'cognito-identity.amazonaws.com:aud': !Ref CognitoIdentityPool
+              'ForAnyValue:StringLike':
+                'cognito-identity.amazonaws.com:amr': unauthenticated
+      Path: /
+      Policies:
+        - PolicyName: StandardCognito
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - mobileanalytics:PutEvents
+                  - cognito-sync:*
+                Resource:
+                  - '*'
+        - PolicyName: SNSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:*
+                Resource:
+                  - !Ref DrawTopic
+        - PolicyName: KinesisPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                Resource:
+                  - !GetAtt KinesisStreamDrawingData.Arn
+        - PolicyName: SQSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:*
+                Resource:
+                  - !GetAtt DrawQueueStandard1.Arn
+                  - !GetAtt DrawQueueStandard2.Arn
+                  - !GetAtt DrawQueueStandard3.Arn
+                  - !GetAtt DrawQueueFIFO.Arn
+        - PolicyName: IoTPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iot:Connect
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - iot:Publish
+                  - iot:Receive
+                #  TODO: Determine the topic name dynamically somehow:
+                Resource:
+                  - arn:aws:iot:*:*:topic/microservices/drawingdemo
+              - Effect: Allow
+                Action:
+                  - iot:Subscribe
+                #  TODO: Determine the topic filter dynamically somehow:
+                Resource:
+                  - arn:aws:iot:*:*:topicfilter/microservices/drawingdemo
+
+  # This function receives input from the Kinesis stream and forwards to a queue:
+  KinesisToSqsLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}_KinesisToSqs
+      Description: Receives Kinesis input, flips coordinates, and forwards to SQS
+      Role: !GetAtt KinesisToSqsRole.Arn
+      MemorySize: 128     
+      Timeout: 15         
+      Runtime: python3.7
+      Environment:
+        Variables:
+          TARGET_QUEUE_NAME: !Ref DrawQueueStandard1
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          from __future__ import print_function
+
+          import base64
+          import json
+          import boto3
+          import os
+
+          print('Loading function')
+
+          # Entry point:
+          def lambda_handler(event, context):
+              #print("Received event: " + json.dumps(event, indent=2))
+              sqs = boto3.client('sqs')
+              targetQueue = os.environ['TARGET_QUEUE_NAME']
+              
+              for i, record in enumerate(event['Records']):
+                  
+                  # Kinesis data is base64 encoded, and JSON within the data record is utf-8.  Decode:
+                  payload = str(base64.b64decode(record['kinesis']['data']),'utf-8')
+                  jsonPayload = json.loads(payload)
+
+                  # 'Flip' the X coordinate horizontally to make a mirror image, just to show something interesting.  
+                  # Note that this logic assumes a 355-pixel wide canvas (unrealistic):
+                  x = jsonPayload['x']
+                  x = 355 - x
+                  jsonPayload['x'] = x
+                  
+                  # Convert from JSON (actually a Dict) back to String:
+                  payload = json.dumps(jsonPayload)
+                  print("Sending message {} to SQS".format(payload))
+
+                  # Front-end code expects a special ID in the message:        
+                  idval = 'msg_{}'.format(i);
+                  
+                  # This would be 10x faster if batched:
+                  response = sqs.send_message(
+                      QueueUrl=targetQueue,
+                      MessageBody=payload,
+                      MessageAttributes={
+                          'Id': {
+                              'DataType': 'String',
+                              'StringValue': idval
+                          }
+                      }
+                  )        
+                  print('Sent message Id {} '.format(response['MessageId']))
+
+              return 'Successfully processed {} records.'.format(len(event['Records']))
+
+  # Fire the RecordConsumer Lambda function by polling the Kinesis stream:
+  RecordConsumerTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: 
+      BatchSize: 100
+      Enabled: true
+      EventSourceArn: !GetAtt KinesisStreamDrawingData.Arn
+      FunctionName: !Ref KinesisToSqsLambda
+      StartingPosition: LATEST
+
+  # This Role gives permission to our KinesisToSqs Lambda.
+  KinesisToSqsRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}_KinesisToSqsRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the KinesisToSqsRole.
+  # Basic permissions for CloudWatch Logs, reading Kinesis, writing to SQS
+  KinesisToSqsPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}_KinesisToSqsPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - kinesis:GetRecords
+            - kinesis:GetShardIterator
+            - kinesis:DescribeStream
+            - kinesis:ListStreams
+            - sqs:Send*
+          Resource: "*"
+      Roles: 
+        -  !Ref KinesisToSqsRole   
+
+  # This function will setup the web content in our S3 web bucket
+  CustomResourceWebContentLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}_WebContentCustomResource
+      Description: Populates S3 bucket with web content for our app
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 15         # Uploads and downloads take a bit of time.
+      Runtime: python3.7
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          from zipfile import ZipFile 
+          import json
+          import os
+          import cfnresponse
+          import mimetypes
+          import boto3
+          import urllib.request
+
+          print('Loading function')
+
+          # Entry point:
+          def lambda_handler(event, context):
+              print("Received event: " + json.dumps(event, indent=2))
+
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              rp          = event['ResourceProperties']
+              queue1 = rp['queue1']
+              queue2   = rp['queue2']
+              queue3     = rp['queue3']
+              queueFifo    = rp['queueFifo']
+              snsTopicArn     = rp['snsTopicArn']
+              downloadUrl       = rp['downloadUrl']
+              identityPoolId      = rp['identityPoolId']
+              destinationBucket     = rp['destinationBucket']
+              kinesisStreamName       = rp['kinesisStreamName']
+
+              unzip_location  = "/tmp"
+              upload_location = unzip_location + "/Messaging/"
+              responseData = {}
+              s3 = boto3.client('s3')
+              iot = boto3.client('iot')
+
+              if requestType == 'Create' or requestType == 'Update':
+                try:
+                    print ('Getting IoT Endpoint')
+                    iotEndpoint = iot.describe_endpoint(endpointType='iot:Data-ATS')['endpointAddress']
+                    print ('IoT endpoint is: ' + iotEndpoint)
+
+                    print ('Downloading... ' )
+                    zip_file_name, headers = urllib.request.urlretrieve(downloadUrl)          
+
+                    print ('Unzipping...' )
+                    try:
+                        with ZipFile(zip_file_name, 'r') as zip: 
+                            zip.extractall(unzip_location) 
+                    except Exception as e:
+                        msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
+                        print(msg)
+                        responseData['Reason'] = msg
+                        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                        return
+
+                    config_file_name = upload_location + "scripts/aws-config.js"
+                    print('Altering contents of {}...'.format(config_file_name))
+                    data = ""
+                    # Read the file contents into memory:
+                    with open(config_file_name,'r') as f:
+                        data = f.read()
+
+                    # Search and replace:
+                    data = data.replace("REPLACE_WITH_COGNITO_IDENTITY_POOL_ID",identityPoolId)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_1",queue1)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_2",queue2)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_3",queue3)
+                    data = data.replace("REPLACE_WITH_QUEUE_URL_FIFO",queueFifo)
+                    data = data.replace("REPLACE_WITH_SNS_TOPIC_ARN",snsTopicArn)
+                    data = data.replace("REPLACE_WITH_IOT_ENDPOINT",iotEndpoint)
+                    data = data.replace("microservicesDrawingData",kinesisStreamName)
+
+                    # Save
+                    with open(config_file_name,'w') as f:
+                        f.write(data)
+
+                    print ('Uploading {} to {}'.format(upload_location,destinationBucket))
+                    for root,dirs,files in os.walk(upload_location):
+                        for file in files:
+                            mime_type = mimetypes.guess_type(file)[0]
+                            if mime_type is None:
+                                mime_type = "binary/octet-stream"
+                            prefix = root.replace(upload_location,"",1)
+                            if len(prefix) > 0:
+                                prefix = prefix + '/'
+                            print("uploading from {} to {}".format(os.path.join(root,file),prefix+file))
+                            s3.upload_file(os.path.join(root,file),destinationBucket,prefix + file,ExtraArgs={'ContentType': mime_type})
+                    print ('Upload complete.')
+
+                except Exception as e:
+                    msg = 'Error occurred setting up web content.  Exception {}.'.format(repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                    return
+
+              if requestType == 'Delete':
+                print ('Cleaning out bucket... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+              # Unless something blew up, we should fall into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}_CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the CustomResourceRole.
+  # Basic permissions for CloudWatch Logs, plus S3.
+  CustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}_CustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - iot:Describe*
+            - s3:Put*
+            - s3:List*
+            - s3:Delete*
+          Resource: "*"
+      Roles: 
+        -  !Ref CustomResourceRole   
+
+  # This custom resource calls our Lambda function:
+  HelperCustomResourceWebContentLambda:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    Properties:
+      ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
+      identityPoolId: !Ref CognitoIdentityPool
+      destinationBucket: !Ref MainS3Bucket
+      downloadUrl: https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-3.zip
+      queue1: !Ref DrawQueueStandard1
+      queue2: !Ref DrawQueueStandard2
+      queue3: !Ref DrawQueueStandard3
+      queueFifo: !Ref DrawQueueFIFO
+      snsTopicArn: !Ref DrawTopic
+      kinesisStreamName: !Ref KinesisStreamDrawingData
+
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one for each Lambda function:
+  CloudwatchLogsGroupKinesisToSqs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${KinesisToSqsLambda}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupCustomResource:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CustomResourceWebContentLambda}
+      RetentionInDays: 3
+
+Outputs:
+
+  WebsiteUrl:
+    Description:  URL of the website
+    Value: !GetAtt MainS3Bucket.WebsiteURL
