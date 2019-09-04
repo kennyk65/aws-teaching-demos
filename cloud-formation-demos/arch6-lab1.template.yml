@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Implement Lab 1 of AWS Arch 6
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: website-123
+    Description: A unique name for your S3 bucket.
+
+Resources:
+
+  S3WebBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: false
+        BlockPublicPolicy: false
+
+  S3BucketPolicyWeb:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3WebBucket
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - s3:GetObject
+          Resource: !Sub ${S3WebBucket.Arn}/*
+          Principal: "*"
+
+  #  TODO:  CODE THIS TO DOWNLOAD https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/index.html
+  #  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/script.js
+  #  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/style.css
+  #  AND PUT IN BUCKET.
+
+
+  # This function will setup the web content in our S3 web bucket
+  CustomResourceWebContentLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-WebContentCustomResource
+      Description: Handles the setup of the web bucket.
+      Role: !GetAtt CustomResourceRole.Arn
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          import boto3
+          from zipfile import ZipFile 
+          import string
+          import os
+          import mimetypes
+
+          print('Loading function')
+          s3 = boto3.client('s3')
+
+          # Entry point:
+          def lambda_handler(event, context):
+            print("Received event: " + json.dumps(event, indent=2))
+            responseData = {}
+
+            # Get the CloudFormation request type
+            requestType = event['RequestType']
+            rp = event['ResourceProperties']
+            webCodeSourceBucket = rp['WebCodeSourceBucket']
+            destinationBucket = rp['DestinationBucket']
+
+            if requestType == 'Create' or requestType == 'Update':
+                index_page = "courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/index.html"
+                js_script = "courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/script.js"
+                css_script = "courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/style.css"
+
+                print ('Downloading files from ' + webCodeSourceBucket )
+                unzip_location =  "/tmp"
+                try:
+                    s3.download_file(webCodeSourceBucket, index_page, "/tmp/index.html")
+                    s3.download_file(webCodeSourceBucket, js_script, "/tmp/script.js")
+                    s3.download_file(webCodeSourceBucket, css_script, "/tmp/style.css")
+                except Exception as e:
+                    msg = 'Error downloading from bucket {}. Check region.  Exception is {}.'.format(webCodeSourceBucket,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                    return
+
+                print ('Uploading ' + unzip_location + " to " + destinationBucket )
+                try:
+                  s3.upload_file("/tmp/index.html",destinationBucket,"index.html",ExtraArgs={'ContentType': "text/html"})
+                  s3.upload_file("/tmp/script.js",destinationBucket,"script.js",ExtraArgs={'ContentType': "application/javascript"})
+                  s3.upload_file("/tmp/style.css",destinationBucket,"style.css",ExtraArgs={'ContentType': "text/css"})
+
+                except Exception as e:
+                    msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(destinationBucket,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                    return
+
+            if requestType == 'Delete':
+              print ('Clean out bucket to enable delete... ' )
+              boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+            # Unless something blew up, we should wander into this code:
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+
+      MemorySize: 128     
+      Timeout: 15         # Uploads and downloads take a bit of time.
+      Runtime: python3.7
+      Handler: index.lambda_handler
+
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-PollyNotesCustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the CustomResourceRole.
+  # Basic permissions for CloudWatch Logs.
+  CustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-PollyNotesCustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:*
+          Resource: "*"
+      Roles: 
+        -  !Ref CustomResourceRole   
+
+
+  HelperCustomResourceWebContentLambda:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    Properties:
+      ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
+      WebCodeSourceBucket: us-west-2-tcprod
+      DestinationBucket: !Ref S3WebBucket
+
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroupCustomResource:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CustomResourceWebContentLambda}
+      RetentionInDays: 3
+
+Outputs:
+
+    
+  WebsiteUrl:
+    Description:  Link to the website bucket.
+    Value: !GetAtt S3WebBucket.WebsiteURL
+
