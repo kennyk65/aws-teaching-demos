@@ -33,12 +33,6 @@ Resources:
           Resource: !Sub ${S3WebBucket.Arn}/*
           Principal: "*"
 
-  #  TODO:  CODE THIS TO DOWNLOAD https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/index.html
-  #  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/script.js
-  #  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.4.6/lab-1-s3/scripts/style.css
-  #  AND PUT IN BUCKET.
-
-
   # This function will setup the web content in our S3 web bucket
   CustomResourceWebContentLambda:
     Type: AWS::Lambda::Function
