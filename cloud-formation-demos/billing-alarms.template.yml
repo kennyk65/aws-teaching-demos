@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template sets up 4 billing alarms,
+# one at $5, one at $10, one at $20, one at $40.
+# Can only run in us-east-1, N. Virginia - This is the region where billing metrics exist.
+# Must confirm the subscription of the email address you designate.
+
+Parameters:
+
+  EmailAddress:
+    Description: Eamail address to send alerts to.  Alerts will be sent whenever the root account is used.
+    Type: String
+    Default: xxxxxx@gmail.com
+
+
+Resources:
+
+  # Raise an alarm when EstimatedCharges >= $5 
+  Over5Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SpendOver5
+      AlarmDescription: Estimated Charges for this month exceed $5
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Statistic: Maximum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 5
+      EvaluationPeriods: 1
+      Period: 21600   # 6 hours
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RootAccountUsageSnsTopic
+
+  # Raise an alarm when EstimatedCharges >= $10 
+  Over10Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SpendOver10
+      AlarmDescription: Estimated Charges for this month exceed $10
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Statistic: Maximum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 10
+      EvaluationPeriods: 1
+      Period: 21600   # 6 hours
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RootAccountUsageSnsTopic
+
+  # Raise an alarm when EstimatedCharges >= $20 
+  Over20Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SpendOver20
+      AlarmDescription: Estimated Charges for this month exceed $20
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Statistic: Maximum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 20
+      EvaluationPeriods: 1
+      Period: 21600   # 6 hours
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RootAccountUsageSnsTopic
+
+  # Raise an alarm when EstimatedCharges >= $40 
+  Over40Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SpendOver40
+      AlarmDescription: Estimated Charges for this month exceed $40
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Statistic: Maximum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 40
+      EvaluationPeriods: 1
+      Period: 21600   # 6 hours
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RootAccountUsageSnsTopic
+
+  # Topic to send email alerts to:
+  RootAccountUsageSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: BillingAlarm! 
+      TopicName: BillingAlarm
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
