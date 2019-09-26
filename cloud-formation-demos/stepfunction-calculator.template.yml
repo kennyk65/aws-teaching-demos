@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Simple Step-Function calculator demo.
+# The step function calls a lambda function to calculate.   
+# This state machine expects input in the form:
+# {"operator": "add", "operands": [1,2]}
+
+Resources:
+
+  MyStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Calculator-StateMachine
+      DefinitionString: !Sub |-
+        {
+          "Comment": "Simple Calculator Step Functions Example",
+          "StartAt": "state.start.operatorSelector",
+          "States": {
+            "state.start.operatorSelector": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.operator",
+                  "StringEquals": "add",
+                  "Next": "state.process.operator.add"
+                },
+                {
+                  "Variable": "$.operator",
+                  "StringEquals": "subtract",
+                  "Next": "state.process.operator.subtract"
+                },
+                {
+                  "Variable": "$.operator",
+                  "StringEquals": "multiply",
+                  "Next": "state.process.operator.multiply"
+                },
+                {
+                  "Variable": "$.operator",
+                  "StringEquals": "divide",
+                  "Next": "state.process.operator.divide"
+                }
+              ],
+              "Default": "state.process.operator.unknown"
+            },
+            "state.process.operator.add": {
+              "Type": "Task",
+              "Comment": "Performs an addition on the operands provided",
+              "Next": "state.process.displayResult",
+              "Resource" : "${Calculator.Arn}"
+            },
+            "state.process.operator.subtract": {
+              "Type": "Task",
+              "Comment": "Performs an subtraction on the operands provided",
+              "Next": "state.process.displayResult",
+              "Resource" : "${Calculator.Arn}"
+            },
+            "state.process.operator.multiply": {
+              "Type": "Task",
+              "Comment": "Performs an multiplication on the operands provided",
+              "Next": "state.process.displayResult",
+              "Resource" : "${Calculator.Arn}"
+            },
+            "state.process.operator.divide": {
+              "Type": "Task",
+              "Comment": "Performs an division on the operands provided",
+              "Next": "state.process.displayResult",
+              "Resource" : "${Calculator.Arn}"
+            },
+            "state.process.operator.unknown": {
+              "Type": "Fail",
+              "Error": "UNKNOWN_OPERATOR",
+              "Cause" : "The operator provided is not supported"
+            },
+            "state.process.displayResult": {
+              "Type": "Pass",
+              "Next": "state.process.complete"
+            },
+            "state.process.complete": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt StepFunctionRole.Arn
+      
+  # Now, a simple Lambda calculator function.
+  Calculator:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: Calculator
+      Description: Part of a StepFunction demo
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: nodejs8.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+          console.log('Loading function');
+          exports.handler = (event, context, callback) => {
+              console.log('Received event:', JSON.stringify(event, null, 2));
+              var operator = event.operator;
+              var operand1 = event.operands[0];
+              var operand2 = event.operands[1];
+              var result = 0;
+              if (operator == 'add') {
+                result = operand1 + operand2;
+              }
+              else if (operator == 'subtract') {
+                result = operand1 - operand2;
+              }
+              else if (operator == 'multiply') {
+                result = operand1 * operand2;
+              }
+              else if (operator == 'divide') {
+                result = operand1 / operand2;
+              }
+              console.log('Returning:', result);
+              callback(null, result);
+          };          
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
+  StepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: !Join [ "", [ "states.", !Ref "AWS::Region", ".amazonaws.com" ] ]
+          Action: "sts:AssumeRole"
+
+  # This Policy is attached to the StepFunctionRole.
+  # Basic permissions to call Lambda.
+  StepFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: StepFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - lambda:InvokeFunction
+          Resource: "*"
+      Roles: 
+        -  !Ref StepFunctionRole   
+
+Outputs:
+
+  SampleInput:
+    Description:  Some sample input
+    Value: '{"operator": "add", "operands": [1,2]}'
