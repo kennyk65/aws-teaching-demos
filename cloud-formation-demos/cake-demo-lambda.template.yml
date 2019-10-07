@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This is part of a demo of API Gateway backed by Lambda functions.
+# This creates a simple Lambda function for baking a layer of a cake.
+# Test with "{ “BottomFlavour”: “Vanilla” }"
+
+Resources:
+
+  # This is a simple inline NodeJS "hello world" style Lambda function.
+  CakeLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: CakeLambda
+      Description: Create the layer of a 3 layer cake.
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: nodejs8.10
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          /****************************************************
+          * Lambda-powered multi-layer ice cream cake
+          * Handler: cake.handler
+          * Lambda Runtime: Node.js 8.10
+          * Functions: handler, cake
+          * Ben Newton - AWS Training & Certification
+          * v1.0
+          * License: Apache License, Version 2.0
+          */
+          exports.handler = async (event, context) => {
+              
+              var topFlavour, middleFlavour, bottomFlavour, icingRequested, requestId;
+          
+              // Extract ice cream Flavours from our event object
+              topFlavour = event.topFlavour
+              middleFlavour = event.middleFlavour
+              bottomFlavour = event.bottomFlavour
+              icingRequested = event.icing
+              requestId = context.awsRequestId
+              
+              // Call our cake() function - it's best practice to separate our handler function from our business logic
+              // as it creates more unit-testable code
+              // We then return the boxedCake object from cake() into our iceCreamCake variable
+          
+              var iceCreamCake = cake (topFlavour, middleFlavour, bottomFlavour, requestId, icingRequested);
+              
+              // Return our result (boxedCake object) to our hungry user via API Gateway
+              console.log(requestId)
+              return iceCreamCake;
+          }
+          
+          function cakeLayer(layer,requestedColor) {
+              
+              var newHtml = '<div class="layer layer-%theCakeLayer%" id="%theCakeLayer%" style="box-shadow: 0 2px 0px #%color%, 0 4px 0px #%color%, 0 6px 0px #%color%, 0 8px 0px #%color%, 0 10px 0px #%color%, 0 12px 0px #%color%, 0 14px 0px #%color%, 0 16px 0px #%color%, 0 18px 0px #%color%, 0 20px 0px #%color%, 0 22px 0px #%color%, 0 24px 0px #%color%, 0 26px 0px #%color%, 0 28px 0px #%color%, 0 30px 0px #%color%; background-color: #%color%;"></div>';
+              var color = requestedColor === 'Chocolate' ? '31230b' : requestedColor === 'Vanilla' ? 'f5f5dc' : requestedColor === 'Strawberry' ? 'ffc0cb' : '';
+              
+              String.prototype.replaceAll = function(search, replacement) {
+                  var target = this;
+                  return target.split(search).join(replacement);
+              };
+              
+              newHtml = newHtml.replaceAll('%color%', color);
+              newHtml = newHtml.replaceAll('%theCakeLayer%', layer); 
+              return newHtml;
+          }
+          
+          function cake (top, middle, bottom, requestId, icingRequested) {
+              console.log("Creating Lambda-powered multi-layer ice cream cake");
+              console.log('You have requested the Flavours: ' + top + ', ' + middle + ' & ' + bottom);
+          
+              var topLayer, middleLayer, bottomLayer, icing, topLayerResult, middleLayerResutl, bottomLayerResult, boxedCake;
+              // Process only the requested layer
+              if (top != null) {
+                  console.log('processing top else')
+                  topLayer = cakeLayer('top',top);
+                  middleLayer, bottomLayer = '';
+              } else if (middle != null) {
+                  console.log('processing bottom else')
+                  middleLayer = cakeLayer('middle',middle);
+                  topLayer, bottomLayer = '';
+              } else if (bottom != null) {
+                  console.log('processing bottom else')
+                  bottomLayer = cakeLayer('bottom',bottom);  
+                  topLayer, middleLayer = '';
+              } else {
+                  
+                  topLayer, middleLayer, bottomLayer = '';
+              }
+                  
+              // Add the 'icing on the cake' - our custom business logic for our Lambda function.
+              if (icingRequested === 'icing') {
+              icing = '<div class="icing"></div><div class="drip drip1"></div><div class="drip drip2"></div><div class="drip drip3"></div><div class="candle"><div class="flame"></div></div>'
+              } else {
+                  icing = '';
+              }
+              
+              // Return feedback to user on their requested layer
+              topLayerResult = topLayer ? 'CREATED' : 'NOT REQUESTED';
+              middleLayerResult = middleLayer ? 'CREATED' : 'NOT REQUESTED';
+              bottomLayerResult = bottomLayer ? 'CREATED' : 'NOT REQUESTED';
+              
+              // Build the ice-cream cake object with result feedback
+              boxedCake = {bottom:bottomLayer, middle:middleLayer, top:topLayer, icing:icing, awsRequestId:requestId, resultOne:bottomLayerResult, resultTwo:middleLayerResult, resultThree:topLayerResult};
+              
+              // Return our ice-cream cake object to our handler function
+              return boxedCake;
+          }
+
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: BasicLambdaRole  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          Effect: "Allow"
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
