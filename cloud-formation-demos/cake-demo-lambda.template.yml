@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-# This is part of a demo of API Gateway backed by Lambda functions.
+# This is part ONE of a demo of API Gateway backed by Lambda functions.
 # This creates a simple Lambda function for baking a layer of a cake.
 # Test with "{ “BottomFlavour”: “Vanilla” }"
+# All code credits to Ben Newton - AWS Training & Certification
 
 Resources:
 
@@ -140,3 +141,16 @@ Resources:
       Roles: 
         -  !Ref LambdaFunctionRole   
 
+  # Explicitly declaring the log group makes it easier to delete.
+  lambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CakeLambda}
+      RetentionInDays: 3
+
+Outputs:
+  CakeLambdaArn:
+    Description: ARN of the Lambda
+    Value: !GetAtt CakeLambda.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}:CakeLambdaArn

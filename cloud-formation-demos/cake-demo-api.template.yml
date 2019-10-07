@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create your own lambda-powered multi-layer ice-cream cake"
+
+# This is part TWO of a demo of API Gateway backed by Lambda functions.
+# This creates a rudimentary API gateway for calling the Lambda created earlier.
+# Test with "{ “BottomFlavour”: “Vanilla” }"
+# All code credits to Ben Newton - AWS Training & Certification
+
+
+Parameters:
+  apiGatewayStageName:
+    Type: String
+    AllowedPattern: '^[a-z0-9]+$'
+    Default: "production"
+
+  lambdaFunctionStack:
+    Description:  The stack where we can find the Lambda function
+    Type: String
+    Default: cake-lambda
+
+Resources:
+
+    apiGateway:
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+            Name: cakeAPI
+            Description: cakeAPI
+
+    apiGatewayRootMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            ApiKeyRequired: false
+            AuthorizationType: NONE
+            HttpMethod: POST
+            Integration:
+                IntegrationHttpMethod: POST
+                IntegrationResponses:
+                    -
+                        StatusCode: 200
+                        ResponseParameters:
+                          method.response.header.Access-Control-Allow-Origin: "'*'"
+                Type: AWS
+                Uri: !Sub
+                  - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
+                  - lambdaArn:  
+                      Fn::ImportValue:
+                        !Sub ${lambdaFunctionStack}:CakeLambdaArn 
+            MethodResponses:
+                -
+                    StatusCode: 200
+                    ResponseModels:
+                        application/json: Empty
+                    ResponseParameters:
+                      method.response.header.Access-Control-Allow-Headers: true
+                      method.response.header.Access-Control-Allow-Methods: true
+                      method.response.header.Access-Control-Allow-Origin: true
+            ResourceId: !GetAtt apiGateway.RootResourceId
+            RestApiId: !Ref apiGateway
+
+
+    OptionsMethod:
+      Type: AWS::ApiGateway::Method
+      Properties:
+        ApiKeyRequired: false
+        AuthorizationType: NONE
+        RestApiId: !Ref apiGateway
+        ResourceId: !GetAtt apiGateway.RootResourceId
+        HttpMethod: OPTIONS
+        Integration:
+          IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+          PassthroughBehavior: NEVER
+          RequestTemplates:
+            application/json: '{"statusCode": 200}'
+          Type: MOCK
+        MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: 'Empty'
+          ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: true
+              method.response.header.Access-Control-Allow-Methods: true
+              method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: '200'
+
+    apiGatewayDeployment:
+        Type: AWS::ApiGateway::Deployment
+        DependsOn:
+          - apiGatewayRootMethod
+          - OptionsMethod
+        Properties:
+              RestApiId: !Ref apiGateway
+              StageName: !Ref apiGatewayStageName
+
+    lambdaApiGatewayInvoke:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: 
+              Fn::ImportValue:
+                !Sub ${lambdaFunctionStack}:CakeLambdaArn             
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/POST/
+
+
+Outputs:
+    apiGatewayInvokeURL:
+        Value: !Sub https://${apiGateway}.execute-api.${AWS::Region}.amazonaws.com/${apiGatewayStageName}
