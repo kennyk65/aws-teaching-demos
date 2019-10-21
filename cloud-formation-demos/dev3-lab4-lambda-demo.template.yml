@@ -25,7 +25,7 @@ Resources:
           Function: !GetAtt MyLambda.Arn 
 
 
-  # This NodeJS function takes the triggered input S3 object, transforms it, and uploads it to the output bucket.
+  # This Python function takes the triggered input S3 object, transforms it, and uploads it to the output bucket.
   MyLambda:
     Type: AWS::Lambda::Function
     Properties: 
