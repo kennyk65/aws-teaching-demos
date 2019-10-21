@@ -6,14 +6,14 @@ Resources:
 
   # This is a simple inline NodeJS "hello world" style Lambda function.
   MyLambda:
-    Type: "AWS::Lambda::Function"
+    Type: AWS::Lambda::Function
     Properties: 
       FunctionName: MyLambda
       Description: Example Lambda from CloudFormation
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Handler: index.justatest
       Code:
         ZipFile: !Sub |
@@ -37,10 +37,10 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "lambda.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the LambdaFunctionRole.
   # Basic permissions for CloudWatch Logs, expand as needed.
@@ -60,4 +60,3 @@ Resources:
           Resource: "*"
       Roles: 
         -  !Ref LambdaFunctionRole   
-

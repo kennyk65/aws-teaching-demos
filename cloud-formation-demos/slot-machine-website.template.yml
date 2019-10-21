@@ -104,7 +104,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt RoleSlotMachineLambda.Arn
-      Runtime: nodejs8.10
+      Runtime: nodejs10.x
       Handler: index.handler
       Code:
         ZipFile: !Sub |

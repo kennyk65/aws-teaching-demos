@@ -16,7 +16,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs8.10
+      Runtime: nodejs10.x
       Handler: index.handler
       Code:
         ZipFile: !Sub |
@@ -118,7 +118,7 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
             Service: lambda.amazonaws.com
           Action: sts:AssumeRole
