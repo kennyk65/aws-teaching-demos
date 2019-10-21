@@ -23,11 +23,11 @@ Parameters:
 
   Runtime:
     Type: String
-    Default: nodejs8.10
+    Default: nodejs10.x
     Description: Runtime of your lambda code.
     AllowedValues: 
       - nodejs6.10
-      - nodejs8.10
+      - nodejs10.x
       - java8
       - python2.7
       - python3.6
