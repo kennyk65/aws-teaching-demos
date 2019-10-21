@@ -26,7 +26,6 @@ Parameters:
     Default: nodejs10.x
     Description: Runtime of your lambda code.
     AllowedValues: 
-      - nodejs6.10
       - nodejs10.x
       - java8
       - python2.7

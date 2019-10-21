@@ -8,7 +8,7 @@
 //     MemorySize: 128
 //     Timeout: 4
 //     Role: !Join [ "", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/", !Ref LambdaFunctionRole  ] ]  # Would be a lot easier if it didn't have to be in ARN form...
-//     Runtime: nodejs6.10
+//     Runtime: nodejs10.x
 //     Handler: lambda-helloworld.justatest
 //     Code:
 //	     S3Bucket: kk-uploads-oregon
