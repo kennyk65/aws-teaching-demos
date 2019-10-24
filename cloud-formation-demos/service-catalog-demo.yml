@@ -83,7 +83,7 @@ Resources:
     Type: AWS::ServiceCatalog::CloudFormationProduct
     Properties:
       Owner: Ken Krueger
-      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-stepfunction-demo.template.yml
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/stepfunction-beatles.template.yml
       Description: This product produces a simple Simple Step-Function demo.  The step function calls 4 separate lambda functions in sequence to piece together the words to the Beatles "A Day In the Life" song - featuring Ringo.
       Distributor: Hilltop Technology
       SupportEmail: kenkrueger65@gmail.com
@@ -92,7 +92,7 @@ Resources:
       ProvisioningArtifactParameters: 
         - Description: First Version
           Info: 
-            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-stepfunction-demo.template.yml
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/stepfunction-beatles.template.yml
           Name: v1
 
   PortfolioStepFunctionsDemo:
