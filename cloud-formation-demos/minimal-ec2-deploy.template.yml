@@ -104,7 +104,7 @@ Resources:
           # Download and start Java/Spring app:
           mkdir /opt/app
           cd /opt/app
-          wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/spring-cloud-aws-environment-demo-1.war 
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           mv spring-cloud-aws-environment-demo-1.war  app.war
           chmod +x app.war
           # java -jar app.war
@@ -121,4 +121,4 @@ Resources:
 Outputs:
   WebServerIpAddress:
     Description: IP Address of the web server
-    Value: !Join ['', ["http://", !GetAtt WebServer.PublicIp ]]
+    Value: !Sub http://${WebServer.PublicIp}

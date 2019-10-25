@@ -83,7 +83,7 @@ Resources:
           - yum update -y
           - yum install java-1.8.0 -y
           - yum remove java-1.7.0-openjdk -y         
-          - wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          - wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           - sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
 
 

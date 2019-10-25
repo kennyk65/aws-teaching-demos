@@ -7,25 +7,15 @@ Mappings:
   #  This is just the Amazon Linux AMI:
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-1ecae776
+      AMI: ami-0b69ea66ff7391e80    # N Virginia
     us-east-2:
-      AMI: ami-15e9c770      
+      AMI: ami-00c03f7f7f2ec15c3    # Ohio      
     us-west-1:
-      AMI: ami-d114f295
+      AMI: ami-0245d318c6788de52    # N California
     us-west-2:
-      AMI: ami-e7527ed7
+      AMI: ami-04b762b4289fba92b    # Oregon
     eu-west-1:
-      AMI: ami-a10897d6
-    eu-central-1:
-      AMI: ami-a8221fb5
-    sa-east-1:
-      AMI: ami-b52890a8
-    ap-southeast-1:
-      AMI: ami-68d8e93a
-    ap-southeast-2:
-      AMI: ami-fd9cecc7
-    ap-northeast-1:
-      AMI: ami-cbf90ecb
+      AMI: ami-0ce71448843cb18a1    # Ireland
 
 
 Resources:
@@ -34,8 +24,8 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.1.0.0/16
-      EnableDnsSupport: 'true'
-      EnableDnsHostnames: 'true'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags:
       - Key: Name
         Value: SimpleDeploy VPC
@@ -43,7 +33,6 @@ Resources:
   # Our VPC will need internet access:      
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-    DependsOn: VPC
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     # Notice how you can't attach an IGW to a VPC unless both are created:
@@ -101,8 +90,8 @@ Resources:
         Value: CloudFormationResource
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
+        FromPort: 80
+        ToPort: 80
         CidrIp: 0.0.0.0/0
 
 
@@ -112,22 +101,21 @@ Resources:
     Properties:
       ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
       InstanceType: t2.micro          # Any instance type will do
-      SecurityGroups:
-      - !Ref WebServerSecurityGroup   # Plug in the security group.
+      SecurityGroups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
       BlockDeviceMappings:
       - DeviceName: "/dev/xvdf"
         Ebs:
-          VolumeSize: '10'
+          VolumeSize: 10
           VolumeType: gp2
       UserData:      #  This code Installs a Spring Boot app. Notice a different way to signal completion:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum update -y
           yum install java-1.8.0 -y
-          yum remove java-1.7.0-openjdk -y         
-          wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80        
+          java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
+
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: PublicSubnetARouteTableAssociation
@@ -141,23 +129,24 @@ Resources:
       Tags:
       - Key: ApplicationRole
         Value: OurWebApp
-        PropagateAtLaunch: 'true'
+        PropagateAtLaunch: true
       - Key: Name
         Value: AppServer
-        PropagateAtLaunch: 'true'
+        PropagateAtLaunch: true
     # This resource is not really created until you get 1 signal back'.
     CreationPolicy:
       ResourceSignal:
         Count: 1
         Timeout: PT10M
         
-  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
+  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.  
+  # (App load balancer can't cope with a single AZ)      
   AppLoadBalancer:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
     Properties:
       Listeners:
-      - LoadBalancerPort: '80'
-        InstancePort: '80'
+      - LoadBalancerPort: 80
+        InstancePort: 80
         Protocol: HTTP
       SecurityGroups:
       - Ref: WebServerSecurityGroup
@@ -165,10 +154,11 @@ Resources:
       - Ref: PublicSubnetA
       HealthCheck:
         Target: HTTP:80/
-        HealthyThreshold: '3'
-        UnhealthyThreshold: '5'
-        Interval: '10'
-        Timeout: '5'
+        HealthyThreshold: 3
+        UnhealthyThreshold: 5
+        Interval: 10
+        Timeout: 5
+
         
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:

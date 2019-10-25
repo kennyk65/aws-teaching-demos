@@ -22,15 +22,15 @@ Mappings:
   #  This is the Amazon Linux 2 AMI:
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-04681a1dbd79675a5    # N Virginia
+      AMI: ami-0b69ea66ff7391e80    # N Virginia
     us-east-2:
-      AMI: ami-0cf31d971a3ca20d6    # Ohio      
+      AMI: ami-00c03f7f7f2ec15c3    # Ohio      
     us-west-1:
-      AMI: ami-0782017a917e973e7    # N California
+      AMI: ami-0245d318c6788de52    # N California
     us-west-2:
-      AMI: ami-6cd6f714             # Oregon
+      AMI: ami-04b762b4289fba92b    # Oregon
     eu-west-1:
-      AMI: ami-0bdb1d6c15a40392c    # Ireland
+      AMI: ami-0ce71448843cb18a1    # Ireland
     eu-central-1:
       AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
     sa-east-1:
@@ -303,14 +303,13 @@ Resources:
           #!/bin/bash
           yum update -y
           yum install java-1.8.0 -y
-          wget https://s3.amazonaws.com/kk-uploads/spring-cloud-aws-environment-demo-1.war
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
           java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
-    DependsOn: 
-    - NatInstanceWaitCondition
+    DependsOn: [ NatInstanceWaitCondition ]
     Properties:
       VPCZoneIdentifier: [ !Ref PrivateSubnet1,  !Ref PrivateSubnet2 ]
       LaunchConfigurationName: !Ref LaunchConfig
