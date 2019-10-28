@@ -1,7 +1,8 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 
-# This downloads and runs a Spring Boot app on an EC2 instance.  This is a minimalistic approach, it does not run as a service.
+# Example of launching an EC2 instance using cloud-init directives instead of bash script in the user data.
+Parameters:
 
 Metadata: 
   AWS::CloudFormation::Interface: 
@@ -44,8 +45,8 @@ Resources:
         FromPort: 80
         ToPort: 80
         CidrIp: 0.0.0.0/0
-
-  # web server:
+      
+  # Create a sample EC2 instance:    
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
@@ -56,23 +57,20 @@ Resources:
         AssociatePublicIpAddress: true            # We will need a public IP address
         SubnetId: !Ref PublicSubnet               # We should sit in a public subnet.
         GroupSet: [ !Ref WebServerSecurityGroup ] # Attach the security group
-      UserData:      #  This code installs a demo Java/Spring app as a init.d service.  Then it signals completion:
+      Tags:
+      - Key: Name
+        Value: WebServer
+      UserData:      #  This code used cloud init to install a Spring Boot app:
         Fn::Base64: !Sub |
-          #!/bin/bash
-          # Update the OS and get Java
-          yum -y update
-          yum install wget java-1.8.0 -y
-          # Download and start Java/Spring app:
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
-          mv spring-cloud-aws-environment-demo-1.war  app.war
-          # Must signal completion before actually starting the app:
-          /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
-          java -jar app.war --server.port=80
-    CreationPolicy:
-      ResourceSignal:
-        Count: 1
-        Timeout: PT3M
-        
+          #cloud-config
+          # bootcmd is similar to runcmd, but runs earlier, and on each boot:
+          bootcmd:
+          - yum update -y
+          - yum install java-1.8.0 -y
+          - yum remove java-1.7.0-openjdk -y         
+          - wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
+          - sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
+
 # Finally, what we should see when we are all done.  IP address of our website:
 Outputs:
   WebServerIpAddress:
