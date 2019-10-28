@@ -2,6 +2,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
 # Example of launching an EC2 instance using cloud-init directives instead of bash script in the user data.
+# TODO: NOT WORKING AT THE MOMENT, NEED TO FIND OUT WHY.
+
 Parameters:
 
 Metadata: 
@@ -71,7 +73,7 @@ Resources:
           - wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           - sudo java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
 
-# Finally, what we should see when we are all done.  IP address of our website:
+# Finally, what we should see when we are all done.  IP address of our website: 
 Outputs:
   WebServerIpAddress:
     Description: IP Address of the web server
