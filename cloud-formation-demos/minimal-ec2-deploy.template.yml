@@ -100,7 +100,7 @@ Resources:
           #!/bin/bash
           # Update the OS and get Java
           yum -y update
-          yum install -y wget java
+          yum install wget java-1.8.0 -y
           # Download and start Java/Spring app:
           mkdir /opt/app
           cd /opt/app
@@ -109,8 +109,8 @@ Resources:
           chmod +x app.war
           # java -jar app.war
           # Run Java Spring app as service:
-          ln -s /opt/app/app.war /etc/init.d/demoapp
-          service demoapp start
+          ln -s /opt/app/app.war /etc/init.d/springbootapp
+          service springbootapp start
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
     CreationPolicy:
       ResourceSignal:
