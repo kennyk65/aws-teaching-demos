@@ -87,6 +87,10 @@ Resources:
         Type: S3
         Name: !Ref OutputS3Prefix
         Location: !Ref OutputS3Bucket
+      Cache:
+        Type: S3
+        Location: !Sub ${OutputS3Bucket}/cache
+
 
 Outputs:
   CodeBuild:
