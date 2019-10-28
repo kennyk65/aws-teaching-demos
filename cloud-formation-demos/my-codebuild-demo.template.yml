@@ -81,7 +81,8 @@ Resources:
       Environment:
         Type: "LINUX_CONTAINER"
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+    #   Image: aws/codebuild/java:openjdk-8   # Replace in 2019 by all-purpose images
+        Image: aws/codebuild/standard:2.0        
       Artifacts:
         Type: S3
         Name: !Ref OutputS3Prefix
