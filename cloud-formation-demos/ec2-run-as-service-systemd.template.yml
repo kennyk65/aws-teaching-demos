@@ -70,19 +70,21 @@ Resources:
           mkdir /var/app
           mv app.war /var/app
           # Run app as service by creating app.service file:
-          echo "[Unit]"                    > app.service
-          echo "Description=Spring Boot Demo" >> app.service
-          echo ""                                 >> app.service
-          echo "[Service]"                            >> app.service
-          echo "SuccessExitStatus=143"                    >> app.service
-          echo "TimeoutStartSec=30"                           >> app.service
-          echo "TimeoutStopSec=10"                                >> app.service
-          echo "Restart=on-failure"                                   >> app.service
-          echo "RestartSec=5"                                             >> app.service
-          echo "ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80" >> app.service
-          echo ""                                                         >> app.service
-          echo "[Install]"                                            >> app.service
-          echo "WantedBy=multi-user.target"                       >> app.service
+          cat > app.service <<EOF
+          [Unit]
+          Description=Spring Boot Demo
+          
+          [Service]
+          SuccessExitStatus=143
+          TimeoutStartSec=30
+          TimeoutStopSec=10
+          Restart=on-failure
+          RestartSec=5
+          ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
           mv app.service /etc/systemd/system/
           # Run Java Spring app as service:
           systemctl daemon-reload
