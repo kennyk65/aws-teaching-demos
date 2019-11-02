@@ -1,0 +1,136 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# This downloads and runs a Spring Boot app on an EC2 instance as a Linux service, using systemd (modern approach)
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - AmazonLinuxAMI
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
+Mappings:
+  #  This is just the Ubuntu AMI.  These values change every few months:  
+  UbuntuAMI:
+    us-east-1: 
+      AMI: ami-04b9e92b5572fa0d1    # Virginia
+    us-east-2:
+      AMI: ami-0d5d9d301c853a04a    # Ohio
+    us-west-1:
+      AMI: ami-0dd655843c87b6930    # N California
+    us-west-2:
+      AMI: ami-06d51e91cea0dac8d    # Oregon
+    ap-south-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Mumbai
+    ap-northeast-2:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Seoul
+    ap-southeast-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Singapore
+    ap-southeast-2:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Sydney
+    ap-northeast-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Tokyo
+    ca-central-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Montreal
+    eu-central-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Frankfurt
+    eu-west-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Ireland
+    eu-west-2:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # London
+    eu-west-3:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Paris
+    sa-east-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Sao Paulo
+
+Resources:
+
+  # Security Group for the web server.  Allow HTTP and SSH from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  # web server:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ UbuntuAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+      InstanceType: t2.micro                      # Any instance type will do
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true            # We will need a public IP address
+        SubnetId: !Ref PublicSubnet               # We should sit in a public subnet.
+        GroupSet: [ !Ref WebServerSecurityGroup ] # Attach the security group
+      UserData:      #  This code installs a demo Java/Spring app as a systemd service.  Then it signals completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update the OS and get Java
+          apt-get update && sudo apt-get upgrade -y
+          apt-get install openjdk-8-jdk wget python-setuptools -y
+          # Install cloudformation helper scripts (like cfn-signal):
+          # TODO: THIS DOESNT SEEM TO BE WORKING
+          mkdir -p /opt/aws/bin
+          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
+          # Download Java/Spring app:
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
+          mv spring-cloud-aws-environment-demo-1.war  app.war
+          chmod +x app.war
+          # Move app to var folders:
+          mkdir /var/app
+          mv app.war /var/app
+          # Run app as service by creating app.service file:
+          cat > app.service <<EOF
+          [Unit]
+          Description=Spring Boot Demo
+          
+          [Service]
+          SuccessExitStatus=143
+          TimeoutStartSec=30
+          TimeoutStopSec=10
+          Restart=on-failure
+          RestartSec=5
+          ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          mv app.service /etc/systemd/system/
+          # Run Java Spring app as service:
+          systemctl daemon-reload
+          systemctl enable app.service
+          systemctl start app
+          /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M
+        
+# Finally, what we should see when we are all done.  IP address of our website:
+Outputs:
+  WebServerIpAddress:
+    Description: IP Address of the web server
+    Value: !Sub http://${WebServer.PublicIp}
