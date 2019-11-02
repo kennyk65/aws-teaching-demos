@@ -60,6 +60,10 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           # Update the OS and get Java
+          # These lines will work on Ubuntu, will simply fail on other distros:
+          apt-get update && sudo apt-get upgrade -y
+          apt-get install openjdk-8-jdk wget -y
+          # These lines will work on Amazon Linux and RHEL, will simply fail on Ubuntu:
           yum -y update
           yum install wget java-1.8.0 -y
           # Download Java/Spring app:
