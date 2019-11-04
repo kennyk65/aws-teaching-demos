@@ -1,12 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 # Stand up an ECS cluster.  
-# PRESENTLY NOT WORKING.  ISSUES ARE:
-# 1. NOT SURE IF AMI IS CORRECT
-# 2. yum update FAILS.
-# 3. cfn-signal DOESN'T EVER GET TO THE ASG.
-# 4. INSTANCE NEVER GETS ASSOCIATED WITH THE CLUSTER.
-
 
 Metadata: 
   AWS::CloudFormation::Interface: 
@@ -61,41 +55,6 @@ Parameters:
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI for ECS using the Parameter Store...
 
 
-# Mappings:
-#   #  These are variants of the Amazon Linux AMI optimized for ECS, version 1.20 at the moment:
-#   AmazonLinuxAMI:
-#     us-east-2:
-#       AMI: ami-0e65e665ff5f3fc5f
-#     us-east-1:   
-#       AMI: ami-112e366e
-#     us-west-2:   
-#       AMI: ami-a1f8dfd9
-#     us-west-1:   
-#       AMI: ami-dd0de2be
-#     eu-west-2:   
-#       AMI: ami-c3ea1fa4
-#     eu-west-3:   
-#       AMI: ami-0e4185127a627bbac
-#     eu-west-1:   
-#       AMI: ami-0612d1ef7f8e72c06
-#     eu-central-1:   
-#       AMI: ami-c7e9e72c
-#     ap-northeast-2:   
-#       AMI: ami-02b0706448bd6fb5e
-#     ap-northeast-1:   
-#       AMI: ami-256c15c8
-#     ap-southeast-2:   
-#       AMI: ami-df49e9bd
-#     ap-southeast-1:   
-#       AMI: ami-0e1566e9c8eb85002
-#     ca-central-1:   
-#       AMI: ami-cf60edab
-#     ap-south-1:   
-#       AMI: ami-0c814df738f3c9fd5
-#     sa-east-1:   
-#       AMI: ami-085384d0e5fd5ae0a
-#     us-gov-west-1:   
-#       AMI: ami-8b8814ea
 
 Resources:
 
@@ -195,8 +154,6 @@ Resources:
       ToPort: 61000
       CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
 
-
-
   # Auto-Scaling Group for the cluser:
   ECSAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -229,16 +186,19 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
+          # Critical: this ecs.config file must know the name of the cluster to connect to.
+          # This is the only actual setup required (besides the pre-installed software)
           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
           yum update -y
           # These appear to be installed already
-          # yum install -y aws-cfn-bootstrap awslogs jq   
+          yum install -y aws-cfn-bootstrap awslogs jq   
           # Get ECS Instance ID:
           ECS_CONTAINER_INSTANCE_ID=$(curl -s http://localhost:51678/v1/metadata | jq -r '. | .ContainerInstanceArn' | awk -F/ '{print $2}' )
 
           # Believe it or not, you have to configure CloudWatch Logs yourself:
           # Inject the CloudWatch Logs configuration file contents
-          cat > /etc/awslogs/awslogs.conf <<- EOF
+          mkdir /etc/awslogs
+          cat > /etc/awslogs/awslogs.conf <<EOF
           [general]
           state_file = /var/lib/awslogs/agent-state        
 
@@ -308,10 +268,3 @@ Outputs:
     Value: !Ref ECSCluster
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", ECSCluster ] ]
-
-
-
-
-
-
-
