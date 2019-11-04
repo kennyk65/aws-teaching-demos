@@ -22,11 +22,39 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Select a public subnet in your selected VPC.  The web server will run here.
 
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
-
+Mappings:
+  #  This is just the Ubuntu AMI.  These values change every few months:  
+  UbuntuAMI:
+    us-east-1: 
+      AMI: ami-04b9e92b5572fa0d1    # Virginia
+    us-east-2:
+      AMI: ami-0d5d9d301c853a04a    # Ohio
+    us-west-1:
+      AMI: ami-0dd655843c87b6930    # N California
+    us-west-2:
+      AMI: ami-06d51e91cea0dac8d    # Oregon
+    ap-south-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Mumbai
+    ap-northeast-2:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Seoul
+    ap-southeast-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Singapore
+    ap-southeast-2:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Sydney
+    ap-northeast-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Tokyo
+    ca-central-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Montreal
+    eu-central-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Frankfurt
+    eu-west-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Ireland
+    eu-west-2:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # London
+    eu-west-3:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Paris
+    sa-east-1:
+      AMI: ami-xxxxxxxxxxxxxxxxx    # Sao Paulo
 
 Resources:
 
@@ -49,7 +77,7 @@ Resources:
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
+      ImageId: !FindInMap [ UbuntuAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
       InstanceType: t2.micro                      # Any instance type will do
       NetworkInterfaces:
       - DeviceIndex: 0
@@ -60,12 +88,13 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           # Update the OS and get Java
-          # These lines will work on Ubuntu, will simply fail on other distros:
           apt-get update && sudo apt-get upgrade -y
-          apt-get install openjdk-8-jdk wget -y
-          # These lines will work on Amazon Linux and RHEL, will simply fail on Ubuntu:
-          yum -y update
-          yum install wget java-1.8.0 -y
+          apt-get install openjdk-8-jdk wget python-setuptools -y
+          # Install cloudformation helper scripts (like cfn-signal):
+          # TODO: THIS DOESNT SEEM TO BE WORKING
+          mkdir -p /opt/aws/bin
+          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
           # Download Java/Spring app:
           wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           mv spring-cloud-aws-environment-demo-1.war  app.war
@@ -98,7 +127,7 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT3M
+        Timeout: PT5M
         
 # Finally, what we should see when we are all done.  IP address of our website:
 Outputs:
