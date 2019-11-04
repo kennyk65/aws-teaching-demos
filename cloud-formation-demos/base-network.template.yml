@@ -90,6 +90,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: 10.1.10.0/24
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      MapPublicIpOnLaunch: true
       Tags:
       - Key: Name
         Value: !Sub "${AWS::StackName}-Public-A"
@@ -100,6 +101,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: 10.1.20.0/24
       AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      MapPublicIpOnLaunch: true
       Tags:
       - Key: Name
         Value: !Sub "${AWS::StackName}-Public-B"
@@ -110,6 +112,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: 10.1.30.0/24
       AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
+      MapPublicIpOnLaunch: true
       Tags:
       - Key: Name
         Value: !Sub "${AWS::StackName}-Public-C"
