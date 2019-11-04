@@ -1,6 +1,12 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-# Stand up an ECS and run a container on it.  
+# Stand up an ECS cluster.  
+# PRESENTLY NOT WORKING.  ISSUES ARE:
+# 1. NOT SURE IF AMI IS CORRECT
+# 2. yum update FAILS.
+# 3. cfn-signal DOESN'T EVER GET TO THE ASG.
+# 4. INSTANCE NEVER GETS ASSOCIATED WITH THE CLUSTER.
+
 
 Metadata: 
   AWS::CloudFormation::Interface: 
@@ -51,46 +57,45 @@ Parameters:
   ECSAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+  #  Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI for ECS using the Parameter Store...
 
 
-
-
-Mappings:
-  #  These are variants of the Amazon Linux AMI optimized for ECS, version 1.20 at the moment:
-  AmazonLinuxAMI:
-    us-east-2:
-      AMI: ami-0e65e665ff5f3fc5f
-    us-east-1:   
-      AMI: ami-112e366e
-    us-west-2:   
-      AMI: ami-a1f8dfd9
-    us-west-1:   
-      AMI: ami-dd0de2be
-    eu-west-2:   
-      AMI: ami-c3ea1fa4
-    eu-west-3:   
-      AMI: ami-0e4185127a627bbac
-    eu-west-1:   
-      AMI: ami-0612d1ef7f8e72c06
-    eu-central-1:   
-      AMI: ami-c7e9e72c
-    ap-northeast-2:   
-      AMI: ami-02b0706448bd6fb5e
-    ap-northeast-1:   
-      AMI: ami-256c15c8
-    ap-southeast-2:   
-      AMI: ami-df49e9bd
-    ap-southeast-1:   
-      AMI: ami-0e1566e9c8eb85002
-    ca-central-1:   
-      AMI: ami-cf60edab
-    ap-south-1:   
-      AMI: ami-0c814df738f3c9fd5
-    sa-east-1:   
-      AMI: ami-085384d0e5fd5ae0a
-    us-gov-west-1:   
-      AMI: ami-8b8814ea
+# Mappings:
+#   #  These are variants of the Amazon Linux AMI optimized for ECS, version 1.20 at the moment:
+#   AmazonLinuxAMI:
+#     us-east-2:
+#       AMI: ami-0e65e665ff5f3fc5f
+#     us-east-1:   
+#       AMI: ami-112e366e
+#     us-west-2:   
+#       AMI: ami-a1f8dfd9
+#     us-west-1:   
+#       AMI: ami-dd0de2be
+#     eu-west-2:   
+#       AMI: ami-c3ea1fa4
+#     eu-west-3:   
+#       AMI: ami-0e4185127a627bbac
+#     eu-west-1:   
+#       AMI: ami-0612d1ef7f8e72c06
+#     eu-central-1:   
+#       AMI: ami-c7e9e72c
+#     ap-northeast-2:   
+#       AMI: ami-02b0706448bd6fb5e
+#     ap-northeast-1:   
+#       AMI: ami-256c15c8
+#     ap-southeast-2:   
+#       AMI: ami-df49e9bd
+#     ap-southeast-1:   
+#       AMI: ami-0e1566e9c8eb85002
+#     ca-central-1:   
+#       AMI: ami-cf60edab
+#     ap-south-1:   
+#       AMI: ami-0c814df738f3c9fd5
+#     sa-east-1:   
+#       AMI: ami-085384d0e5fd5ae0a
+#     us-gov-west-1:   
+#       AMI: ami-8b8814ea
 
 Resources:
 
@@ -99,7 +104,7 @@ Resources:
   ECSContainerAgentRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-ECSContainerAgentRole" ]]
+      RoleName: !Sub ${AWS::StackName}-ECSContainerAgentRole
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
@@ -107,7 +112,7 @@ Resources:
           Principal:
             Service: ecs.amazonaws.com
       Policies:
-      - PolicyName:  !Join ['', [!Ref 'AWS::StackName', "-ECSContainerAgentPolicy" ]]
+      - PolicyName:  !Sub ${AWS::StackName}-ECSContainerAgentPolicy
         PolicyDocument:
           Statement:
           - Effect: Allow
@@ -122,7 +127,7 @@ Resources:
   AutoscalingRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-ClusterAutoscalingRole" ]]
+      RoleName: !Sub ${AWS::StackName}-ClusterAutoscalingRole
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
@@ -131,7 +136,7 @@ Resources:
             Service: application-autoscaling.amazonaws.com
       Path: /
       Policies:
-      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-ClusterAutoscalingPolicy" ]]
+      - PolicyName: !Sub ${AWS::StackName}-ClusterAutoscalingPolicy
         PolicyDocument:
           Statement:
           - Effect: Allow
@@ -147,7 +152,7 @@ Resources:
   ECSInstanceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-ECSInstanceRole" ]]
+      RoleName: !Sub ${AWS::StackName}-ECSInstanceRole
       ManagedPolicyArns: [ "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role" ]
       AssumeRolePolicyDocument:
         Statement:
@@ -161,14 +166,14 @@ Resources:
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Join ['', [!Ref 'AWS::StackName', "-ECSCluster" ]]    # Something you can recognize in the console, but unique.
+      ClusterName: !Sub ${AWS::StackName}-ECSCluster    # Something you can recognize in the console, but unique.
 
 
   # Security Group for the ECS instances.  Allow inbound ports for the ELB to use:
   EcsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
+      GroupName: !Sub ${AWS::StackName}-EcsSecurityGroup
       GroupDescription: ECS Security Group
       VpcId: !Ref VpcId
 
@@ -178,25 +183,18 @@ Resources:
     Properties:
       GroupId: !Ref EcsSecurityGroup
       IpProtocol: tcp
-      FromPort: '80'
-      ToPort: '80'
+      FromPort: 80
+      ToPort: 80
       CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
   EcsSecurityGroupALBports:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !Ref EcsSecurityGroup
       IpProtocol: tcp
-      FromPort: '31000'
-      ToPort: '61000'
+      FromPort: 31000
+      ToPort: 61000
       CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
 
-
-  # This LogsGroup will be useful when several containers emit output:
-  CloudwatchLogsGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Join ['', [!Ref 'AWS::StackName', "-ECSLogGroup" ]]
-      RetentionInDays: 3
 
 
   # Auto-Scaling Group for the cluser:
@@ -240,7 +238,6 @@ Resources:
 
           # Believe it or not, you have to configure CloudWatch Logs yourself:
           # Inject the CloudWatch Logs configuration file contents
-          
           cat > /etc/awslogs/awslogs.conf <<- EOF
           [general]
           state_file = /var/lib/awslogs/agent-state        
@@ -297,6 +294,13 @@ Resources:
     Properties:
       Path: /
       Roles: [!Ref ECSInstanceRole]
+
+  # This LogsGroup will be useful when several containers emit output:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${AWS::StackName}-ECSLogGroup
+      RetentionInDays: 3
 
 
 Outputs:
