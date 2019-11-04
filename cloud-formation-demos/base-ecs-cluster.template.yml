@@ -167,9 +167,12 @@ Resources:
       - Key: Name
         Value: ECS Cluster Node
         PropagateAtLaunch: true
+      - Key: MemberOfCluster
+        Value: !Ref ECSCluster
+        PropagateAtLaunch: true
     CreationPolicy:
       ResourceSignal:
-        Timeout: PT15M     # TODO: SWITCH BACK TO 5 minutes.  Needed debugging time.
+        Timeout: PT10M     
     UpdatePolicy:
       AutoScalingReplacingUpdate:
         WillReplace: true
@@ -191,55 +194,51 @@ Resources:
           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
           yum update -y
           # These appear to be installed already
-          yum install -y aws-cfn-bootstrap awslogs jq   
-          # Get ECS Instance ID:
-          ECS_CONTAINER_INSTANCE_ID=$(curl -s http://localhost:51678/v1/metadata | jq -r '. | .ContainerInstanceArn' | awk -F/ '{print $2}' )
-
+          yum install -y aws-cfn-bootstrap awslogs 
+          
           # Believe it or not, you have to configure CloudWatch Logs yourself:
           # Inject the CloudWatch Logs configuration file contents
-          mkdir /etc/awslogs
           cat > /etc/awslogs/awslogs.conf <<EOF
           [general]
           state_file = /var/lib/awslogs/agent-state        
 
           [/var/log/dmesg]
           file = /var/log/dmesg
-          log_group_name = /var/log/dmesg
-          log_stream_name = {cluster}/{container_instance_id}
+          log_group_name = {cluster}/var/log/dmesg
+          log_stream_name = {cluster}
 
           [/var/log/messages]
           file = /var/log/messages
-          log_group_name = /var/log/messages
-          log_stream_name = {cluster}/{container_instance_id}
+          log_group_name = {cluster}/var/log/messages
+          log_stream_name = {cluster}
           datetime_format = %b %d %H:%M:%S
 
           [/var/log/docker]
           file = /var/log/docker
-          log_group_name = /var/log/docker
-          log_stream_name = {cluster}/{container_instance_id}
+          log_group_name = {cluster}/var/log/docker
+          log_stream_name = {cluster}
           datetime_format = %Y-%m-%dT%H:%M:%S.%f
 
           [/var/log/ecs/ecs-init.log]
           file = /var/log/ecs/ecs-init.log
-          log_group_name = /var/log/ecs/ecs-init.log
-          log_stream_name = {cluster}/{container_instance_id}
+          log_group_name = {cluster}/var/log/ecs/ecs-init.log
+          log_stream_name = {cluster}
           datetime_format = %Y-%m-%dT%H:%M:%SZ
 
           [/var/log/ecs/ecs-agent.log]
           file = /var/log/ecs/ecs-agent.log.*
-          log_group_name = /var/log/ecs/ecs-agent.log
-          log_stream_name = {cluster}/{container_instance_id}
+          log_group_name = {cluster}/var/log/ecs/ecs-agent.log
+          log_stream_name = {cluster}
           datetime_format = %Y-%m-%dT%H:%M:%SZ
 
           [/var/log/ecs/audit.log]
           file = /var/log/ecs/audit.log.*
-          log_group_name = /var/log/ecs/audit.log
-          log_stream_name = {cluster}/{container_instance_id}
+          log_group_name = {cluster}/var/log/ecs/audit.log
+          log_stream_name = {cluster}
           datetime_format = %Y-%m-%dT%H:%M:%SZ
           EOF
           # Replace 
           sed -i -e "s/{cluster}/${ECSCluster}/g" /etc/awslogs/awslogs.conf
-          sed -i -e "s/{container_instance_id}/$ECS_CONTAINER_INSTANCE_ID/g" /etc/awslogs/awslogs.conf
           # Start CloudWatch logs service:
           systemctl start awslogsd
           # Make sure CloudWatch logs starts on restart:
