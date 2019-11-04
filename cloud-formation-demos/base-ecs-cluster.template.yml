@@ -9,7 +9,7 @@ Metadata:
           default: "Network Configuration"
         Parameters: 
           - VpcId
-          - PrivateSubnetIds
+          - SubnetIds
       - Label: 
           default: "ECS Cluster"
         Parameters: 
@@ -44,9 +44,17 @@ Parameters:
     Type: AWS::EC2::VPC::Id
     Description: Select a VPC that allows instances access to the Internet.
 
-  PrivateSubnetIds:
+  SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 1-2 subnets in your selected VPC, private preferred if NATting is setup.  ECS cluster nodes will run here.
+
+  ECSAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI for ECS using the Parameter Store...
+
+
+
 
 Mappings:
   #  These are variants of the Amazon Linux AMI optimized for ECS, version 1.20 at the moment:
@@ -140,32 +148,13 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Join ['', [!Ref 'AWS::StackName', "-ECSInstanceRole" ]]
+      ManagedPolicyArns: [ "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role" ]
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
           Action: sts:AssumeRole
           Principal:
             Service: ec2.amazonaws.com
-      Policies:
-      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-ECSInstancePolicy" ]]
-        PolicyDocument:
-          Statement:
-          - Effect: Allow
-            Action:
-              - ecs:CreateCluster
-              - ecs:DeregisterContainerInstance
-              - ecs:DiscoverPollEndpoint
-              - ecs:Poll
-              - ecs:RegisterContainerInstance
-              - ecs:StartTelemetrySession
-              - ecs:Submit*
-              - ecr:Get*                   # Trying to resolve 'not authorized to perform ecr:GetAuthorizationToken on resource: *' if the task needs to pull from ECR.
-              - ecr:*                      # Trying to resolve 'repository xxxxx not found: does not exist or no pull access'.  Not sure which role needs permission to pull from ECR.
-              - logs:CreateLogGroup
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-              - logs:DescribeLogStreams
-            Resource: '*'
 
 
   # Now, an ECS Cluster to deploy to:
@@ -214,7 +203,7 @@ Resources:
   ECSAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      VPCZoneIdentifier: !Ref SubnetIds
       LaunchConfigurationName: !Ref ContainerInstances
       MinSize: 1
       MaxSize: !Ref MaxSize
@@ -225,7 +214,7 @@ Resources:
         PropagateAtLaunch: true
     CreationPolicy:
       ResourceSignal:
-        Timeout: PT5M     # 5 minutes
+        Timeout: PT15M     # TODO: SWITCH BACK TO 5 minutes.  Needed debugging time.
     UpdatePolicy:
       AutoScalingReplacingUpdate:
         WillReplace: true
@@ -234,7 +223,8 @@ Resources:
   ContainerInstances:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      ImageId: !FindInMap [AmazonLinuxAMI, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref ECSAMI
+      # ImageId: !FindInMap [AmazonLinuxAMI, !Ref 'AWS::Region', AMI]
       SecurityGroups: [!Ref EcsSecurityGroup]
       InstanceType: !Ref InstanceType 
       IamInstanceProfile: !Ref EC2InstanceProfile
@@ -242,52 +232,64 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-          yum install -y aws-cfn-bootstrap  # Install CloudFormation utilities
-          yum install -y awslogs            # Install CloudWatch Logs Agent
-          yum install -y jq                 # Install JSON Query tool
+          yum update -y
+          # These appear to be installed already
+          # yum install -y aws-cfn-bootstrap awslogs jq   
+          # Get ECS Instance ID:
+          ECS_CONTAINER_INSTANCE_ID=$(curl -s http://localhost:51678/v1/metadata | jq -r '. | .ContainerInstanceArn' | awk -F/ '{print $2}' )
+
           # Believe it or not, you have to configure CloudWatch Logs yourself:
           # Inject the CloudWatch Logs configuration file contents
+          
           cat > /etc/awslogs/awslogs.conf <<- EOF
           [general]
           state_file = /var/lib/awslogs/agent-state        
+
           [/var/log/dmesg]
           file = /var/log/dmesg
           log_group_name = /var/log/dmesg
           log_stream_name = {cluster}/{container_instance_id}
+
           [/var/log/messages]
           file = /var/log/messages
           log_group_name = /var/log/messages
           log_stream_name = {cluster}/{container_instance_id}
           datetime_format = %b %d %H:%M:%S
+
           [/var/log/docker]
           file = /var/log/docker
           log_group_name = /var/log/docker
           log_stream_name = {cluster}/{container_instance_id}
           datetime_format = %Y-%m-%dT%H:%M:%S.%f
+
           [/var/log/ecs/ecs-init.log]
           file = /var/log/ecs/ecs-init.log
           log_group_name = /var/log/ecs/ecs-init.log
           log_stream_name = {cluster}/{container_instance_id}
           datetime_format = %Y-%m-%dT%H:%M:%SZ
+
           [/var/log/ecs/ecs-agent.log]
           file = /var/log/ecs/ecs-agent.log.*
           log_group_name = /var/log/ecs/ecs-agent.log
           log_stream_name = {cluster}/{container_instance_id}
           datetime_format = %Y-%m-%dT%H:%M:%SZ
+
           [/var/log/ecs/audit.log]
           file = /var/log/ecs/audit.log.*
           log_group_name = /var/log/ecs/audit.log
           log_stream_name = {cluster}/{container_instance_id}
           datetime_format = %Y-%m-%dT%H:%M:%SZ
           EOF
-          sed -i -e "s/{cluster}/$ECS_CLUSTER/g" /etc/awslogs/awslogs.conf
-          sed -i -e "s/{container_instance_id}/$CONTAINER_INSTANCE_ID/g" /etc/awslogs/awslogs.conf
-          sed -i -e "s/us-east-1/${AWS::Region}/g" /etc/awslogs/awscli.conf
-          service awslogs start
-          chkconfig awslogs on
-          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
+          # Replace 
+          sed -i -e "s/{cluster}/${ECSCluster}/g" /etc/awslogs/awslogs.conf
+          sed -i -e "s/{container_instance_id}/$ECS_CONTAINER_INSTANCE_ID/g" /etc/awslogs/awslogs.conf
+          # Start CloudWatch logs service:
+          systemctl start awslogsd
+          # Make sure CloudWatch logs starts on restart:
+          systemctl enable awslogsd.service
+          # Signal CloudFormation we are complete:
+          /opt/aws/bin/cfn-signal --resource ECSAutoScalingGroup --stack ${AWS::StackName} --region ${AWS::Region}
 
-  # TODO - GETTING WARNING ABOUT OUTDATED ECS AGENT.
 
   # Attach EC2Role's permissions to each ECS Instance.
   EC2InstanceProfile:
