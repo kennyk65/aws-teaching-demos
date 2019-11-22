@@ -166,7 +166,6 @@ Resources:
         Statement: 
           Effect: Allow
           Action: 
-            - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
           Resource: "*"
@@ -199,4 +198,31 @@ Resources:
           Resource: "*"
       Roles: 
         -  !Ref StepFunctionRole   
+
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one for each Lambda function:
+  CloudwatchLogsGroup1:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADayInTheLife1}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroup2:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADayInTheLife2}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroup3:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADayInTheLife3}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroup4:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ADayInTheLife4}
+      RetentionInDays: 3
 
