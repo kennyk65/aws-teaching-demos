@@ -37,7 +37,7 @@ Resources:
   CognitoIdentityPool:
     Type: AWS::Cognito::IdentityPool
     Properties:
-      IdentityPoolName: !Sub SlotMachine_Pool_${AWS::StackName}
+      IdentityPoolName: !Sub ${AWS::StackName}_SlotMachine_Pool
       AllowUnauthenticatedIdentities: true
 
   # This Role allows the main Lambda function to be invoked:
@@ -45,7 +45,7 @@ Resources:
   RoleSlotMachineLambda:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Sub SlotMachine-LambdaRole-${AWS::StackName}
+      RoleName: !Sub ${AWS::StackName}-SlotMachine-LambdaRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -61,7 +61,7 @@ Resources:
   UnauthenticatedPrincipalRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Sub SlotMachine-UnauthenticatedPrincipal-${AWS::StackName}
+      RoleName: !Sub ${AWS::StackName}-SlotMachine-UnauthenticatedPrincipal
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -74,7 +74,7 @@ Resources:
   AllowInvokeFunction:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Sub AllowCognitoUnauthInvokeLambda-${AWS::StackName}
+      PolicyName: !Sub ${AWS::StackName}-AllowCognitoUnauthInvokeLambda
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -99,7 +99,7 @@ Resources:
   SlotMachineLambda:
     Type: AWS::Lambda::Function
     Properties: 
-      FunctionName: slotpull
+      FunctionName: slotpull  # Name must be fixed since front-end code will refer to it.
       Description: Slot Machine function, fired by website..
       MemorySize: 128
       Timeout: 4
@@ -284,7 +284,6 @@ Resources:
         Statement: 
           Effect: Allow
           Action: 
-            - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
             - s3:Put*
