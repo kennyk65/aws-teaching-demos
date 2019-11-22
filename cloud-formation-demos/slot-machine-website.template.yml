@@ -164,6 +164,7 @@ Resources:
   # This function will setup the web content in our S3 web bucket
   CustomResourceWebContentLambda:
     Type: AWS::Lambda::Function
+    DependsOn: CloudwatchLogsGroupCustomResource
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-WebContentCustomResource
       Description: Populates S3 bucket with web content for our slot machine.
@@ -284,6 +285,7 @@ Resources:
         Statement: 
           Effect: Allow
           Action: 
+            - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
             - s3:Put*
@@ -316,7 +318,7 @@ Resources:
   CloudwatchLogsGroupCustomResource:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/lambda/${CustomResourceWebContentLambda}
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-WebContentCustomResource
       RetentionInDays: 3
 
 
