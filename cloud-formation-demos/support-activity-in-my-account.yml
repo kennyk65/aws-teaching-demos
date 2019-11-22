@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template detects when someone or something
+# at AWS is assuming a role and browsing around in my account.
+# This template requires that you are 1) using CloudTrail and 2) capturing it 
+# to CloudWatch Logs, and 3) running in a region where this is happening.
+# Must confirm the subscription of the email address you designate.
+
+Parameters:
+
+  EmailAddress:
+    Description: Email address to send alerts to.  Alerts will be sent whenever someone or something at AWS accesses your account.
+    Type: String
+    Default: xxxxxx@gmail.com
+
+  CloudTrailLogGroup:
+    Description: Name of the Log group in CloudWatch logs where you are sending your CloudTrail data.  Look at your trails in CloudTrail to determine this.
+    Type: String
+    Default: CloudTrail/DefaultLogGroup
+
+
+Resources:
+
+  # The metric filter detects activity in the main CloudTrail log. 
+  # We are looking for API calls where the principal is the role 
+  # that can only be used by AWS Support.  When support activity 
+  # is detected, it adds to the metric.
+  MetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties: 
+      LogGroupName: !Ref CloudTrailLogGroup
+      FilterPattern: "{$.userIdentity.sessionContext.sessionIssuer.userName = \"AWSServiceRoleForSupport\"}"
+      MetricTransformations: 
+        - MetricNamespace: LogMetrics
+          MetricName: SupportActivityInMyAccount
+          MetricValue: 1
+
+  # Raise an alarm when Support Activity occurs in your account: 
+  SupportActivityInAccount:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: SupportActivityInAccount
+      AlarmDescription: Raise an alarm when Support Activity occurs in your account
+      Namespace: LogMetrics
+      MetricName: SupportActivityInAccount
+      Statistic: Sum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 1
+      Period: 300   # 5 minutes
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AwsActivityInAccountSnsTopic
+
+  # Topic to send email alerts to:
+  AwsActivityInAccountSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: AwsActivityAlarm! 
+      TopicName: AwsActivityAlarm
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
