@@ -57,6 +57,7 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             - s3:putObject
+            - s3:getObject
             - codebuild:*
           Resource: "*"
       Roles: 
