@@ -163,6 +163,10 @@ Resources:
                 Action:
                   - kinesis:PutRecord
                   - kinesis:PutRecords
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:ListStreams
                 Resource:
                   - !GetAtt KinesisStreamDrawingData.Arn
         - PolicyName: SQSPolicy
