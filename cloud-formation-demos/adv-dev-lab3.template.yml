@@ -307,11 +307,9 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             # Error message says you need GetRecords, GetShardIterator, DescribeStream, and ListStream, but still fails.
-            # - kinesis:GetRecords
-            # - kinesis:GetShardIterator
-            # - kinesis:DescribeStream
-            # - kinesis:ListStreams
-            - kinesis:*
+            - kinesis:Get*
+            - kinesis:Describe*
+            - kinesis:List*
             - sqs:Send*
           Resource: "*"
       Roles: 
