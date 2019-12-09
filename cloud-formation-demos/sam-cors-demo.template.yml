@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+# Simple API Gateway / Lambda "Hello World" demo.
+# SAM DOESN'T SUPPORT IN-LINE CODE.  Must be a Lambda deployment package: http://docs.aws.amazon.com/lambda/latest/dg/deployment-package-v2.html
+# CODE MUST BE IN S3, MUST BE IN SAME REGION, AND MUST BE ZIPPED.
+# While the Globals section correctly places CORS headers on methods like OPTIONS, it fails to add them to GET as SAM uses LAMBDA_PROXY to call.
+# So the Lambda code itself must provide the CORS headers.
+#
+# You can call the resulting API Gateway from any web page using this code:
+#
+#  var xhr = new XMLHttpRequest();
+#  xhr.open("GET", API_ENDPOINT, true);
+#  xhr.onload = function() {
+#    if (xhr.status === 200) {
+#      alert('response is: ' + xhr.responseText);
+#    } else {
+#      alert('Request failed.  Returned status of ' + xhr.status);
+#    }
+#  };
+#  xhr.send();
+
+
+Parameters:
+  LambdaCodeBucket:
+    Type: String
+    Default: kk-uploads-oregon
+    Description: S3 bucket containing your Lambda code.
+
+  LambdaCodeKey:
+    Type: String
+    Default: lambda-helloworld.js.zip
+    Description: key of your Zipped Lamda function code.
+
+  LambdaHandler:
+    Type: String
+    Default: lambda-helloworld.entrypoint
+    Description: Handler of your Lambda function.  Usually something like "index.handler", depends on your code.
+
+  Runtime:
+    Type: String
+    Default: nodejs10.x
+    Description: Runtime of your lambda code.
+    AllowedValues: 
+      - nodejs10.x
+      - java8
+      - python2.7
+      - python3.6
+      - dotnetcore1.0
+Globals:
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+
+  # This is a simple "hello world" style Lambda function.
+  MyLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-HelloWorldLambda' ]] 
+      Description: Example Lambda from CloudFormation
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: !Ref LambdaHandler
+      Runtime: !Ref Runtime
+      CodeUri: 
+        Bucket: !Ref LambdaCodeBucket
+        Key: !Ref LambdaCodeKey
+      # Events section defines what triggers the Lambda
+      Events:
+        # This will define an API Gateway resource that will call our function on a GET to /hello.
+        # The SAM stuff will transform this into all of the required API gateway components.
+        # Good thing too because they are almost impossible to define using regular cloud formation.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /hello
+            Method: GET
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BasicLambdaRole" ]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-LambdaFunctionPolicy" ]]
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole
+
+Outputs:
+  # They don't give you the URL, you have to EARN it.
+  # This output depends on the names of the SAM-generated resources.  
+  # If they change the generated resource names, this code won't work:
+  RestAPIProdStageURL:
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/hello
+    Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
+
+  ApiGatewayInManagementConsole:
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/apigateway/home?region=${AWS::Region}#/apis/${ServerlessRestApi}/resources/${ServerlessRestApiProdStage}
+    Description: Handy link to the Management Console location where this API can be seen.
