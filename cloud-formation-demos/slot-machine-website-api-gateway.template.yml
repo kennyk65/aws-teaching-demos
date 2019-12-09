@@ -274,7 +274,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-WebContentCustomResource
       RetentionInDays: 3
-
+ 
 
 Outputs:
 
