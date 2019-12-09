@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
 
 # See https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/browser-invoke-lambda-function-example.html
 # Run this CloudFormation tempate in Oregon.  Other regions will require some code adjustment.
@@ -6,46 +7,82 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
 
-  S3BucketName:
+  WebsiteS3BucketName:
     Description:  The name of the S3 bucket for you website.  Must be globally unique.  
     Type:  String
-    Default:  kk-slotmachine
+    Default:  kk-slotmachine-api
+
+  LambdaCodeBucket:
+    Type: String
+    Default: kk-uploads-oregon
+    Description: S3 bucket containing the existing Lambda code.
+
+  LambdaCodeKey:
+    Type: String
+    Default: slot-machine-website-demo/lambda-slots.js.zip
+    Description: key of your Zipped Lamda function code.
+
+Globals:
+  Api:
+    # Allow cross origin calls to the API Gateway:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
 
 Resources:
 
-  # Main bucket.  
-  MainS3Bucket:
+  # Website bucket.  Pages served from here.  
+  WebsiteS3Bucket:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Sub ${S3BucketName}
+      BucketName: !Sub ${WebsiteS3BucketName}
       WebsiteConfiguration:
-        IndexDocument: index.html
+        IndexDocument: index-apigateway.html
 
 
   # This policy allows anyone in the world to make GET requests against the bucket.
-  MainS3BucketPolicy:
+  WebsiteS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties: 
-      Bucket: !Ref MainS3Bucket
+      Bucket: !Ref WebsiteS3Bucket
       PolicyDocument: 
         Statement:
           Effect: Allow
           Action: s3:GetObject
-          Resource: !Sub ${MainS3Bucket.Arn}/*
+          Resource: !Sub ${WebsiteS3Bucket.Arn}/*
           Principal: "*"
 
-  CognitoIdentityPool:
-    Type: AWS::Cognito::IdentityPool
-    Properties:
-      IdentityPoolName: !Sub ${AWS::StackName}_SlotMachine_Pool
-      AllowUnauthenticatedIdentities: true
+  # NodeJS function is fired by API gateway whenever whenever someone pulls the slot machine handle:
+  SlotMachineLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: slotpull-api 
+      Description: Slot Machine function, fired by API gateway when called from website..
+      MemorySize: 128
+      Timeout: 4
+      Role: !GetAtt RoleSlotMachineLambda.Arn
+      Runtime: nodejs10.x
+      Handler: lambda-slots.handler
+      CodeUri: 
+        Bucket: !Ref LambdaCodeBucket
+        Key: !Ref LambdaCodeKey
+      # Events section defines what triggers the Lambda
+      Events:
+        # This will define an API Gateway resource that will call our function on a GET to /hello.
+        # The SAM stuff will transform this into all of the required API gateway components.
+        # Good thing too because they are almost impossible to define using regular cloud formation.
+        MyApi:
+          Type: Api
+          Properties:
+            Path: /pull
+            Method: GET
 
-  # This Role allows the main Lambda function to be invoked:
-  # It only needs permissions to write to its own log files
+  # This Role allows the Lambda function to make API calls if needed.
   RoleSlotMachineLambda:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Sub ${AWS::StackName}-SlotMachine-LambdaRole
+      RoleName: !Join ['', [!Ref 'AWS::StackName', "-SlotMachineLambdaRole" ]]
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -53,118 +90,31 @@ Resources:
           Principal:
             Service: lambda.amazonaws.com
           Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-  # This role allows a Cognito Identity Pool - authenticated principal to call our main Lambda.
-  # It needs permission to invoke our lambda.
-  UnauthenticatedPrincipalRole:
-    Type: AWS::IAM::Role
-    Properties: 
-      RoleName: !Sub ${AWS::StackName}-SlotMachine-UnauthenticatedPrincipal
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Principal:
-            Federated: cognito-identity.amazonaws.com
-          Action: sts:AssumeRoleWithWebIdentity
-
-
-  AllowInvokeFunction:
+  # This Policy is attached to the LambdaFunctionRole.
+  # Basic permissions for CloudWatch Logs, expand as needed.
+  PolicySlotMachineLambda:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Sub ${AWS::StackName}-AllowCognitoUnauthInvokeLambda
+      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-SlotMachineLambdaPolicy" ]]
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
-            - lambda:InvokeFunction
-          Resource: !GetAtt SlotMachineLambda.Arn
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+          Resource: "*"
       Roles: 
-        - !Ref UnauthenticatedPrincipalRole
-
-  # Attach the role to the identity pool:
-  IdentityPoolRoleAttachment:
-    Type: AWS::Cognito::IdentityPoolRoleAttachment
-    Properties:
-      IdentityPoolId: !Ref CognitoIdentityPool
-      Roles: 
-        unauthenticated:
-          !GetAtt UnauthenticatedPrincipalRole.Arn
-      
-
-  # NodeJS function is fired by JS on web page whenever someone pulls the slot machine handle:
-  SlotMachineLambda:
-    Type: AWS::Lambda::Function
-    Properties: 
-      FunctionName: slotpull  # Name must be fixed since front-end code will refer to it.
-      Description: Slot Machine function, fired by website..
-      MemorySize: 128
-      Timeout: 4
-      Role: !GetAtt RoleSlotMachineLambda.Arn
-      Runtime: nodejs10.x
-      Handler: index.handler
-      Code:
-        ZipFile: !Sub |
-          /*
-            Copyright 2010-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-            This file is licensed under the Apache License, Version 2.0 (the "License").
-            You may not use this file except in compliance with the License. A copy of
-            the License is located at
-              http://aws.amazon.com/apache2.0/
-            This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-            CONDITIONS OF ANY KIND, either express or implied. See the License for the
-            specific language governing permissions and limitations under the License.
-          */
-          'use strict';
-
-          var faceCards = [
-            'spad_a.png',  'spad_k.png',  'spad_q.png',  'spad_j.png',
-            'hart_a.png',  'hart_k.png',  'hart_q.png',  'hart_j.png',
-            'diam_a.png',  'diam_k.png',  'diam_q.png',  'diam_j.png',
-            'club_a.png',  'club_k.png',  'club_q.png',  'club_j.png'
-          ];
-
-          exports.handler = (event, context, callback) => {
-            // Define the object that will hold the data values returned
-            var slotResults = {
-              'isWinner' : false,
-              'leftWheelImage' : {'file' : {S: ''}},
-              'middleWheelImage' : {'file' : {S: ''}},
-              'rightWheelImage' : {'file' : {S: ''}}
-            };
-
-            // Improve odds with 3 pulls:
-            var step;
-            for (let step = 1; step < 3; step++) {
-
-              // set a random number 0-15 for each slot position
-              var slot1 = Math.floor(Math.random()*16);
-              var slot2 = Math.floor(Math.random()*16);
-              var slot3 = Math.floor(Math.random()*16);
-
-              slotResults.leftWheelImage.file.S = faceCards[slot1];
-              slotResults.middleWheelImage.file.S = faceCards[slot2];
-              slotResults.rightWheelImage.file.S = faceCards[slot3];
-
-              // if all three values are identical, the spin is a winner!
-              if ((slot1 === slot2) && (slot2 === slot3)) {
-                  console.log('Winner!');
-                  slotResults.isWinner = true;
-                  break;
-              }
-            }
-            // return the JSON result to the caller of the Lambda function
-            callback(null, slotResults);
-          };
+        -  !Ref RoleSlotMachineLambda
 
 
   # This function will setup the web content in our S3 web bucket
   CustomResourceWebContentLambda:
     Type: AWS::Lambda::Function
-    DependsOn: CloudwatchLogsGroupCustomResource
+    # DependsOn: CloudwatchLogsGroupCustomResource
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-WebContentCustomResource
       Description: Populates S3 bucket with web content for our slot machine.
@@ -194,7 +144,7 @@ Resources:
               rp          = event['ResourceProperties']
               region        = rp['region']
               downloadUrl     = rp['downloadUrl']
-              identityPoolId    = rp['identityPoolId']
+              apiGatewayUrl     = rp['apiGatewayUrl']
               destinationBucket   = rp['destinationBucket']
 
               unzip_location  = "/tmp/web"
@@ -217,7 +167,7 @@ Resources:
                         cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
                         return
 
-                    html_file_name = "/tmp/web/index.html"
+                    html_file_name = "/tmp/web/index-apigateway.html"
                     print('Altering contents of {}...'.format(html_file_name))
                     data = ""
                     # Read the file contents into memory:
@@ -225,10 +175,12 @@ Resources:
                         data = f.read()
 
                     # Search and replace:
-                    data = data.replace("IDENTITY_POOL_ID",identityPoolId)
+                    print('Altering...')
+                    data = data.replace("API_GATEWAY_URL",apiGatewayUrl)
                     data = data.replace("us-west-2",region)
 
                     # Save
+                    print('Saving...')
                     with open(html_file_name,'w') as f:
                         f.write(data)
 
@@ -302,15 +254,16 @@ Resources:
     Properties:
       ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
       region: !Sub ${AWS::Region}
-      identityPoolId: !Ref CognitoIdentityPool
-      destinationBucket: !Ref MainS3Bucket
+      apiGatewayUrl: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/pull
+      destinationBucket: !Ref WebsiteS3Bucket
       downloadUrl:  "https://kk-uploads-oregon.s3-us-west-2.amazonaws.com/slot-machine-website-demo/slotassets.zip"
       #downloadUrl: "https://github.com/awsdocs/aws-doc-sdk-examples/raw/master/javascript/example_code/lambda/tutorial/slotassets.zip"
+
 
   # CloudWatch Logs Groups are created automatically once Lambdas write output,
   # but they are easier to cleanup when they are part of the stack.  
   # So make one for each Lambda function:
-  CloudwatchLogsGroupSlotMachine:
+  CloudwatchLogsGroupSlotMachineApi:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${SlotMachineLambda}
@@ -325,10 +278,17 @@ Resources:
 
 Outputs:
 
-  IdentityPoolId:
-    Description: Cognito Identity Pool ID
-    Value: !Ref CognitoIdentityPool
-
   WebsiteUrl:
     Description:  URL of the website
-    Value: !GetAtt MainS3Bucket.WebsiteURL
+    Value: !GetAtt WebsiteS3Bucket.WebsiteURL
+
+  # They don't give you the URL, you have to EARN it.
+  # This output depends on the names of the SAM-generated resources.  
+  # If they change the generated resource names, this code won't work:
+  RestAPIProdStageURL:
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/pull
+    Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
+
+  ApiGatewayInManagementConsole:
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/apigateway/home?region=${AWS::Region}#/apis/${ServerlessRestApi}/resources/${ServerlessRestApiProdStage}
+    Description: Handy link to the Management Console location where this API can be seen.
