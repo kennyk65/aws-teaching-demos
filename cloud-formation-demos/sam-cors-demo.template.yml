@@ -113,6 +113,16 @@ Resources:
       Roles: 
         -  !Ref LambdaFunctionRole
 
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one for each Lambda function:
+  CloudwatchLogsGroupMyLambda:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${MyLambda}
+      RetentionInDays: 3
+
+
 Outputs:
   # They don't give you the URL, you have to EARN it.
   # This output depends on the names of the SAM-generated resources.  
