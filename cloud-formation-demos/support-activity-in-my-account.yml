@@ -29,7 +29,8 @@ Resources:
     Type: AWS::Logs::MetricFilter
     Properties: 
       LogGroupName: !Ref CloudTrailLogGroup
-      FilterPattern: "{$.userIdentity.sessionContext.sessionIssuer.userName = \"AWSServiceRoleForSupport\"}"
+  #    FilterPattern: "{$.userIdentity.sessionContext.sessionIssuer.userName = \"AWSServiceRoleForSupport\"}"
+      FilterPattern: "AWSServiceRoleForSupport"
       MetricTransformations: 
         - MetricNamespace: LogMetrics
           MetricName: SupportActivityInMyAccount
@@ -40,7 +41,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: SupportActivityInAccount
-      AlarmDescription: Raise an alarm when Support Activity occurs in your account
+      AlarmDescription: Raise an alarm when Support Activity occurs in your account.  This means someone or something assumed the AWSServiceRoleForSupport role.
       Namespace: LogMetrics
       MetricName: SupportActivityInAccount
       Statistic: Sum
