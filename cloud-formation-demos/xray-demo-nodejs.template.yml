@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# This is AWS's official XRay Demo with minor adjustments.
+# It is a NodeJS app running in Elastic Beanstalk.
+# Run it and use the URL in the output to use the app, then check out the XRay output.
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID for the VPC in which the EC2 instance will be launched.
+
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: The ID for the Subnet in which the EC2 instance will be launched.
+
+Resources:
+  SampleInstanceProfileRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+
+  XRayWriteOnlyPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: AWSXRayWriteOnlyPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - sns:Publish
+          - xray:PutTelemetryRecords
+          - xray:PutTraceSegments
+          - dynamodb:PutItem
+          Resource:
+          - "*"
+      Roles:
+      - Ref: SampleInstanceProfileRole
+
+  SampleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: SampleInstanceProfileRole
+
+  SampleEBServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: elasticbeanstalk.amazonaws.com
+          Action: sts:AssumeRole
+          Condition:
+            StringEquals:
+              sts:ExternalId: elasticbeanstalk
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService
+      - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+  
+  ElasticBeanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName:
+        Ref: AWS::StackName
+  
+  ElasticBeanstalkApplicationVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName: !Ref ElasticBeanstalkApplication
+      SourceBundle:
+        S3Bucket: !Sub aws-xray-assets.${AWS::Region}
+        S3Key: samples/aws-xray-node-sample-app.zip
+
+  ElasticBeanstalkEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref ElasticBeanstalkApplication
+      Description: AWS X-Ray Getting Started Sample Application
+      EnvironmentName: !Ref AWS::StackName
+      OptionSettings:
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: InstanceType
+        Value: t2.large
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: IamInstanceProfile
+        Value: !Ref SampleInstanceProfile
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: ServiceRole
+        Value: !Ref SampleEBServiceRole
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: EnvironmentType
+        Value: SingleInstance
+      - Namespace: aws:elasticbeanstalk:healthreporting:system
+        OptionName: SystemType
+        Value: enhanced
+      - Namespace: aws:ec2:vpc
+        OptionName: AssociatePublicIpAddress
+        Value: true
+      - Namespace: aws:ec2:vpc
+        OptionName: ELBSubnets
+        Value: !Ref Subnet
+      - Namespace: aws:ec2:vpc
+        OptionName: Subnets
+        Value: !Ref Subnet
+      - Namespace: aws:ec2:vpc
+        OptionName: VPCId
+        Value: !Ref VPC
+      PlatformArn:
+        Fn::Join:
+        - ":"
+        - - arn:aws:elasticbeanstalk
+          - Ref: AWS::Region
+          - :platform/Node.js running on 64bit Amazon Linux
+      VersionLabel: !Ref ElasticBeanstalkApplicationVersion
+Outputs:
+  ElasticBeanstalkEnvironmentURL:
+    Description: URL for the Elastic Beanstalk Getting Started Sample Application
+    Value: !Sub http://${ElasticBeanstalkEnvironment.EndpointURL}
