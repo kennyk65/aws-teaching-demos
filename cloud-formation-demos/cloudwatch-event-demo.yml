@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This CloudFormation template demonstrates responding to a cloudwatch event.
+# Specifically it detects whenever an assumerole call is made, and sends a notification.
+# This template requires that you are running in us-east-1 to detect this particular event.
+# TODO: The notification is quite raw, the original JSON.  Maybe call a lambda to make a clean message.
+# TODO: AssumeRole happens quite a bit for innocent reasons.  Perhaps focus on a specific role.
+
+Parameters:
+
+  EmailAddress:
+    Description: Email address to send alerts to.  Alerts will be sent whenever someone or something at AWS accesses your account.
+    Type: String
+    Default: xxxxxx@gmail.com
+
+
+Resources:
+
+  # This event rule detects assumerole (which happens a lot) and calls a topic
+  DetectAssumeRole:
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: DetectAssumeRole
+      Description: Detects whenever a role is assumed within an account.
+      # EventBusName: String
+      EventPattern: 
+        source: [ "aws.sts" ]
+        detail-type: [ "AWS API Call via CloudTrail" ]
+        detail:
+          eventSource: [ "sts.amazonaws.com" ]
+          eventName: [ "AssumeRole" ]
+      State: ENABLED
+      Targets: 
+        - Arn: !Ref AwsAssumeRoleSnsTopic
+          Id: topic
+
+
+  # Topic to send email alerts to:
+  AwsAssumeRoleSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: AwsAssumeRoleOccurred! 
+      TopicName: AwsAssumeRole
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
