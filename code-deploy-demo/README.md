@@ -26,21 +26,16 @@ To run this demo, do the following (tested in us-west-2, adjust for other region
 
 4.  At this point you have uploaded two 'revisions', the old version of the code, and the new version of the code.  
 
-5.  (Optional) Under revisions, find the revision 1 zip file, select it, hit deploy, select the existing deployment group, take all the defaults.  Takes about 5 minutes.  (This establishes an existing revision that CodeDeploy can roll back to; the software is identical to what was initially deployed, so don't expect to see a difference on the deployed app.)
+5.  (Optional) Under revisions, find the revision 1 zip file, select it, hit deploy, select the existing deployment group.  Under deployment overrides, take "all at once" to make this setup go as fast as possible.  Takes about 5 minutes.  (This establishes an existing revision that CodeDeploy can roll back to; the software is identical to what was initially deployed, so don't expect to see a difference on the deployed app.)
 
 ## Demonstration
 
 1.  Find the Output of the CloudFormation stack.  You will see a URL for the application.  It is running the 'old' version of the software.  Distribute this URL to your students so they can witness the deployment.  Have them note the last 4 digits of the instance ID - it's interesting to watch when specific instances are updated.
 
-2.  Show the revisions:  Go to https://us-west-2.console.aws.amazon.com/codedeploy/home?region=us-west-2#/applications/MyDemoCodeDeployApplication and see the two revisions.  
+2.  Show the revisions:  Go to https://us-west-2.console.aws.amazon.com/codedeploy/home?region=us-west-2#/applications/MyDemoCodeDeployApplication and see the two revisions.  If you did the optional deployment step above, show the deployment.
 
-3.  If you did the optional deployment step above, show the deployment.
+3.  Under revisions, find the revision 2 zip file, select it, hit deploy, select the existing deployment group.  Under deployment overrides, take one at a time or half at a time, depending on how much demo time you have.  Takes a few minutes for each batch to deploy.  Show the deployment activity, paying attention to which instances are being updated.  Have students compare the instance ids available to those they see on their screens.
 
-4.  Under revisions, find the revision 2 zip file, select it, hit deploy, select the existing deployment group, take all the defaults.   Takes about 5 minutes to deploy.  Show the deployment activity, paying attention to which instances are being updated.  Have students compare the instance ids available to those they see on their screens.
-
-IF YOU PREVIOUSLY DEPLOYED VERSION 1, you can hit the "Stop and Roll back deployment" button to revert back to the old version.  Demo is most interesting when the deployment is nearly complete when you hit the revert button.
+4. IF YOU PREVIOUSLY DEPLOYED VERSION 1, you can hit the "Stop and Roll back deployment" button to revert back to the old version.  Demo is most interesting when the deployment is nearly complete when you hit the revert button.  This stops the current deployment and begins a new one.
 
 5.  Delete this stack when done.  Costs around $.03 per hour depending on how many instances you run.
-
-
-      
