@@ -137,7 +137,7 @@ Resources:
 
           # Entry point:
           def lambda_handler(event, context):
-              print("Received event: " + json.dumps(event, indent=2))
+              # print("Received event: " + json.dumps(event, indent=2))
 
               # Get the CloudFormation request type
               requestType = event['RequestType']
@@ -237,7 +237,6 @@ Resources:
         Statement: 
           Effect: Allow
           Action: 
-            - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
             - s3:Put*
@@ -265,12 +264,14 @@ Resources:
   # So make one for each Lambda function:
   CloudwatchLogsGroupSlotMachineApi:
     Type: AWS::Logs::LogGroup
+  # DeletionPolicy: Retain  # Great for debugging, but causes trouble in general use when a stack name is reused within 3 days.
     Properties:
       LogGroupName: !Sub /aws/lambda/${SlotMachineLambda}
       RetentionInDays: 3
 
   CloudwatchLogsGroupCustomResource:
     Type: AWS::Logs::LogGroup
+  # DeletionPolicy: Retain  # Great for debugging, but causes trouble in general use when a stack name is reused within 3 days.
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-WebContentCustomResource
       RetentionInDays: 3
