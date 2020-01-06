@@ -340,7 +340,7 @@ Resources:
 
           # Entry point:
           def lambda_handler(event, context):
-              print("Received event: " + json.dumps(event, indent=2))
+              # print("Received event: " + json.dumps(event, indent=2))
 
               # Get the CloudFormation request type
               requestType = event['RequestType']
@@ -466,12 +466,12 @@ Resources:
   # This custom resource calls our Lambda function:
   HelperCustomResourceWebContentLambda:
     Type: Custom::helper
-    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    DependsOn: CustomResourcePolicy    # Dont try running the custom resource until the policy is set.
     Properties:
       ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
       identityPoolId: !Ref CognitoIdentityPool
       destinationBucket: !Ref MainS3Bucket
-      downloadUrl: https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-3.zip
+      downloadUrl: https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-4.zip
       queue1: !Ref DrawQueueStandard1
       queue2: !Ref DrawQueueStandard2
       queue3: !Ref DrawQueueStandard3
@@ -484,12 +484,14 @@ Resources:
   # So make one for each Lambda function:
   CloudwatchLogsGroupKinesisToSqs:
     Type: AWS::Logs::LogGroup
+    # DeletionPolicy: Retain  # Great for debugging, but causes trouble in general use when a stack name is reused within 3 days.
     Properties:
       LogGroupName: !Sub /aws/lambda/${KinesisToSqsLambda}
       RetentionInDays: 3
 
   CloudwatchLogsGroupCustomResource:
     Type: AWS::Logs::LogGroup
+    # DeletionPolicy: Retain  # Great for debugging, but causes trouble in general use when a stack name is reused within 3 days.
     Properties:
       LogGroupName: !Sub /aws/lambda/${CustomResourceWebContentLambda}
       RetentionInDays: 3
