@@ -18,17 +18,16 @@ Parameters:
 
   LambdaHandler:
     Type: String
-    Default: lambda-helloworld.justatest
+    Default: lambda-helloworld.entrypoint
     Description: Handler of your Lambda function.  Usually something like "index.handler", depends on your code.
 
   Runtime:
     Type: String
-    Default: nodejs10.x
+    Default: nodejs12.x
     Description: Runtime of your lambda code.
     AllowedValues: 
-      - nodejs10.x
+      - nodejs12.x
       - java8
-      - python2.7
       - python3.6
       - dotnetcore1.0
 
