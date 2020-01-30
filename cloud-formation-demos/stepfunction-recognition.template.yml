@@ -12,7 +12,7 @@ Parameters:
   NotificationPhoneNumber:
     Description:  Cell Phone / SMS Number to be contacted at.  
     Type:  String
-    Default:  "+14072569737"
+    Default:  "+14072223333"
 
 
 Resources:
@@ -28,6 +28,8 @@ Resources:
             Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
+      ManagedPolicyArns: 
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 
 
   rekognitionPolicy:
     Type: AWS::IAM::Policy
@@ -195,7 +197,7 @@ Resources:
               print('Detected the following labels for ' + key)
               for label in response['Labels']:
                   print(label['Name'] + ' : ' + str(label['Confidence']))
-                  if label['Name'] == "Human":
+                  if label['Name'] == "Human" or label['Name'] == "Person":
                       found = 'human'
                       break
                   else:
