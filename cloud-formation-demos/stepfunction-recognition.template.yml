@@ -141,6 +141,7 @@ Resources:
       
 
   # This function fires whenever an object is uploaded to the S3 upload bucket.  It launches StepFunctions.          
+  #  TODO: REPLACE THIS WITH CLOUDWATCH EVENT INVOCATION.  SEE https://docs.aws.amazon.com/step-functions/latest/dg/tutorial-cloudwatch-events-s3.html#tutorial-cloudwatch-events-s3-trail
   onS3UploadCallStepFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -213,6 +214,7 @@ Resources:
 
   # This Lambda is called by step functions when a human is found.  
   # It sends an SNS notification - you can't do this directly from Step Functions.
+  # TODO: REPLACE THIS WITH DIRECT CALL FROM STEP FUNCTIONS, SEE https://docs.aws.amazon.com/step-functions/latest/dg/connect-sns.html
   notificationFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -264,9 +266,9 @@ Resources:
               ]
             },
             "Process Human":{
-              "Next":"We succeeded! Yay!",
               "Type":"Task",
-              "Resource": "${notificationFunction.Arn}"
+              "Resource": "${notificationFunction.Arn}",
+              "Next":"We succeeded! Yay!"
             },
             "Other Processing": {
               "Type":"Pass",
