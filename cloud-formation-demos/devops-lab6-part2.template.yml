@@ -1,0 +1,341 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+#  Instructions:
+#    1.  Run the "1-base" template if you have not done so already.  Suggest you name the stack "base"
+#    2.  Run this template three times with different parameters to create three stacks:
+#        a.  Create a 'website' stack by selecting the website.zip, madlibs-website, /*, and 80.
+#        b.  Create a 'api' stack by selecting the api.zip, madlibs-api, /get_random_word/*, and 81.
+#        c.  Create a 'save' stack by selecting the save.zip, madlibs-save, /save_paragraph, and 80.
+#    3.  Access the DNS name described in the base stack to use the application.
+#    4.  Delete these three stacks when done.  You'll have to delete the ECR repos manually for now.
+# TODO:  MAKE A CUSTOM RESOURCE TO CLEAN OUT THE DOCKER REPOSITORIES ON STACK DELETE.
+# TODO:  API service doesn't have a good health check url.  Only expects posts on 81.  Classroom example hard-coded to expect 404.
+
+
+# Metadata:
+#   # Controlling the order of the parameters on the CloudFormation page;
+#   AWS::CloudFormation::Interface:
+#     ParameterGroups:
+#       - Label:
+#           default: Base Stack
+#         Parameters:
+#           - BaseStack
+#       - Label:
+#           default: Input Code
+#         Parameters:
+#           - S3InputCodeBucket
+#           - S3InputCodeKey
+#       - Label:
+#           default: Container Specifications
+#         Parameters:
+#           - ContainerName
+#           - ContainerPort
+#           - ALBPathPattern
+#           - ListenerRulePriority
+
+
+Parameters:
+  
+  BaseStack:
+    Type: String
+    Description:  Name of the stack containing the roles, cluster, etc.  Will be used to reference common resources expected to be present.
+    Default: base
+
+  S3InputCodeBucket:
+    Description: Bucket of a ZIP archive containing code to seed the CodeCommit repository.
+    Type: String
+    Default: kk-courses
+
+  ServiceToBuild:
+    Description:  Which service should we build during this stack execution, website, api, or save service?
+    Type:  String
+    AllowedValues: ["madlibs-website","madlibs-api","madlibs-save"]
+    Default:  madlibs-website
+
+  # S3InputCodeKey:
+  #   Description: Key of a ZIP archive containing code to seed the CodeCommit repository.
+  #   Type: String
+  #   AllowedValues: ["aws-devops/madlibs-website.zip","aws-devops/madlibs-api.zip","aws-devops/madlibs-save.zip"]
+  #   Default: aws-devops/madlibs-website.zip
+
+  # ContainerName:
+  #   Description:  The label of the container as seen on the task definition that will be created, no slashes.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+  #   Type: String
+  #   AllowedValues: ["madlibs-website","madlibs-api","madlibs-save"]
+  #   Default:  madlibs-website
+
+  # ALBPathPattern:
+  #   Description:  The URL path which will be used to route traffic to this service.
+  #   Type:  String
+  #   AllowedValues: ["/*","/get_random_word/*","/save_paragraph/*"]
+  #   Default:  /*
+
+  # ListenerRulePriority:
+  #   Description:  Priority of the listener rule when this service is added to the ALB with the others.  Can't have two rules with the same priority.  Website should be highest (last evaluated)
+  #   Type:  Number
+  #   AllowedValues: [1,2,3]
+  #   Default:  3
+
+  # ContainerPort:
+  #   Description:  Port that the docker container was build to listen on.  Website was built for 80, api was built for 81.
+  #   Type:  Number
+  #   AllowedValues: [80,81]
+  #   Default: 80
+
+Mappings:
+  #  Provide values for each specific service being built:
+  ServiceDetails:
+    madlibs-website:
+      S3InputCodeKey: aws-devops/madlibs-website.zip
+      ALBPathPattern: /*
+      ListenerRulePriority: 3
+      ContainerPort:  80
+    madlibs-api:
+      S3InputCodeKey: aws-devops/madlibs-api.zip
+      ALBPathPattern: /get_random_word/*
+      ListenerRulePriority: 2
+      ContainerPort:  81
+    madlibs-save:
+      S3InputCodeKey: aws-devops/madlibs-save.zip
+      ALBPathPattern: /save_paragraph/*
+      ListenerRulePriority: 1
+      ContainerPort:  80
+
+Resources:
+
+  # ECR Repositories.  Will come out something like 011673140073.dkr.ecr.us-west-2.amazonaws.com/YOUR-CONTAINER-NAME
+  DockerRepository:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName:  !Ref ServiceToBuild
+
+  CodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties: 
+      RepositoryName: !Sub ${AWS::StackName}-${ServiceToBuild}
+      Code: 
+        S3:
+          Bucket: !Ref S3InputCodeBucket
+          Key: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, S3InputCodeKey ]  # Lookup the exact code to use from the map.
+
+  # A Docker Build is a Docker build... the important details are all within each service's Dockerfile...
+  #  TODO: COME UP WITH A WAY TO INCREMENT THE IMAGE TAG.
+  DockerBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Sub ${AWS::StackName}-DockerBuild
+      Description: Docker image build + push
+      ServiceRole: 
+        Fn::ImportValue:
+          !Sub ${BaseStack}-CodeBuildRole
+      TimeoutInMinutes: 5
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/docker:17.09.0
+        EnvironmentVariables:
+        - Name: REPOSITORY_URI
+          Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ServiceToBuild}
+        - Name: IMAGE_TAG
+          Value: 1111   # TODO: COME UP WITH A WAY TO INCREMENT THE IMAGE TAG
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs a Docker build, plus push to ECR
+            phases:
+              pre_build:
+                commands:
+                  - aws --version
+                  - echo Logging in to Amazon ECR...
+                  - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+                  - echo REPOSITORY_URI is set to $REPOSITORY_URI
+                  - echo IMAGE_TAG is set to $IMAGE_TAG
+              build:
+                commands:
+                  - echo Docker Image Build started on `date`
+                  - docker build -t $REPOSITORY_URI:latest .
+                  - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  - echo Docker Image Build finished on `date`
+              post_build:
+                commands:
+                  - echo Pushing the Docker images...
+                  - docker push $REPOSITORY_URI:latest
+                  - docker push $REPOSITORY_URI:$IMAGE_TAG
+                  - echo Writing image definitions file for the next stage of CodePipeline...
+                  - printf '[{"name":"${ServiceToBuild}","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+            artifacts:
+                files: imagedefinitions.json
+      Artifacts:    
+        Type: CODEPIPELINE
+
+  # This is the CodePipeline with its stages: Source, Build, Deploy.
+  MyPipe:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${AWS::StackName}-${ServiceToBuild}-pipeline
+      RoleArn: 
+        Fn::ImportValue: 
+          !Sub ${BaseStack}-CodePipelineRoleArn
+      RestartExecutionOnUpdate: true
+      ArtifactStore: 
+        Location: 
+          Fn::ImportValue: 
+            !Sub ${BaseStack}-CodePipelineBucket
+        Type: S3
+      Stages: 
+
+        # Stage 1:  Get the source from Git:
+        - Name: Source
+          Actions: 
+            - Name: SourceAction
+              RunOrder: 1
+              ActionTypeId: 
+                Category: Source
+                Owner: AWS       
+                Provider: CodeCommit 
+                Version: 1              # Required, meaningless and must be 1, go figure.
+              Configuration: 
+                RepositoryName: !GetAtt CodeCommitRepo.Name
+                BranchName: master
+              OutputArtifacts: 
+                - Name: TheSourceCode
+
+        # Stage 2:  Docker image build and upload to ECR.
+        - Name: Build
+          Actions:
+            - Name: DockerBuild
+              RunOrder: 2
+              InputArtifacts: 
+                - Name: TheSourceCode     # Output from the previous step.
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1                      # Required, meaningless and must be 1.
+              Configuration:
+                ProjectName:  !Ref DockerBuild  # See the CodeBuild definition above. 
+              OutputArtifacts: 
+                - Name: TheImageDefinition      # A JSON file produced by the build.  Describes the container name, Image URI.
+
+        # Stage 3:  Deploy on ECS:
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              RunOrder: 1
+              InputArtifacts: 
+                - Name: TheImageDefinition   # This should contain imagedefinitions.json
+              ActionTypeId: 
+                Category: Deploy
+                Owner: AWS
+                Provider: ECS
+                Version: 1              # Required, meaningless and must be 1.
+              Configuration:
+                ClusterName:  
+                  Fn::ImportValue: 
+                    !Sub ${BaseStack}-ECSCluster
+                ServiceName:  !Ref ECSService
+ 
+  # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers.
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListenerRule  # Avoids transient error about TargetGroup not associated with a load balancer.
+    Properties:
+      ServiceName: !Sub ${AWS::StackName}-${ServiceToBuild}-Service
+      Cluster: 
+        Fn::ImportValue: 
+          !Sub ${BaseStack}-ECSCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1   # TODO: Autoscale
+      #  When deploying a new version, deploy new ones before deleting old ones; zero downtime.
+      DeploymentConfiguration:  
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      LaunchType: FARGATE   #  or EC2
+      #  Network Configuration must be provided when networkMode 'awsvpc' is specified
+      NetworkConfiguration:
+        AwsvpcConfiguration: 
+          AssignPublicIp: ENABLED   # Not necessary, just useful when debugging.
+          SecurityGroups: 
+          - Fn::ImportValue: !Sub ${BaseStack}-ContainerSecurityGroup
+          Subnets: 
+          - Fn::ImportValue: !Sub ${BaseStack}-SubnetId1
+          - Fn::ImportValue: !Sub ${BaseStack}-SubnetId2
+      LoadBalancers:              # Associated with the ALBTargetGroup, thereby the load balancer.  Not sure how to make that port variable, I believe it has to be hard-coded in ECS.
+      - ContainerName: !Ref ServiceToBuild    # Apparently needed because there could be more than one container in a task.
+        ContainerPort: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ContainerPort ]  # Lookup the container port from the map.  Needed because awsvpc mode doesn't really do port mapping.
+        TargetGroupArn: !Ref ALBTargetGroup
+
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-${ServiceToBuild}-TaskDefinition
+      RequiresCompatibilities:
+        - "FARGATE"
+      NetworkMode: awsvpc                   # Required and only possible value when using Fargate.
+      ExecutionRoleArn: 
+        Fn::ImportValue: 
+          !Sub ${BaseStack}-ExecutionRole   # Defined in base stack, Required for Fargate.  Allows it to pull our images.
+      Cpu: 256                              # Valid values for CPU and memory are tricky if using Fargate.
+      Memory: 512
+      ContainerDefinitions:
+      - Name: !Ref ServiceToBuild
+        Image: nginxdemos/hello     # Temporary image.  Will be replaced when pipeline runs.  Avoids "chicken and egg" scenario
+        Essential: true
+        StartTimeout:  300          # If any of our containers take more than 5 minutes to start, something is broken.
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: 
+              Fn::ImportValue: 
+                !Sub ${BaseStack}-CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: !Ref ServiceToBuild
+        #Environment:
+        # # Each container gets a reference to the ELB in case it needs to call other services:
+        # - Name:  ELBDNS
+        #   Value: 
+        #     Fn::ImportValue: 
+        #       !Sub ${BaseStack}-ALBDNS
+        PortMappings:
+        - ContainerPort: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ContainerPort ]  # Lookup the container port from the map. In awsvpc mode, port exposed on the ENI.
+        #   HostPort: 80            # Not needed in awsvpc mode because there is no 'mapping' going on.
+
+
+  # This Rule is attached to the listener defined on the base stack.  
+  # Each service gets its own mapping rule, like /* goes to website service, /get_random_word goes to api service...
+  # Rules have to be ordered, so you have to give each service a number.  Put website on the end (3) because its the fallback.
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: 
+        Fn::ImportValue: 
+          !Sub ${BaseStack}-ALBListener
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+      Conditions:
+      - Field: path-pattern
+        Values: [ !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ALBPathPattern ]  ]  # Lookup the path pattern to use from the map.
+      Priority:  !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ListenerRulePriority ]  # Lookup the path priority from the map.
+  # This TargetGroup is hooked up to the ECS "Service" above.
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-ALBTargetGroup
+      VpcId: 
+        Fn::ImportValue: 
+          !Sub ${BaseStack}-VPC
+      Port: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ContainerPort ]  # Lookup the container port from the map.
+      Protocol: HTTP
+      TargetType: ip   # Necessary when the Tasks use awsvpc network type.  
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ContainerPort ]  # Lookup the container port from the map.
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+
