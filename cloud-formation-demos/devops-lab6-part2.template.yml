@@ -99,7 +99,7 @@ Mappings:
       S3InputCodeKey: aws-devops/madlibs-save.zip
       ALBPathPattern: /save_paragraph/*
       ListenerRulePriority: 1
-      ContainerPort:  80
+      ContainerPort:  82
 
 Resources:
 
@@ -274,6 +274,9 @@ Resources:
       RequiresCompatibilities:
         - "FARGATE"
       NetworkMode: awsvpc                   # Required and only possible value when using Fargate.
+      TaskRoleArn: 
+        Fn::ImportValue: 
+          !Sub ${BaseStack}-TaskRole        # Defined in base stack, Allows container code to make API calls.
       ExecutionRoleArn: 
         Fn::ImportValue: 
           !Sub ${BaseStack}-ExecutionRole   # Defined in base stack, Required for Fargate.  Allows it to pull our images.

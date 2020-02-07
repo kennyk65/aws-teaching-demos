@@ -148,6 +148,50 @@ Resources:
       Roles: 
         -  !Ref ExecutionRole
 
+  # This Role allows the containers within the ECS Task to make AWS API calls:
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-TaskRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the TaskRole.
+  # Task is allowed to write to DynamoDB
+  TaskPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-TaskPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action:
+            - dynamodb:PutItem
+          Resource: 
+            - !GetAtt NounsVerbsAdjectivesTable.Arn
+      Roles: 
+        -  !Ref TaskRole
+
+  NounsVerbsAdjectivesTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: nouns_verbs_and_adjectives
+      KeySchema: 
+        - AttributeName: guid_str
+          KeyType: HASH
+      AttributeDefinitions: 
+        - AttributeName: guid_str
+          AttributeType: S
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
   # General Bucket where CodePipeline will store things:
   # Warning: This will need to be deleted manually before you can delete the stack.
   S3:
@@ -168,7 +212,7 @@ Resources:
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
-        ToPort: 81
+        ToPort: 82
         CidrIp: 0.0.0.0/0
 
 
@@ -329,6 +373,12 @@ Outputs:
     Export:
       Name: !Sub ${AWS::StackName}-ExecutionRole
 
+  TaskRole:
+    Description:  Id of a Role which can be used for the Task's task role.
+    Value: !Ref TaskRole
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskRole
+      
   CodePipelineBucket:
     Description:  Available S3 bucket which can be used to support CodePipeline, if desired.
     Value: !Ref S3
