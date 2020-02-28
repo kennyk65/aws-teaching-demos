@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
 # See https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/browser-invoke-lambda-function-example.html
-# Run this CloudFormation tempate in Oregon.  Other regions will require some code adjustment.
+# Run this CloudFormation tempate in N Virginia.  This is only due to the location of the ZIP containing lambda code.  Other regions will require some code adjustment.
 # Access the web application via the Website URL output of your stack.
 
 Parameters:
@@ -14,12 +14,12 @@ Parameters:
 
   LambdaCodeBucket:
     Type: String
-    Default: kk-uploads-oregon
-    Description: S3 bucket containing the existing Lambda code.
+    Default: kk-courses
+    Description: S3 bucket containing the existing Lambda code.  Must be in the same region as your stack.
 
   LambdaCodeKey:
     Type: String
-    Default: slot-machine-website-demo/lambda-slots.js.zip
+    Default: aws-arch/slot-machine-website-demo/lambda-slots.js.zip
     Description: key of your Zipped Lamda function code.
 
 Globals:
@@ -255,8 +255,7 @@ Resources:
       region: !Sub ${AWS::Region}
       apiGatewayUrl: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/pull
       destinationBucket: !Ref WebsiteS3Bucket
-      downloadUrl:  "https://kk-uploads-oregon.s3-us-west-2.amazonaws.com/slot-machine-website-demo/slotassets.zip"
-      #downloadUrl: "https://github.com/awsdocs/aws-doc-sdk-examples/raw/master/javascript/example_code/lambda/tutorial/slotassets.zip"
+      downloadUrl:  "https://kk-courses.s3.amazonaws.com/aws-arch/slot-machine-website-demo/slotassets.zip"
 
 
   # CloudWatch Logs Groups are created automatically once Lambdas write output,
