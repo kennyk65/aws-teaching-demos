@@ -1,11 +1,14 @@
 
-# Re-creates a simpler version of lab 3 from Advanced Developer, without CDK or Cloud9.
-# Upload photos into the resulting S3 bucket and it will tell you if it contains a human or not.
-# There is an interesting circular-relationship between the bucket and the lambda it fires:
-#   1. To fire the lambda, the bucket must have an event notification defined on it.
-#   2. For the event notification to be valid, the bucket must have permission to call the lambda.
-#   2. The permission must refer to the bucket, but the bucket doesn't exist yet.
-# Failing to resolve this gets "Unable to validate the following destination configurations" error on the S3 bucket create. 
+# Re-creates a simpler version of lab 3 from Advanced Developer, without CDK, Cloud9, 
+# or a superflous lambda to trigger the state machine.
+# It takes photos uploaded into a bucket, runs it through step functions, detects if a
+# human is in the photo via rekognition, then sends an SMS to a phone # you specify.
+# The state machine is triggered by a CloudWatch Event (EventBridge Event)
+# This event fires whenever an object is uploaded into a bucket.
+# This event isn't published unless there is a CloudTrail established which detects this kind of data activity.
+# The Trail can't exist without a bucket to put its logging in, even if we turn logging off.
+# The bucket must have a policy which allows CloudTrail to log to it.
+
 
 Parameters:
 
@@ -44,19 +47,14 @@ Resources:
               - rekognition:List*
               - rekognition:Describe*
               - rekognition:Detect*
-            Resource: "*"
-          - Effect: Allow
-            Action:
               - sns:Get*
               - sns:List*
               - sns:Publish
-            Resource: "*"
-          - Effect: Allow
-            Action:
               - s3:Get*
               - s3:List*
             Resource: "*"
       Roles: [!Ref rekRole]
+
 
   onS3UploadCallStepFunctionRole:
     Type: AWS::IAM::Role
@@ -68,9 +66,7 @@ Resources:
           - Effect: Allow
             Action: sts:AssumeRole
             Principal:
-              Service: lambda.amazonaws.com
-      ManagedPolicyArns: 
-        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 
+              Service: events.amazonaws.com
 
   onS3UploadCallStepFunctionPolicy:
     Type: AWS::IAM::Policy
@@ -83,6 +79,7 @@ Resources:
             Action: states:StartExecution
             Resource: !Ref StateMachine
       Roles: [ !Ref onS3UploadCallStepFunctionRole ]
+
 
   # This role controls what the state machine can do:
   StateMachineRole:
@@ -107,77 +104,79 @@ Resources:
         Statement:
           - Effect: Allow
             Action: lambda:InvokeFunction
-            Resource: !GetAtt rekFunction.Arn
-          - Effect: Allow
-            Action: lambda:InvokeFunction
-            Resource: !GetAtt notificationFunction.Arn
-      PolicyName: StateMachinePolicy
+            Resource: 
+            - !GetAtt rekFunction.Arn
+            - !GetAtt notificationFunction.Arn
       Roles: [ !Ref StateMachineRole ]
 
   #  Bucket into which one can upload images.  If images contain a human, you will be notified.
   UploadBucket:
     Type: AWS::S3::Bucket
-    DependsOn: UploadBucketPermission  # Can't add event successfully unless permissions are first setup.
-    Properties:
-      NotificationConfiguration:
-        LambdaConfigurations: 
-        - Event: "s3:ObjectCreated:*"
-          Function: !GetAtt onS3UploadCallStepFunction.Arn    
 
-  # This permission allows a function to be executed by the S3 service's upload bucket:
-  UploadBucketPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref onS3UploadCallStepFunction
-      Principal: s3.amazonaws.com
-      SourceAccount: !Ref "AWS::AccountId"
-      # Notice how this source ARN is defined loosely.  
-      # If we point to the UploadBucket.Arn, but bucket will be build first, 
-      # but it can't because it's notification will be invalid, error is: 
-      # "Unable to validate the following destination configurations"
-    #  SourceArn: !GetAtt UploadBucket.Arn
-      SourceArn: !Sub "arn:aws:s3:::*"  # Intentially loose to get around the circular reference problem.
-      
+  # A custom cloud trail is required to cause data-level S3 events to be published to CloudWatch Events:
+  CloudTrailForS3Events:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: RidiculousBucketPolicy
+    Properties: 
+      TrailName: !Sub ${AWS::StackName}-CloudTrailForS3Events
+      EventSelectors: 
+      - DataResources: 
+        - Type: AWS::S3::Object
+          Values: [ !Sub "${UploadBucket.Arn}/" ]
+        IncludeManagementEvents: false
+        ReadWriteType: WriteOnly
+      IncludeGlobalServiceEvents: false
+      IsLogging: true
+      EnableLogFileValidation: false
+      IsMultiRegionTrail: false
+      S3BucketName: !Ref CloudTrailBucket # Required even if we are not logging.
 
-  # This function fires whenever an object is uploaded to the S3 upload bucket.  It launches StepFunctions.          
-  #  TODO: REPLACE THIS WITH CLOUDWATCH EVENT INVOCATION.  SEE https://docs.aws.amazon.com/step-functions/latest/dg/tutorial-cloudwatch-events-s3.html#tutorial-cloudwatch-events-s3-trail
-  onS3UploadCallStepFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      Code:
-        ZipFile: !Sub |
-          # Lambda function to execute Step Function based on s3 event 
-          import boto3
-          import json
-          import os
+  # Bucket used for CloudTrail, disposable.
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
 
-          def handler(event, context):
-              print('Initiating image rekognition')
-              for record in event['Records']:
-                  bucket = record['s3']['bucket']['name']
-                  key = record['s3']['object']['key']
+  # Ridiculous bucket policy for the unused bucket:
+  RidiculousBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument: 
+        Statement:
+        - Effect: Allow
+          Principal: 
+            Service: cloudtrail.amazonaws.com
+          Action: 
+          - s3:GetBucketAcl
+          - s3:PutObject
+          Resource: 
+          - !Sub ${CloudTrailBucket.Arn} 
+          - !Sub ${CloudTrailBucket.Arn}/* 
+          # Condition: 
+          #   StringEquals: 
+          #     s3:x-amz-acl: bucket-owner-full-control
 
-              print('Detected the following image in S3')
-              print('Bucket: ' + bucket + ' key name: ' + key)
-              ourObject = {
-                  "ourBucket": bucket,
-                  "ourKey": key
-                  }
-              # Replace Step Function ARN
-              stepARN = os.environ['STEP_ARN']
-              client = boto3.client('stepfunctions')
-              response = client.start_execution(
-                  stateMachineArn=stepARN,
-                  input = json.dumps(ourObject)
-              )
-              return
-      Handler: index.handler
-      Role: !GetAtt onS3UploadCallStepFunctionRole.Arn
-      Runtime: python3.7
-      Environment:
-        Variables:
-          STEP_ARN: !Ref StateMachine
+
+  # This rule fires every time an object is uploaded into our upload bucket.
+  # It fires off the step functions state machine.
+  EventRule:  
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Sub ${AWS::StackName}-EventTriggerStepFunction
+      Description: Trigger step functions on upload to bucket.
+      EventPattern: !Sub |-
+       { "source": [ "aws.s3" ], 
+         "detail": { 
+           "eventName": ["PutObject"], 
+           "requestParameters": {
+             "bucketName": [ "${UploadBucket}" ] 
+           } 
+         }
+       }
+      Targets: 
+      - Arn: !Ref StateMachine
+        Id: StateMachine
+        RoleArn: !GetAtt onS3UploadCallStepFunctionRole.Arn
+
 
   # This Lambda is called by step functions to do image recognition.  It looks for humans in the picture.
   rekFunction:
@@ -189,8 +188,11 @@ Resources:
           import boto3
           def handler(event, context):
               print('Initiating image rekognition')
-              bucket = event['ourBucket']
-              key = event['ourKey']
+              #bucket = event['ourBucket']
+              #key = event['ourKey']
+              # Structure of event from CloudWatch Events:
+              bucket = event['detail']['requestParameters']['bucketName']
+              key = event['detail']['requestParameters']['key']
               client = boto3.client('rekognition')
               response = client.detect_labels(Image={'S3Object': {'Bucket':bucket, 'Name':key}},
                   MaxLabels=10,
@@ -254,9 +256,9 @@ Resources:
           "TimeoutSeconds":300,
           "States": {
             "Process Image": {
-              "Next": "Human Found?",
               "Type":"Task",
-              "Resource":  "${rekFunction.Arn}"
+              "Resource":  "${rekFunction.Arn}",
+              "Next": "Human Found?"
             },
             "Human Found?":{
               "Type":"Choice",
@@ -280,6 +282,88 @@ Resources:
           }
         }
       RoleArn: !GetAtt StateMachineRole.Arn
+
+
+  # This custom resource cleans out buckets before delete:
+  CleanupCustomResource:
+    Type: Custom::helper
+    Properties:
+      ServiceToken: !GetAtt CleanupLambda.Arn
+      uploadBucket: !Ref UploadBucket
+      cloudTrailBucket:  !Ref CloudTrailBucket
+
+  # This function will cleanup our buckets to allow delete
+  CleanupLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: CleanupCustomResourcePolicy
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CleanupFunction
+      Role: !GetAtt CleanupCustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 5
+      Runtime: python3.7
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          # import json
+          # import os
+          import cfnresponse
+          import boto3
+ 
+          print('Loading function')
+
+          # Entry point:
+          def lambda_handler(event, context):
+
+              # Get the CloudFormation request type and other input:
+              requestType = event['RequestType']
+              rp          = event['ResourceProperties']
+              uploadBucket   = rp['uploadBucket']
+              cloudTrailBucket   = rp['cloudTrailBucket']
+
+              if requestType == 'Delete':
+                print ('Clean out buckets to enable delete... ' )
+                boto3.resource('s3').Bucket(uploadBucket).objects.all().delete()
+                boto3.resource('s3').Bucket(cloudTrailBucket).objects.all().delete()
+
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+              
+  # This Role gives permission to our custom resource Lambda.
+  CleanupCustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CleanupCustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 
+
+
+  # This Policy is attached to the CustomResourceRole.
+  # Basic permissions for CloudWatch Logs, plus S3.
+  CleanupCustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-CleanupCustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - s3:Delete*
+            - s3:List*
+            - s3:Get*
+          Resource: "*"
+      Roles: 
+        -  !Ref CleanupCustomResourceRole   
+
 
 Outputs:
 
