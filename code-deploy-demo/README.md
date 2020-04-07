@@ -26,7 +26,7 @@ To run this demo, do the following (tested in us-west-2, adjust for other region
 
 4.  At this point you have uploaded two 'revisions', the old version of the code, and the new version of the code.  
 
-5.  (Optional) Under revisions, find the revision 1 zip file, select it, hit deploy, select the existing deployment group.  Under deployment overrides, take "all at once" to make this setup go as fast as possible.  Takes about 5 minutes.  (This establishes an existing deployment that CodeDeploy can roll back to; the software is identical to what was initially deployed, so don't expect to see a difference on the deployed app.)
+5.  (Optional) On the console under revisions, find the revision 1 zip file, select it, hit deploy, select the existing deployment group.  Under deployment overrides, take "all at once" to make this setup go as fast as possible.  Takes about 5 minutes.  (This establishes an existing deployment that CodeDeploy can roll back to; the software is identical to what was initially deployed, so don't expect to see a difference on the deployed app.)
 
 ## Demonstration
 
