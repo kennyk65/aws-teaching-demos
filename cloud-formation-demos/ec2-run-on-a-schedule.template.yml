@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: A starter AWS Lambda function.
+
+# This stack demonstrates how to launch an EC2 instance on a schedule, such as once per day or once a week.
+# The use-case is offline work that requires more than 15 minutes to run - too long for a Lambda.
+# The instance will launch as scheduled, perform whatever work is needed, then terminate itself.
+# You can use any schedule in the execution rate, just keep in mind it takes the instance a few minutes to start and terminate.
+# For demonstration purposes, the work performed by the instance is just sending a message to the designated phone number.  Change this to do whatever real work you want.
+# For simplicity, the EC2 instance runs in a public subnet.
+# For simplicity, the work done by the EC2 instance is coded in the userdata script.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - VPC
+          - PublicSubnet
+      - Label:
+          default: Details
+        Parameters:
+          - ExecutionRate
+          - NotificationPhoneNumber
+          - AmazonLinuxAMI
+
+Parameters:
+
+  ExecutionRate:
+    Type: String
+    Description: How often do you want your instance to run?  May be a cron expression.  Suggest a minimum of no less than 5 minutes.
+    Default:  rate(15 minutes)
+
+  NotificationPhoneNumber:
+    Description:  Cell Phone / SMS Number to be contacted at when work is complete.
+    Type:  String
+    Default:  "+12223334444"
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public internet access.  
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  Your instance will run here.
+
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
+
+Resources:
+  
+  # This Lambda function launches our EC2 instance.
+  # It does this by simply altering the desired size of the ASG from 0 to 1.
+  LauncherLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-LauncherLambda
+      Description: A starter AWS Lambda function.
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 3
+      InlineCode: !Sub |
+        from __future__ import print_function
+        import boto3
+
+        print('Loading function')
+        client = boto3.client('autoscaling')
+
+        # When fired, blindly set the ASG desired capacity to 1.
+        # This will launch a new EC2 instance if capacity is at 0.
+        # If there is already 1 instance running this does nothing.
+        # We don't expect any number other than 0 or 1.
+        # Composing ASG name indirectly to avoid circular reference.
+        def lambda_handler(event, context):
+          print('Adjusting Autoscaling group')
+          client.set_desired_capacity(
+            AutoScalingGroupName='${AWS::StackName}-ASG',
+            DesiredCapacity=1)
+          print('Finished executing')
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ExecutionRate
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-BasicLambdaRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Role allows the EC2 Instance to make API calls if needed.
+  Ec2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-BasicEc2Role  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the LambdaFunctionRole AND the Ec2InstanceRole, because I'm lazy.
+  # Basic permissions for CloudWatch Logs, changing ASG desired capacity, and sending via SNS.
+  GeneralPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-GeneralPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - autoscaling:set*
+            - sns:publish
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+        -  !Ref Ec2InstanceRole   
+
+  # Attach Ec2InstanceRole's permissions to each EC2 Instance in the ASG.
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref Ec2InstanceRole]
+
+  # Basic Security Group.  Our instance only needs outbound access, which is default behavior:
+  VanillaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription:  Noop security group to allow outbound access.
+      Tags:
+      - Key: Name
+        Value: VanillaSecurityGroup
+
+  # Launch Configuration for our instance running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AmazonLinuxAMI              # Latest Amazon Linux 2
+      InstanceType: t2.micro                      # Any instance type will do
+      IamInstanceProfile: !Ref InstanceProfile      # Allows EC2 Instance to talk with SSM
+      SecurityGroups: [ !Ref VanillaSecurityGroup ]   # Need a SG to allow outbound access.
+      UserData:                                         #  This code runs some innocent activity, then terminates the instance
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          # Set region.  EC2 can't infer it from Metadata:
+          aws configure set region ${AWS::Region}
+          # Send a text message, just to prove that we are running;
+          aws sns publish --phone-number ${NotificationPhoneNumber} --message 'EC2 instance has just started, shutting down now...'
+          # Shut the instance down:
+          aws autoscaling set-desired-capacity --auto-scaling-group-name ${AWS::StackName}-ASG --desired-capacity 0
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-ASG
+      VPCZoneIdentifier: [ !Ref PublicSubnet ]
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 0        
+      MaxSize: 1
+      DesiredCapacity: 0  # This value will be set to 1 by the Lambda function, and set to 0 by the EC2 Instance
+
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one for the Lambda function:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LauncherLambda}
+      RetentionInDays: 3
