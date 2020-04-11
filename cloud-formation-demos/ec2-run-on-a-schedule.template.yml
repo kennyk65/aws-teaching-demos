@@ -167,8 +167,9 @@ Resources:
           yum update -y
           # Set region.  EC2 can't infer it from Metadata:
           aws configure set region ${AWS::Region}
+          # DO WHATEVER WORK YOU WANT TO DO HERE!!
           # Send a text message, just to prove that we are running;
-          aws sns publish --phone-number ${NotificationPhoneNumber} --message 'EC2 instance has just started, shutting down now...'
+          aws sns publish --phone-number ${NotificationPhoneNumber} --message 'EC2 instance has just completed its work, shutting down now...'
           # Shut the instance down:
           aws autoscaling set-desired-capacity --auto-scaling-group-name ${AWS::StackName}-ASG --desired-capacity 0
 
