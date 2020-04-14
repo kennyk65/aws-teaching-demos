@@ -52,11 +52,6 @@ Resources:
             - s3:putObject
             - s3:getObject
             - codebuild:*
-            # - ecr:Get*                    # For Docker builds pushing to ECR, one will need to GetAuthorizationToken
-            # - ecr:InitiateLayerUpload     # For Docker push to ECR
-            # - ecr:Upload*                 # For Docker push to ECR
-            # - ecr:Complete*               # For Docker push to ECR
-            - ecr:*                       # I'm getting weird results on Docker push, and this fixed it.  TODO - Figure out what ECR permissions are needed.
             - ecr:GetAuthorizationToken
             - ecr:InitiateLayerUpload
             - ecr:CompleteLayerUpload
@@ -91,7 +86,6 @@ Resources:
       Source:
         Type: GITHUB
         Location: !Ref InputGitHubRepo
-        #  TODO - WEBHOOK???
         BuildSpec: !Sub |
             version: 0.2
             # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
