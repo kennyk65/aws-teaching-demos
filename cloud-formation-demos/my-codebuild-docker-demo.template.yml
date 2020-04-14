@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# CodeBuild demo.  Demonstrates building with Java/Maven, creating image, pushing to ECR
+# Source needs to come from a public github repo of your choice.  
+# Buildspec from that repository will be ignored in place of what is here.
+# The build is using Java, but this could be adjusted to other languages.
+# Much of the work involves setup of the role / policy, so you have to allow this when you run.
+
+Parameters:
+
+  InputGitHubRepo:
+    Description: Existing public GitHub repository with buildspec.yml
+    Type: String
+    Default: https://github.com/kennyk65/aws-cloudbuild-demo.git
+
+  RepositoryName:
+    Description:  The name of the ECR repository to be created.  
+    Type: String
+    Default: example
+
+Resources:
+
+  # This Role allows CodeBuild to do certain things on our behalf.
+  # See the policy for the interesting stuff:
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName:  !Sub ${AWS::StackName}-CodeBuildRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the CodeBuildRole.
+  # CodeBuild is allowed upload on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
+  CodeBuildPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:putObject
+            - s3:getObject
+            - codebuild:*
+            # - ecr:Get*                    # For Docker builds pushing to ECR, one will need to GetAuthorizationToken
+            # - ecr:InitiateLayerUpload     # For Docker push to ECR
+            # - ecr:Upload*                 # For Docker push to ECR
+            # - ecr:Complete*               # For Docker push to ECR
+            - ecr:*                       # I'm getting weird results on Docker push, and this fixed it.  TODO - Figure out what ECR permissions are needed.
+            - ecr:GetAuthorizationToken
+            - ecr:InitiateLayerUpload
+            - ecr:CompleteLayerUpload
+            - ecr:BatchCheckLayerAvailability
+            - ecr:PutImage
+            - ecr:UploadLayerPart
+          Resource: "*"
+      Roles: 
+        -  !Ref CodeBuildRole   # Attach to CodeBuildRole.
+
+  NewRepo:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Ref RepositoryName
+
+
+  # The CodeBuild project will obtain source from the given GitHub repository.
+  # This is a Java Maven build, so the openjdk 8 is fine.
+  # This is using an in-line build-spec rather than the one included with the source.
+  MyBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name:  !Sub ${AWS::StackName}-CodeBuildDemo
+      Description: Demo of CodeBuild with Java/Maven + Docker.
+      ServiceRole: !Ref CodeBuildRole
+      TimeoutInMinutes: 5
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0  
+        PrivilegedMode: true      
+      Source:
+        Type: GITHUB
+        Location: !Ref InputGitHubRepo
+        #  TODO - WEBHOOK???
+        BuildSpec: !Sub |
+            version: 0.2
+            # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
+            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
+            # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
+            phases:
+              install:
+                runtime-versions:
+                  java: openjdk8              
+              pre_build:
+                commands:
+                  - echo Version of AWS CLI is
+                  - aws --version
+                  - echo Version of Docker is
+                  - docker --version
+                  - echo Logging in to Amazon ECR...
+                  - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+                  - REPOSITORY_URI=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${NewRepo}
+                  - IMAGE_TAG=1111
+                  - echo REPOSITORY_URI is set to $REPOSITORY_URI
+                  - echo IMAGE_TAG is set to $IMAGE_TAG
+                  - echo CODEBUILD_RESOLVED_SOURCE_VERSION is set to $CODEBUILD_RESOLVED_SOURCE_VERSION
+                  - echo CODEBUILD_SOURCE_VERSION is set to $CODEBUILD_SOURCE_VERSION
+              build:
+                commands:
+                  - echo Maven Build started on `date`
+                  - mvn package -DskipTests
+                  - echo Maven Build finished on `date`
+                  - echo Docker Image Build started on `date`
+                  - docker build -t $REPOSITORY_URI:latest .
+                  - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  - echo Docker Image Build finished on `date`
+              post_build:
+                commands:
+                  - echo Pushing the Docker images...
+                  - docker push $REPOSITORY_URI:latest
+                  - docker push $REPOSITORY_URI:$IMAGE_TAG
+            #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
+            #  See https://aws.amazon.com/about-aws/whats-new/2019/02/aws-codebuild-now-supports-local-caching/
+            cache:
+              paths:
+                - '/root/.m2/**/*'                  
+      Artifacts:
+        Type: NO_ARTIFACTS  # Output will be push to ECR
+      Cache:
+        Type: LOCAL        
+        Modes: # You can specify one or more cache mode (TODO: LOOKS LIKE ITS HAVING NO EFFECT), 
+          - LOCAL_CUSTOM_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_SOURCE_CACHE
+
+Outputs:
+  CodeBuild:
+    Value: !Ref MyBuild
+  IamRole:
+    Value: !Ref CodeBuildRole  
