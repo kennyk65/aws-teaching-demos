@@ -14,9 +14,14 @@ Parameters:
     Default: False
     Description: Do you want the roles to be setup with permission boundaries?  When false, the role we create will be able to exceed their own permissions.
 
+  RequiredOwnerTag:
+    Type: String
+    Default: MyTeam
+    Description: The value for the 'Owner' tag which must be present on all resources we create, modify, or delete.
+
   RolePrefix:
     Type: String
-    Default: MyPrefix
+    Default: MyTeam
     Description: The first few letters of the role names that our principal will be allowed to create, update, and delete.
 
 Conditions:
@@ -82,36 +87,66 @@ Resources:
       ManagedPolicyName: AverageDeveloperBoundedPolicy
       PolicyDocument: 
         Version: 2012-10-17
-        Statement: 
-          # Your stuff must be prefixed and reference a permission boundary:
-          - Sid: AnyRolesYouCreateOrModifyMustReferencePermissionBoundary
+        Statement:  
+          # Allowed to create, modify or delete roles/policies tagged and prefixed with your team name.
+          - Sid: AllowModifyingOurTeamsRolesAndPolicies
             Effect: Allow
+            Action: 
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:UpdateRole
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+            Resource: 
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+              - !Sub arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*
+            Condition:
+              StringEquals: 
+                iam:ResourceTag/Owner: !Ref RequiredOwnerTag
+
+          # Just in case the tag gets lost, allow re-add
+          - Sid: AllowAddTag
+            Effect: Allow
+            Action: 
+              - iam:TagRole
+            Resource: 
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+            Condition:
+              StringEquals: 
+                aws:RequestTag/Owner: !Ref RequiredOwnerTag
+
+          # Not allowed to remove Owner tag.
+          - Sid: DenyRemoveOwnerTag
+            Effect: Deny
+            Action: 
+              - iam:UntagRole
+            Resource: 
+              - "*"
+            Condition:
+              ForAllValues:StringEquals:
+                aws:TagKeys: Owner
+
+
+          # TODO: PRESENTLY ALLOWING CHANGING TAG VALUES.
+
+          # Roles cannot be created or modified without permission boundary:
+          - Sid: DeniedModifyingWithoutPermissionBoundary
+            Effect: Deny
             Action: 
               - iam:CreateRole
               - iam:AttachRolePolicy
               - iam:DetachRolePolicy
             Resource: 
-              - !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
             Condition:
-              StringEquals:
+              StringNotEquals:
                 iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
-          # You can only muck with your own stuff:
-          - Sid: YouCanOnlyCreatePoliciesStampedWithYourPrefix
-            Effect: Allow
-            Action: 
-              - iam:CreatePolicy
-              - iam:CreatePolicyVersion
-              - iam:DeletePolicyVersion
-            Resource: 
-              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*"
-          - Sid: YouCanOnlyMessWithRolesHavingYourPrefix
-            Effect: Allow
-            Action: 
-              - iam:DeleteRole
-              - iam:UpdateRole
-            Resource: 
-              - !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
-            
+
 
   #  This is the policy a central administrator would set to ultimately limit 
   #  what the Developer created roles / policies could do.
