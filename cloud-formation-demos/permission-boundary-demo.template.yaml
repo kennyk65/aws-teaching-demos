@@ -60,6 +60,8 @@ Resources:
             - iam:Get*
             - s3:*
             - cloudformation:*
+            - elasticbeanstalk:*
+            - lambda:*
           Resource: 
             - "*"
 
@@ -110,7 +112,7 @@ Resources:
                 iam:ResourceTag/Owner: !Ref RequiredOwnerTag
 
           # Just in case the tag gets lost, allow re-add
-          - Sid: AllowAddTag
+          - Sid: AllowAddOwnerTag
             Effect: Allow
             Action: 
               - iam:TagRole
