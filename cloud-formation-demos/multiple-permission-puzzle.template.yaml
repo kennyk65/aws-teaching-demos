@@ -33,11 +33,11 @@ Resources:
             Resource: 
               - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
             Condition:
-              StringEquals:
-                iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
-            Condition:
               StringEquals: 
                 iam:RequestTag/Owner: !Ref RequiredOwnerTag
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
 
   # Here I'm trying with a YAML array...
   # ...But I got an error saying it was malformed.
@@ -61,7 +61,27 @@ Resources:
   #             - StringEquals: 
   #                 iam:RequestTag/Owner: !Ref RequiredOwnerTag
 
-            
+  # EamplePolicy3:
+  #   Type: AWS::IAM::ManagedPolicy
+  #   Properties: 
+  #     ManagedPolicyName: ExamplePolicy3
+  #     PolicyDocument: 
+  #       Version: 2012-10-17
+  #       Statement: 
+  #         - Effect: Allow
+  #           Action: 
+  #             - iam:CreateRole
+  #             - iam:AttachRolePolicy
+  #             - iam:DetachRolePolicy
+  #           Resource: 
+  #             - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+  #           - Condition:
+  #             StringEquals: 
+  #               iam:RequestTag/Owner: !Ref RequiredOwnerTag
+  #           - Condition:
+  #             StringEquals:
+  #               iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
+
 
   #  This is a permission boundary.
   PermissionBoundaryPolicy:
