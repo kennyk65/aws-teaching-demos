@@ -88,9 +88,7 @@ Resources:
         Location: !Ref InputGitHubRepo
         BuildSpec: !Sub |
             version: 0.2
-            # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
-            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
-            # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
+            # This AWS CodeBuild buildspec runs a Maven build, packages as a Docker container, uploads to ECR.
             phases:
               install:
                 runtime-versions:
@@ -112,7 +110,7 @@ Resources:
               build:
                 commands:
                   - echo Maven Build started on `date`
-                  - mvn package -DskipTests
+                  - mvn package 
                   - echo Maven Build finished on `date`
                   - echo Docker Image Build started on `date`
                   - docker build -t $REPOSITORY_URI:latest .

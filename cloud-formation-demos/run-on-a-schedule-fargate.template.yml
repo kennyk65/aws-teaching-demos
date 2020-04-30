@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+
+Parameters:
+  
+  ECSCluster:
+    Description:  The ECS Cluster that is ready to run our service / task definition.
+    Type: String    
+    Default: default
+
+  # VPC:
+  #   Type: AWS::EC2::VPC::Id
+  #   Description: Select a VPC, one with public subnets
+
+  # SubnetIds:
+  #   Type: List<AWS::EC2::Subnet::Id>
+  #   Description: Select 1-2 subnets in your selected VPC, private preferred if NATting is setup.  Fargate ENIs will connect here.
+
+
+
+Resources:
+
+  # This Role allows the ECS Task to write to CloudWatchLogs:
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-ExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the ExecutionRole.
+  # Task is allowed to write to CloudWatch logs
+  # "Fargate requires task definition to have execution role ARN to support log driver awslogs."
+  ExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-ExecutionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - ecr:Get*
+            - ecr:BatchCheck*
+            - ecr:BatchGet*
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref ExecutionRole
+
+  # This Role allows the containers within the ECS Task to make AWS API calls:
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-TaskRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the TaskRole.
+  # Task is allowed to write to DynamoDB
+  TaskPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-TaskPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action:
+            - s3:Get*
+            - s3:List*
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref TaskRole
+
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-TaskDefinition
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc                   # Required and only possible value when using Fargate.
+      TaskRoleArn: !Ref TaskRole            # Allows container code to make API calls.
+      ExecutionRoleArn: !Ref ExecutionRole  # Required for Fargate.  Allows it to pull our images.
+      Cpu: 256                              # Valid values for CPU and memory are tricky if using Fargate.
+      Memory: 512
+      ContainerDefinitions:
+      - Name: SomethingToDo
+        Image: kennyk65/commandrunner      # something to run.
+        Essential: true
+        StartTimeout:  300          # If any of our containers take more than 5 minutes to start, something is broken.
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: SomethingToDo
+        # PortMappings:
+        # - ContainerPort: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ContainerPort ]  # Lookup the container port from the map. In awsvpc mode, port exposed on the ENI.
+        #   HostPort: 80            # Not needed in awsvpc mode because there is no 'mapping' going on.
+
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${AWS::StackName}-RunOnFargateLogGroup
+      RetentionInDays: 3

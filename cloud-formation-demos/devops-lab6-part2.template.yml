@@ -241,9 +241,9 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: ALBListenerRule  # Avoids transient error about TargetGroup not associated with a load balancer.
     Properties:
+        Fn::ImportValue: 
       ServiceName: !Sub ${AWS::StackName}-${ServiceToBuild}-Service
       Cluster: 
-        Fn::ImportValue: 
           !Sub ${BaseStack}-ECSCluster
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1   # TODO: Autoscale
