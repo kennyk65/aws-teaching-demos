@@ -93,154 +93,69 @@ Resources:
         # 2. Allowed to tag the role with Owner= team name
         # 3. Allowed to create, update, delete non-Owner tags on our resources
         # 4. Deny role maintenence that does not include the permission boundary
-        Statement:   !Sub |-
-          {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Sid": "AllowModifyingOurTeamsRolesAndPolicies",
-                      "Effect": "Allow",
-                      "Action": [
-                          "iam:CreateRole",
-                          "iam:UpdateRole",
-                          "iam:DeleteRole",
-                          "iam:AttachRolePolicy",
-                          "iam:DetachRolePolicy",
-                          "iam:CreatePolicy",
-                          "iam:CreatePolicyVersion",
-                          "iam:DeletePolicyVersion"
-                      ],
-                      "Resource": [
-                          "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*",
-                          "arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*"
-                      ],
-                      "Condition": {
-                          "StringEquals": {
-                              "iam:ResourceTag/Owner": "${RolePrefix}"
-                          }
-                      }
-                  },
-                  {
-                      "Sid": "AllowTagOwner",
-                      "Effect": "Allow",
-                      "Action": [
-                          "iam:CreateRole",
-                          "iam:UpdateRole",
-                          "iam:TagRole"
-                      ],
-                      "Resource": [
-                          "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
-                      ],
-                      "Condition": {
-                          "StringEquals": {
-                              "aws:RequestTag/Owner": "${RolePrefix}"
-                          },
-                          "ForAllValues:StringEquals": {
-                              "aws:TagKeys": [
-                                  "Owner"
-                              ]
-                          }
-                      }
-                  },
-                  {
-                      "Sid": "AllowTagMaintenanceOfNonOwnerTags",
-                      "Effect": "Allow",
-                      "Action": [
-                          "iam:TagRole",
-                          "iam:UntagRole"
-                      ],
-                      "Resource": [
-                          "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
-                      ],
-                      "Condition": {
-                          "ForAllValues:StringNotEquals": {
-                              "aws:TagKeys": [
-                                  "Owner"
-                              ]
-                          },
-                          "StringEquals": {
-                              "iam:ResourceTag/Owner": "${RolePrefix}"
-                          }
-                      }
-                  },
-                  {
-                      "Sid": "DeniedModifyingWithoutPermissionBoundary",
-                      "Effect": "Deny",
-                      "Action": [
-                          "iam:CreateRole",
-                          "iam:AttachRolePolicy",
-                          "iam:DetachRolePolicy"
-                      ],
-                      "Resource": [
-                          "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
-                      ],
-                      "Condition": {
-                          "StringNotEquals": {
-                              "iam:PermissionsBoundary": "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundaryPolicy"
-                          }
-                      }
-                  }
-              ]
-          }
-        # Statement:  
-        #   # Allowed to create, modify or delete roles/policies tagged and prefixed with your team name.
-        #   - Sid: AllowModifyingOurTeamsRolesAndPolicies
-        #     Effect: Allow
-        #     Action: 
-        #       - iam:CreateRole
-        #       - iam:DeleteRole
-        #       - iam:UpdateRole
-        #       - iam:TagRole
-        #       - iam:UntagRole
-        #       - iam:AttachRolePolicy
-        #       - iam:DetachRolePolicy
-        #       - iam:CreatePolicy
-        #       - iam:CreatePolicyVersion
-        #       - iam:DeletePolicyVersion
-        #     Resource: 
-        #       - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
-        #       - !Sub arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*
-        #     Condition:
-        #       StringEquals: 
-        #         iam:ResourceTag/Owner: !Ref RequiredOwnerTag
+        Statement:  
+          # Allowed to create, modify or delete roles/policies tagged and prefixed with your team name.
+          - Sid: AllowModifyingOurTeamsRolesAndPolicies
+            Effect: Allow
+            Action: 
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:UpdateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+            Resource: 
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+              - !Sub arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*
+            Condition:
+              StringEquals: 
+                iam:ResourceTag/Owner: !Ref RequiredOwnerTag
 
-        #   # Just in case the tag gets lost, allow re-add
-        #   - Sid: AllowAddOwnerTag
-        #     Effect: Allow
-        #     Action: 
-        #       - iam:TagRole
-        #     Resource: 
-        #       - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
-        #     Condition:
-        #       StringEquals: 
-        #         aws:RequestTag/Owner: !Ref RequiredOwnerTag
+          # Just in case the tag gets lost, allow re-add
+          - Sid: AllowTagOwner
+            Effect: Allow
+            Action: 
+              - iam:TagRole
+              - iam:CreateRole
+              - iam:UpdateRole
+            Resource: 
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+            Condition:
+              StringEquals: 
+                aws:RequestTag/Owner: !Ref RequiredOwnerTag
+              ForAllValues:StringEquals: 
+                aws:TagKeys: Owner
 
-        #   # Not allowed to remove Owner tag.
-        #   - Sid: DenyRemoveOwnerTag
-        #     Effect: Deny
-        #     Action: 
-        #       - iam:UntagRole
-        #     Resource: 
-        #       - "*"
-        #     Condition:
-        #       ForAllValues:StringEquals:
-        #         aws:TagKeys: Owner
+          # Allow add / remove of other tags unrelated to Owner
+          - Sid: AllowTagMaintenanceOfNonOwnerTags
+            Effect: Allow
+            Action: 
+              - iam:TagRole
+              - iam:UntagRole
+            Resource:
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+            Condition:
+              StringEquals: 
+                iam:ResourceTag/Owner: !Ref RequiredOwnerTag
+              ForAllValues:StringNotEquals: 
+                aws:TagKeys: Owner
 
-
-        #   # TODO: PRESENTLY ALLOWING CHANGING TAG VALUES.
-
-        #   # Roles cannot be created or modified without permission boundary:
-        #   - Sid: DeniedModifyingWithoutPermissionBoundary
-        #     Effect: Deny
-        #     Action: 
-        #       - iam:CreateRole
-        #       - iam:AttachRolePolicy
-        #       - iam:DetachRolePolicy
-        #     Resource: 
-        #       - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
-        #     Condition:
-        #       StringNotEquals:
-        #         iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
+          # Our Roles cannot be created or modified without permission boundary:
+          - Sid: DeniedModifyingWithoutPermissionBoundary
+            Effect: Deny
+            Action: 
+              - iam:CreateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+            Resource: 
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
+            Condition:
+              StringEquals: 
+                aws:RequestTag/Owner: !Ref RequiredOwnerTag
+              StringNotEquals:
+                iam:PermissionsBoundary: !Ref PermissionBoundaryPolicy
 
 
   #  This is the policy a central administrator would set to ultimately limit 
