@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: 'AWS::Serverless-2016-10-31'
+
+# This stack demonstrates how to launch a Lambda on a schedule, such as once per day or once a week.
+# You can use any schedule in the execution rate, containers typically start within seconds.
+# For demonstration purposes, the work performed by the Lambda is just sending a sample message to the designated phone number.  Change this to do whatever real work you want.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Notification
+        Parameters:
+          - NotificationPhoneNumber
+          - NotificationMessage
+          - ExecutionRate
+
+Parameters:
+
+  ExecutionRate:
+    Type: String
+    Description: How often do you want your workload to run?  May be a cron expression.  Suggest a minimum of no less than 5 minutes.
+    Default:  rate(15 minutes)
+
+  NotificationPhoneNumber:
+    Description:  Cell Phone / SMS Number to be contacted at when work is complete.
+    Type:  String
+    Default:  "+12223334444"
+
+  NotificationMessage:
+    Description:  Message to send.
+    Type:  String
+    Default:  "This message was sent from a Lambda"
+
+
+Resources:
+  # This Lambda function does some work.
+  DoWorkLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-DoWorkLambda
+      Description: Function which does some work on a schedule
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 3
+      InlineCode: !Sub |
+        from __future__ import print_function
+        import boto3
+
+        print('Loading function')
+        client = boto3.client('sns')
+
+        # When fired, schedule a task to run.
+        def lambda_handler(event, context):
+          print('Sending notification')
+
+          response = client.publish(
+              PhoneNumber='${NotificationPhoneNumber}',
+              Message='${NotificationMessage}'
+          )
+
+          print('Message sent, messageId={}.'.format(
+            response['MessageId'] ))
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ExecutionRate
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-LambdaFunctionRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - sns:publish*
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+

@@ -1,5 +1,4 @@
 AWSTemplateFormatVersion: 2010-09-09
-Transform: 'AWS::Serverless-2016-10-31'
 
 # This stack demonstrates how to launch a Docker container in Fargate on a schedule, such as once per day or once a week.
 # The use-case is offline work that requires more than 15 minutes to run - too long for a Lambda.
@@ -67,55 +66,29 @@ Parameters:
 
 Resources:
 
-  # This Lambda function launches our Fargate task.
-  LauncherLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub ${AWS::StackName}-LauncherLambda
-      Description: Function which launches a Fargate task
-      Handler: index.lambda_handler
-      Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: python3.7
-      MemorySize: 128
-      Timeout: 3
-      InlineCode: !Sub |
-        from __future__ import print_function
-        import boto3
-
-        print('Loading function')
-        client = boto3.client('ecs')
-
-        # When fired, schedule a task to run.
-        def lambda_handler(event, context):
-          print('Executing ECS (Fargate) task')
-
-          response = client.run_task(
-              launchType='FARGATE',
-              cluster='${ECSCluster}',
-              taskDefinition='${TaskDefinition}',
-              count=1,
-              networkConfiguration={
-                  'awsvpcConfiguration': {
-                      'subnets': [
-                          '${PublicSubnet}',
-                      ],
-                      'securityGroups': [
-                          '${VanillaSecurityGroup}',
-                      ],
-                      'assignPublicIp': 'ENABLED'
-                  }
-              }
-          )
-          containerStatus = response['tasks'][0]['containers'][0]
-          print('Fargate task launched,lastStatus={}.'.format(
-            containerStatus['lastStatus']))
-
-      Events:
-        Schedule:
-          Type: Schedule
-          Properties:
-            Schedule: !Ref ExecutionRate
-
+  # This event rule fires based on the given schedule expression.  
+  # It launches the ECS task:
+  EventRuleOnSchedule:
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Sub ${AWS::StackName}-ExecuteOnSchedule
+      Description: Fires based on given schedule, executes ECS task target.
+      ScheduleExpression: !Ref ExecutionRate
+      State: ENABLED
+      Targets: 
+      - Id: !Sub ${AWS::StackName}-RunEcsTask
+        Arn: !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ECSCluster}
+        RoleArn: !GetAtt EventTargetRole.Arn
+        EcsParameters:
+          LaunchType: FARGATE
+          TaskDefinitionArn: !Ref TaskDefinition
+          NetworkConfiguration: 
+            AwsVpcConfiguration:
+              AssignPublicIp: ENABLED
+              SecurityGroups: 
+                - !Ref VanillaSecurityGroup
+              Subnets: 
+                - !Ref PublicSubnet
 
   # This TaskDefinition defines the image(s) we want to run on ECS
   TaskDefinition:
@@ -158,25 +131,10 @@ Resources:
       - Key: Name
         Value: !Sub ${AWS::StackName}-VanillaSecurityGroup
 
-
-
-  # This Role allows the Lambda function to make API calls if needed.
-  LambdaFunctionRole:
-    Type: AWS::IAM::Role
-    Properties: 
-      RoleName: !Sub ${AWS::StackName}-LambdaFunctionRole  
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-
-  LambdaFunctionPolicy:
+  EventTargetPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
+      PolicyName: !Sub ${AWS::StackName}-EventTargetPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -184,12 +142,21 @@ Resources:
           Action: 
             - ecs:Run*
             - iam:Pass*
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
           Resource: "*"
       Roles: 
-        -  !Ref LambdaFunctionRole   
+        -  !Ref EventTargetRole   
+
+  EventTargetRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-EventTargetRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: events.amazonaws.com
+          Action: sts:AssumeRole
 
 
   # This Role allows the ECS Task to write to CloudWatchLogs:
@@ -251,8 +218,6 @@ Resources:
         Statement: 
           Effect: Allow
           Action:
-            - s3:Get*
-            - s3:List*
             - sns:publish*
           Resource: 
             - "*"
