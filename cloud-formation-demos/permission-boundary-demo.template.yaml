@@ -94,39 +94,41 @@ Resources:
         # 3. Allowed to create, update, delete non-Owner tags on our resources
         # 4. Deny role maintenence that does not include the permission boundary
         Statement:  
-          # Allowed to create, modify or delete roles/policies tagged and prefixed with your team name.
-          - Sid: AllowModifyingOurTeamsRolesAndPolicies
+          # Allowed to create, modify or delete policies prefixed with your team name.
+          - Sid: AllowPolicyMaintenance
             Effect: Allow
             Action: 
-              - iam:CreateRole
-              - iam:DeleteRole
-              - iam:UpdateRole
-              - iam:AttachRolePolicy
-              - iam:DetachRolePolicy
               - iam:CreatePolicy
               - iam:CreatePolicyVersion
               - iam:DeletePolicyVersion
             Resource: 
-              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
               - !Sub arn:aws:iam::${AWS::AccountId}:policy/${RolePrefix}*
+
+          # Allowed to modify or delete roles prefixed and tagged with your team name.
+          - Sid: AllowModifyingOurTeamsRoles
+            Effect: Allow
+            Action: 
+              - iam:DeleteRole
+              - iam:UpdateRole*
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+            Resource: 
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
             Condition:
               StringEquals: 
                 iam:ResourceTag/Owner: !Ref RequiredOwnerTag
 
-          # Just in case the tag gets lost, allow re-add
-          - Sid: AllowTagOwner
+          # Allowed to create roles and tag roles only if request includes owner tag with correct value
+          - Sid: AllowRoleIfTaggedWithOwner
             Effect: Allow
             Action: 
-              - iam:TagRole
               - iam:CreateRole
-              - iam:UpdateRole
+              - iam:TagRole
             Resource: 
               - !Sub arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*
             Condition:
               StringEquals: 
                 aws:RequestTag/Owner: !Ref RequiredOwnerTag
-              ForAllValues:StringEquals: 
-                aws:TagKeys: Owner
 
           # Allow add / remove of other tags unrelated to Owner
           - Sid: AllowTagMaintenanceOfNonOwnerTags
