@@ -8,6 +8,16 @@ Parameters:
     Type: String    
     Default: default
 
+  DockerImage:
+    Description:  The Docker image that we wish to run on a schedule.
+    Type: String    
+    Default: amazon/aws-cli
+
+  DockerCommand:
+    Description:  The command to run on the docker image.
+    Type: String    
+    Default: sns publish --phone-number 14072569737 --message BBBBB
+
   # VPC:
   #   Type: AWS::EC2::VPC::Id
   #   Description: Select a VPC, one with public subnets
@@ -70,7 +80,6 @@ Resources:
           Action: sts:AssumeRole
 
   # This Policy is attached to the TaskRole.
-  # Task is allowed to write to DynamoDB
   TaskPolicy:
     Type: AWS::IAM::Policy
     Properties: 
@@ -82,6 +91,7 @@ Resources:
           Action:
             - s3:Get*
             - s3:List*
+            - sns:publish*
           Resource: 
             - "*"
       Roles: 
@@ -101,7 +111,14 @@ Resources:
       Memory: 512
       ContainerDefinitions:
       - Name: SomethingToDo
-        Image: kennyk65/commandrunner      # something to run.
+        Image: !Ref DockerImage      # something to run.
+        Command: 
+        - sns 
+        - publish 
+        - --phone-number 
+        - '14072569737'
+        - --message 
+        - BBBBB
         Essential: true
         StartTimeout:  300          # If any of our containers take more than 5 minutes to start, something is broken.
         LogConfiguration:
