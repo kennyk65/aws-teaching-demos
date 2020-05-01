@@ -1,8 +1,44 @@
 AWSTemplateFormatVersion: 2010-09-09
+Transform: 'AWS::Serverless-2016-10-31'
 
+# This stack demonstrates how to launch a Docker container in Fargate on a schedule, such as once per day or once a week.
+# The use-case is offline work that requires more than 15 minutes to run - too long for a Lambda.
+# The specified Docker container will launch as scheduled, perform whatever work is needed, then stop itself.
+# You can use any schedule in the execution rate, containers typically start within seconds.
+# For demonstration purposes, the work performed by the instance is just sending a sample message to the designated phone number.  Change this to do whatever real work you want.
+# For simplicity, a public subnet is used.
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - VPC
+          - PublicSubnet
+      - Label:
+          default: Container
+        Parameters:
+          - ECSCluster
+          - DockerImage
+      - Label:
+          default: Notification
+        Parameters:
+          - NotificationPhoneNumber
+          - NotificationMessage
+          - ExecutionRate
 
 Parameters:
-  
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public internet access.  
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  Your Fargate container will run here.
+
   ECSCluster:
     Description:  The ECS Cluster that is ready to run our service / task definition.
     Type: String    
@@ -13,22 +49,148 @@ Parameters:
     Type: String    
     Default: amazon/aws-cli
 
-  DockerCommand:
-    Description:  The command to run on the docker image.
-    Type: String    
-    Default: sns publish --phone-number 14072569737 --message BBBBB
+  ExecutionRate:
+    Type: String
+    Description: How often do you want your instance to run?  May be a cron expression.  Suggest a minimum of no less than 5 minutes.
+    Default:  rate(15 minutes)
 
-  # VPC:
-  #   Type: AWS::EC2::VPC::Id
-  #   Description: Select a VPC, one with public subnets
+  NotificationPhoneNumber:
+    Description:  Cell Phone / SMS Number to be contacted at when work is complete.
+    Type:  String
+    Default:  "+12223334444"
 
-  # SubnetIds:
-  #   Type: List<AWS::EC2::Subnet::Id>
-  #   Description: Select 1-2 subnets in your selected VPC, private preferred if NATting is setup.  Fargate ENIs will connect here.
-
+  NotificationMessage:
+    Description:  Message to send.
+    Type:  String
+    Default:  "This message was sent from a container running on Fargate"
 
 
 Resources:
+
+  # This Lambda function launches our Fargate task.
+  LauncherLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-LauncherLambda
+      Description: Function which launches a Fargate task
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 3
+      InlineCode: !Sub |
+        from __future__ import print_function
+        import boto3
+
+        print('Loading function')
+        client = boto3.client('ecs')
+
+        # When fired, schedule a task to run.
+        def lambda_handler(event, context):
+          print('Executing ECS (Fargate) task')
+
+          response = client.run_task(
+              launchType='FARGATE',
+              cluster='${ECSCluster}',
+              taskDefinition='${TaskDefinition}',
+              count=1,
+              networkConfiguration={
+                  'awsvpcConfiguration': {
+                      'subnets': [
+                          '${PublicSubnet}',
+                      ],
+                      'securityGroups': [
+                          '${VanillaSecurityGroup}',
+                      ],
+                      'assignPublicIp': 'ENABLED'
+                  }
+              }
+          )
+          containerStatus = response['tasks'][0]['containers'][0]
+          print('Fargate task launched,lastStatus={}.'.format(
+            containerStatus['lastStatus']))
+
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ExecutionRate
+
+
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-TaskDefinition
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc                   # Required and only possible value when using Fargate.
+      TaskRoleArn: !Ref TaskRole            # Allows container code to make API calls.
+      ExecutionRoleArn: !Ref ExecutionRole  # Required for Fargate.  Allows it to pull our images.
+      Cpu: 256                              # Valid values for CPU and memory are tricky if using Fargate.
+      Memory: 512
+      ContainerDefinitions:
+      - Name: SomethingToDo
+        Image: !Ref DockerImage       # something to run.
+        Command:                      # Note:  You will probably want to adjust or eliminate this command.
+        - sns 
+        - publish 
+        - --phone-number 
+        - !Ref NotificationPhoneNumber
+        - --message 
+        - !Ref NotificationMessage
+        Essential: true
+        StartTimeout:  30          # If any of our containers take more than 30 seconds to start, something is broken.
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroupFargate
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: x
+
+  # Basic Security Group.  Our instance only needs outbound access, which is default behavior:
+  VanillaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription:  Noop security group to allow outbound access.
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-VanillaSecurityGroup
+
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-LambdaFunctionRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - ecs:Run*
+            - iam:Pass*
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
 
   # This Role allows the ECS Task to write to CloudWatchLogs:
   ExecutionRole:
@@ -97,42 +259,10 @@ Resources:
       Roles: 
         -  !Ref TaskRole
 
-  # This TaskDefinition defines the image(s) we want to run on ECS
-  TaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: !Sub ${AWS::StackName}-TaskDefinition
-      RequiresCompatibilities:
-        - FARGATE
-      NetworkMode: awsvpc                   # Required and only possible value when using Fargate.
-      TaskRoleArn: !Ref TaskRole            # Allows container code to make API calls.
-      ExecutionRoleArn: !Ref ExecutionRole  # Required for Fargate.  Allows it to pull our images.
-      Cpu: 256                              # Valid values for CPU and memory are tricky if using Fargate.
-      Memory: 512
-      ContainerDefinitions:
-      - Name: SomethingToDo
-        Image: !Ref DockerImage      # something to run.
-        Command: 
-        - sns 
-        - publish 
-        - --phone-number 
-        - '14072569737'
-        - --message 
-        - BBBBB
-        Essential: true
-        StartTimeout:  300          # If any of our containers take more than 5 minutes to start, something is broken.
-        LogConfiguration:
-          LogDriver: awslogs
-          Options:
-            awslogs-group: !Ref CloudwatchLogsGroup
-            awslogs-region: !Ref AWS::Region
-            awslogs-stream-prefix: SomethingToDo
-        # PortMappings:
-        # - ContainerPort: !FindInMap [ ServiceDetails, !Ref ServiceToBuild, ContainerPort ]  # Lookup the container port from the map. In awsvpc mode, port exposed on the ENI.
-        #   HostPort: 80            # Not needed in awsvpc mode because there is no 'mapping' going on.
-
-  CloudwatchLogsGroup:
+  # Explicitly creating LogGroups allows us to clean up these on stack delete.
+  CloudwatchLogsGroupFargate:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub ${AWS::StackName}-RunOnFargateLogGroup
+      LogGroupName: !Sub ${AWS::StackName}/FargateLogGroup
       RetentionInDays: 3
+
