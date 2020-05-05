@@ -81,6 +81,20 @@ Resources:
           Value: MySQL Lab DB Instance
 
 Outputs:
-  RDSEndpoint:
+  RDSDBEndpoint:
     Description: Endpoint of RDS DB
     Value: !GetAtt labdbinstance.Endpoint.Address
+
+  RDSDBName:
+    Description: RDS Database Name
+    Value: lab
+
+  RDSMasterUser:
+    Description: Username
+    Value: master
+
+  RDSPassword:
+    Description: password
+    Value: lab-password
+
+    
