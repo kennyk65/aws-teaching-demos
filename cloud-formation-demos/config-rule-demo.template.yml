@@ -20,6 +20,60 @@ Conditions:
   CreateConfigRuleCondition:        !Equals [ !Ref AutomaticallyCreateConfigRule, True ] 
 
 Resources:
+
+  # Sample of a Security Group with a risky inbound port open:
+  RiskySecurityGroup1:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Risky Security Group 
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: RiskySecurityGroup
+      Tags:
+      - Key: Purpose
+        Value: Demo
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 123
+        ToPort: 123
+        CidrIp: 0.0.0.0/0
+
+  RiskySecurityGroup2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Risky Security Group 
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: RiskySecurityGroup
+      Tags:
+      - Key: Purpose
+        Value: Demo
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 465
+        ToPort: 465
+        CidrIp: 0.0.0.0/0
+
+  RiskySecurityGroup3:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Risky Security Group 
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: RiskySecurityGroup
+      Tags:
+      - Key: Purpose
+        Value: Demo
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 789
+        ToPort: 789
+        CidrIp: 0.0.0.0/0
+
+
   # This Lambda function does some work.
   CheckSGsLambda:
     Type: AWS::Serverless::Function
@@ -125,30 +179,6 @@ Resources:
               ResultToken=event['resultToken'])
 
 
-  # Sample of a Security Group with a risky inbound port open:
-  RiskySecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Risky Security Group with port 22 open
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: RiskySecurityGroup
-      Tags:
-      - Key: Purpose
-        Value: Demo
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 465
-        ToPort: 465
-        CidrIp: 0.0.0.0/0
-
-
-
 
   # This Role allows the Lambda function to make API calls if needed.
   LambdaFunctionRole:
@@ -183,25 +213,7 @@ Resources:
       Roles: 
         -  !Ref LambdaFunctionRole   
 
-  TheConfigRule:
-    Type: AWS::Config::ConfigRule
-    DependsOn: ConfigPermissionToCallLambda
-    Condition:  CreateConfigRuleCondition
-    Properties: 
-      ConfigRuleName: !Sub ${AWS::StackName}-CheckSecurityGroups
-      Description: Check to make sure security groups match our overall rules.
-      InputParameters: 
-        Purpose: Demo                 # Look only at resources tagged this way
-      Scope: 
-        ComplianceResourceTypes: 
-          - AWS::EC2::SecurityGroup   # Look only at security groups
-      Source: 
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier: !GetAtt CheckSGsLambda.Arn
-        SourceDetails: 
-          - EventSource: aws.config
-            MessageType: ConfigurationItemChangeNotification
-
+  # The Lambda may be called by AWS Config.
   ConfigPermissionToCallLambda: 
     Type: AWS::Lambda::Permission
     Properties: 
@@ -209,10 +221,30 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: config.amazonaws.com
 
+  # Config rule Checks all resources tagged as Purpose=Demo via the supplied Lambda.
+  TheConfigRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn: ConfigPermissionToCallLambda
+    Condition:  CreateConfigRuleCondition
+    Properties: 
+      ConfigRuleName: !Sub ${AWS::StackName}-CheckSecurityGroups
+      Description: Check to make sure security groups match our overall rules.
+      Scope: 
+        # ComplianceResourceTypes: 
+        #   - AWS::EC2::SecurityGroup   # Look only at security groups
+        TagKey: Purpose
+        TagValue: Demo
+      Source: 
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier: !GetAtt CheckSGsLambda.Arn
+        SourceDetails: 
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+
+
   # Explicitly creating LogGroups allows us to clean up these on stack delete.
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${CheckSGsLambda}
       RetentionInDays: 3
-
