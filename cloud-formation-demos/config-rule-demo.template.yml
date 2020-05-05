@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: 'AWS::Serverless-2016-10-31'
+
+# 
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  AutomaticallyCreateConfigRule:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want CloudFormation to create the ConfigRule for you?  Faster to demo if true, better walkthrough when false.
+    
+Conditions:
+  CreateConfigRuleCondition:        !Equals [ !Ref AutomaticallyCreateConfigRule, True ] 
+
+Resources:
+  # This Lambda function does some work.
+  CheckSGsLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-CheckSecurityGroups
+      Description: Function which checks our security groups for unauthorized ports
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 3
+      InlineCode: !Sub |
+        import boto3
+        import botocore
+        import json
+
+        # This logic only applies to these kinds of resources:
+        APPLICABLE_RESOURCES = ["AWS::EC2::SecurityGroup"]
+
+        ALLOWABLE_PERMISSIONS = [
+        {
+            "IpProtocol" : "tcp",
+            "FromPort" : 80,
+            "ToPort" : 80,
+            "UserIdGroupPairs" : [],
+            "IpRanges" : [{"CidrIp" : "0.0.0.0/0"}],
+            "PrefixListIds" : [],
+            "Ipv6Ranges" : []
+        },
+        {
+            "IpProtocol" : "tcp",
+            "FromPort" : 443,
+            "ToPort" : 443,
+            "UserIdGroupPairs" : [],
+            "IpRanges" : [{"CidrIp" : "0.0.0.0/0"}],
+            "PrefixListIds" : [],
+            "Ipv6Ranges" : []
+        }]
+        def evaluate_compliance(configuration_item):
+            # For resources other than the ones we handle, return:
+            if configuration_item["resourceType"] not in APPLICABLE_RESOURCES:
+                return {
+                    "compliance_type" : "NOT_APPLICABLE",
+                    "annotation" : "Rule doesn't apply to resources of type " + configuration_item["resourceType"] + "."
+                }
+                
+            # If this was a delete, return:    
+            if configuration_item["configurationItemStatus"] == "ResourceDeleted":
+                return {
+                    "compliance_type": "NOT_APPLICABLE",
+                    "annotation": "The configurationItem was deleted and therefore cannot be validated."
+                }
+
+            group_id = configuration_item["configuration"]["groupId"]
+            client = boto3.client("ec2");
+                
+            # Describe the Security Group:
+            try:
+                response = client.describe_security_groups(GroupIds=[group_id])
+            except botocore.exceptions.ClientError as e:
+                return {
+                    "compliance_type" : "NON_COMPLIANT",
+                    "annotation" : "describe_security_groups failure on group " + group_id
+                }    
+
+            # Read the rules of the security group:        
+            ip_permissions = response["SecurityGroups"][0]["IpPermissions"]
+            unauthorized_permissions = [item for item in ip_permissions if item not in ALLOWABLE_PERMISSIONS ]
+            
+            # If we detected unauthorized permissions:
+            if unauthorized_permissions:
+                print('Found unauthorized security group rules on security group' + group_id)
+                return {
+                    "compliance_type" : "NON_COMPLIANT",
+                    "annotation" : "authorize_security_group_ingress failure on group " + group_id
+                }
+
+            print('Security Group {} had no unauthorized ingress rules'.format(group_id))
+            return {
+                "compliance_type" : "COMPLIANT",
+                "annotation" : "authorize_security_group_ingress passed on group " + group_id
+            }
+                
+
+        def lambda_handler(event, context):
+            invoking_event = json.loads(event['invokingEvent'])
+            config_item = invoking_event["configurationItem"]
+
+            evaluation = evaluate_compliance(config_item)
+
+            # Post findings to AWS Config:
+            config = boto3.client('config')
+            response = config.put_evaluations(
+                Evaluations=[
+                    {
+                      'ComplianceResourceType': config_item['resourceType'],
+                      'ComplianceResourceId': config_item['resourceId'],
+                      'ComplianceType': evaluation["compliance_type"],
+                      "Annotation": evaluation["annotation"],
+                      'OrderingTimestamp': config_item['configurationItemCaptureTime']
+                  },
+              ],
+              ResultToken=event['resultToken'])
+
+
+  # Sample of a Security Group with a risky inbound port open:
+  RiskySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Risky Security Group with port 22 open
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: RiskySecurityGroup
+      Tags:
+      - Key: Purpose
+        Value: Demo
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 465
+        ToPort: 465
+        CidrIp: 0.0.0.0/0
+
+
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-LambdaFunctionRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - config:PutEvaluations
+            - ec2:DescribeSecurityGroups
+            - ec2:AuthorizeSecurityGroupIngress
+            - ec2:RevokeSecurityGroupIngress            
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
+  TheConfigRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn: ConfigPermissionToCallLambda
+    Condition:  CreateConfigRuleCondition
+    Properties: 
+      ConfigRuleName: !Sub ${AWS::StackName}-CheckSecurityGroups
+      Description: Check to make sure security groups match our overall rules.
+      InputParameters: 
+        Purpose: Demo                 # Look only at resources tagged this way
+      Scope: 
+        ComplianceResourceTypes: 
+          - AWS::EC2::SecurityGroup   # Look only at security groups
+      Source: 
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier: !GetAtt CheckSGsLambda.Arn
+        SourceDetails: 
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+
+  ConfigPermissionToCallLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !GetAtt CheckSGsLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: config.amazonaws.com
+
+  # Explicitly creating LogGroups allows us to clean up these on stack delete.
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CheckSGsLambda}
+      RetentionInDays: 3
+
