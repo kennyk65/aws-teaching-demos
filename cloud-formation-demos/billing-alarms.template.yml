@@ -8,7 +8,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Parameters:
 
   EmailAddress:
-    Description: Eamail address to send alerts to.  Alerts will be sent whenever the root account is used.
+    Description: Eamail address to send alerts to.  Alerts will be sent whenever the spend level exceeds a threshold.
     Type: String
     Default: xxxxxx@gmail.com
 
