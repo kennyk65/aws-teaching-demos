@@ -8,6 +8,11 @@ Parameters:
     Type: AWS::EC2::VPC::Id
     Description: Select a VPC, one with public subnets
 
+  EmailAddress:
+    Description: Eamail address to send remediation messages to.  Alerts will be sent whenever a resource is found to be non-compliant.
+    Type: String
+    Default: xxxxxx@gmail.com
+
   AutomaticallyCreateConfigRule:
     Type: String
     AllowedValues: 
@@ -16,8 +21,17 @@ Parameters:
     Default: False
     Description: Do you want CloudFormation to create the ConfigRule for you?  Faster to demo if true, better walkthrough when false.
     
+  AutomaticallyCreateConfigRuleRemediation:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want CloudFormation to create the ConfigRule Remediation for you?  Faster to demo if true, better walkthrough when false.
+    
 Conditions:
-  CreateConfigRuleCondition:        !Equals [ !Ref AutomaticallyCreateConfigRule, True ] 
+  CreateConfigRuleCondition:            !Equals [ !Ref AutomaticallyCreateConfigRule, True ] 
+  CreateConfigRuleRemediationCondition: !Equals [ !Ref AutomaticallyCreateConfigRuleRemediation, True ] 
 
 Resources:
 
@@ -221,6 +235,29 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: config.amazonaws.com
 
+  # This Role allows the SSM to send an email
+  SsmSendNotificationRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-SsmSendNotificationRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ssm.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: allowpublish
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              Effect: Allow
+              Action: 
+                - sns:Publish*
+              Resource: !Ref RemediationSnsTopic
+
+
   # Config rule Checks all resources tagged as Purpose=Demo via the supplied Lambda.
   TheConfigRule:
     Type: AWS::Config::ConfigRule
@@ -240,6 +277,43 @@ Resources:
         SourceDetails: 
           - EventSource: aws.config
             MessageType: ConfigurationItemChangeNotification
+
+  # Topic to send email alerts to:
+  RemediationSnsTopic:
+    Type: AWS::SNS::Topic
+    Condition:  CreateConfigRuleRemediationCondition
+    Properties: 
+      DisplayName: SecurityGroup not compliant! 
+      TopicName: NonCompliantSecurityGroup
+      Subscription:
+        - Endpoint: !Ref EmailAddress
+          Protocol: email
+
+  #arn:aws:iam::011673140073:role/aws-service-role/ssm.amazonaws.com/AWSServiceRoleForAmazonSSM
+  Remediation:
+    Type: AWS::Config::RemediationConfiguration
+    Condition:  CreateConfigRuleRemediationCondition
+    Properties: 
+      ConfigRuleName: !Ref TheConfigRule
+      TargetId: AWS-PublishSNSNotification
+      TargetType: SSM_DOCUMENT
+      Automatic: true
+      MaximumAutomaticAttempts: 5
+      RetryAttemptSeconds: 60
+      Parameters: 
+        AutomationAssumeRole:
+          StaticValue:
+            Values: 
+            - !GetAtt SsmSendNotificationRole.Arn
+        TopicArn:
+          StaticValue:
+            Values:
+            - !Ref RemediationSnsTopic
+        Message:
+          StaticValue:
+            Values:
+            - A security group has an invalid configuration
+
 
 
   # Explicitly creating LogGroups allows us to clean up these on stack delete.
