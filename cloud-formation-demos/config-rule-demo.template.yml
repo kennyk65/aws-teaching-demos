@@ -300,6 +300,9 @@ Resources:
       Automatic: true
       MaximumAutomaticAttempts: 5
       RetryAttemptSeconds: 60
+      ExecutionControls:
+        SsmControls:
+          ConcurrentExecutionRatePercentage: 50
       Parameters: 
         AutomationAssumeRole:
           StaticValue:
