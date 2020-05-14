@@ -313,10 +313,8 @@ Resources:
             Values:
             - !Ref RemediationSnsTopic
         Message:
-          StaticValue:
-            Values:
-            - A security group has an invalid configuration
-
+          ResourceValue:
+            Value: RESOURCE_ID
 
 
   # Explicitly creating LogGroups allows us to clean up these on stack delete.
