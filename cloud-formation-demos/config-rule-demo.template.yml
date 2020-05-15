@@ -13,25 +13,20 @@ Parameters:
     Type: String
     Default: xxxxxx@gmail.com
 
-  AutomaticallyCreateConfigRule:
+  AutomaticallyBuildOptions:
     Type: String
     AllowedValues: 
-    - True
-    - False
-    Default: False
-    Description: Do you want CloudFormation to create the ConfigRule for you?  Faster to demo if true, better walkthrough when false.
-    
-  AutomaticallyCreateConfigRuleRemediation:
-    Type: String
-    AllowedValues: 
-    - True
-    - False
-    Default: False
-    Description: Do you want CloudFormation to create the ConfigRule Remediation for you?  Faster to demo if true, better walkthrough when false.
+    - 1. Manually build ConfigRule and remediation yourself
+    - 2. Automatically build ConfigRule
+    - 3. Automatically build ConfigRule + eMail Remediation
+    - 4. Automatically build ConfigRule + Remediate by Fixing the SG
+    Default: 4. Automatically build ConfigRule + Remediate by Fixing the SG
+    Description: Do you want CloudFormation to create the ConfigRule or Remediation strategies for you?  Faster to demo when built, better walkthrough when you do it yourself.
     
 Conditions:
-  CreateConfigRuleCondition:            !Equals [ !Ref AutomaticallyCreateConfigRule, True ] 
-  CreateConfigRuleRemediationCondition: !Equals [ !Ref AutomaticallyCreateConfigRuleRemediation, True ] 
+  CreateConfigRuleCondition:          !Not [ !Equals [ !Ref AutomaticallyBuildOptions, "1. Manually build ConfigRule and remediation yourself" ] ]
+  CreateConfigRuleRemediationEmailCondition: !Equals [ !Ref AutomaticallyBuildOptions, "3. Automatically build ConfigRule + eMail Remediation" ] 
+  CreateConfigRuleRemediationFixSGCondition: !Equals [ !Ref AutomaticallyBuildOptions, "4. Automatically build ConfigRule + Remediate by Fixing the SG" ] 
 
 Resources:
 
@@ -49,8 +44,8 @@ Resources:
         Value: Demo
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 123
-        ToPort: 123
+        FromPort: 22
+        ToPort: 22
         CidrIp: 0.0.0.0/0
 
   RiskySecurityGroup2:
@@ -66,27 +61,9 @@ Resources:
         Value: Demo
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 465
-        ToPort: 465
+        FromPort: 3389
+        ToPort: 3389
         CidrIp: 0.0.0.0/0
-
-  RiskySecurityGroup3:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Risky Security Group 
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: RiskySecurityGroup
-      Tags:
-      - Key: Purpose
-        Value: Demo
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 789
-        ToPort: 789
-        CidrIp: 0.0.0.0/0
-
 
   # This Lambda function does some work.
   CheckSGsLambda:
@@ -255,7 +232,29 @@ Resources:
               Effect: Allow
               Action: 
                 - sns:Publish*
-              Resource: !Ref RemediationSnsTopic
+              Resource: "*"
+
+  # This Role allows the SSM to send an email
+  BlockSecurityGroupRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-BlockSecurityGroupRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ssm.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: allowpublish
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              Effect: Allow
+              Action: 
+                - ec2:*
+              Resource: "*"
 
 
   # Config rule Checks all resources tagged as Purpose=Demo via the supplied Lambda.
@@ -281,7 +280,7 @@ Resources:
   # Topic to send email alerts to:
   RemediationSnsTopic:
     Type: AWS::SNS::Topic
-    Condition:  CreateConfigRuleRemediationCondition
+    Condition:  CreateConfigRuleRemediationEmailCondition
     Properties: 
       DisplayName: SecurityGroup not compliant! 
       TopicName: NonCompliantSecurityGroup
@@ -290,9 +289,9 @@ Resources:
           Protocol: email
 
   #arn:aws:iam::011673140073:role/aws-service-role/ssm.amazonaws.com/AWSServiceRoleForAmazonSSM
-  Remediation:
+  RemediationEmail:
     Type: AWS::Config::RemediationConfiguration
-    Condition:  CreateConfigRuleRemediationCondition
+    Condition:  CreateConfigRuleRemediationEmailCondition
     Properties: 
       ConfigRuleName: !Ref TheConfigRule
       TargetId: AWS-PublishSNSNotification
@@ -317,9 +316,45 @@ Resources:
             Value: RESOURCE_ID
 
 
+  RemediationFixSG:
+    Type: AWS::Config::RemediationConfiguration
+    Condition:  CreateConfigRuleRemediationFixSGCondition
+    Properties: 
+      ConfigRuleName: !Ref TheConfigRule
+      TargetId: AWS-DisablePublicAccessForSecurityGroup
+      TargetType: SSM_DOCUMENT
+      Automatic: true
+      MaximumAutomaticAttempts: 5
+      RetryAttemptSeconds: 60
+      ExecutionControls:
+        SsmControls:
+          ConcurrentExecutionRatePercentage: 50
+      Parameters: 
+        AutomationAssumeRole:
+          StaticValue:
+            Values: 
+            - !GetAtt BlockSecurityGroupRole.Arn
+        IpAddressToBlock:
+          StaticValue:
+            Values:
+            - 10.0.0.0/0
+        GroupId:
+          ResourceValue:
+            Value: RESOURCE_ID
+
+
   # Explicitly creating LogGroups allows us to clean up these on stack delete.
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${CheckSGsLambda}
       RetentionInDays: 3
+
+Outputs:
+  ConfigRule:
+    Description: The ConfigRule page in the AWS console.
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/config/home?region=${AWS::Region}#/rules/rule-details/${AWS::StackName}-CheckSecurityGroups
+
+  LambdaArn:
+    Description:  Arn of the Lambda used by the Config Rule to detect bad security GroupDescription
+    Value: !GetAtt CheckSGsLambda.Arn
