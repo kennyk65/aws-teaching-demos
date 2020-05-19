@@ -3,16 +3,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 # Just run an EC2 with in a Default VPC/subnet with a sample program on it.
 
-Metadata: 
-  AWS::CloudFormation::Interface: 
-    ParameterGroups: 
-      - Label: 
-          default: "Please supply the following"
-        Parameters: 
-          - VPC
-          - PublicSubnet
-          - PrivateKeyName
-
 Parameters:
   PrivateKeyName:
     Type: AWS::EC2::KeyPair::KeyName
@@ -25,42 +15,6 @@ Parameters:
   PublicSubnet:
     Type: AWS::EC2::Subnet::Id
     Description: Select a public subnet in your selected VPC.  The web server will run here.
-
-
-Mappings:
-  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
-  AmazonLinuxAMI:
-    us-east-1: 
-      AMI: ami-04681a1dbd79675a5    # Virginia
-    us-east-2:
-      AMI: ami-0cf31d971a3ca20d6    # Ohio
-    us-west-1:
-      AMI: ami-0782017a917e973e7    # N California
-    us-west-2:
-      AMI: ami-6cd6f714             # Oregon
-    ap-south-1:
-      AMI: ami-00b6a8a2bd28daf19    # Mumbai
-    ap-northeast-2:
-      AMI: ami-012566705322e9a8e    # Seoul
-    ap-southeast-1:
-      AMI: ami-01da99628f381e50a    # Singapore
-    ap-southeast-2:
-      AMI: ami-00e17d1165b9dd3ec    # Sydney
-    ap-northeast-1:
-      AMI: ami-08847abae18baa040    # Tokyo
-    ca-central-1:
-      AMI: ami-ce1b96aa             # Montreal
-    eu-central-1:
-      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
-    eu-west-1:
-      AMI: ami-0bdb1d6c15a40392c    # Ireland
-    eu-west-2:
-      AMI: ami-e1768386             # London
-    eu-west-3:
-      AMI: ami-06340c8c12baa6a09    # Paris
-    sa-east-1:
-      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
-
 
 Resources:
 
@@ -101,22 +55,76 @@ Resources:
           # Update the OS and get Java
           yum -y update
           yum install wget java-1.8.0 -y
-          # Download and start Java/Spring app:
-          mkdir /opt/app
-          cd /opt/app
+          # Download Java/Spring app:
           wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
           mv spring-cloud-aws-environment-demo-1.war  app.war
           chmod +x app.war
-          # java -jar app.war
+          # Move app to var folders:
+          mkdir /var/app
+          mv app.war /var/app
+          # Run app as service by creating app.service file:
+          cat > app.service <<EOF
+          [Unit]
+          Description=Spring Boot Demo
+          
+          [Service]
+          SuccessExitStatus=143
+          TimeoutStartSec=30
+          TimeoutStopSec=10
+          Restart=on-failure
+          RestartSec=5
+          ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          mv app.service /etc/systemd/system/
           # Run Java Spring app as service:
-          ln -s /opt/app/app.war /etc/init.d/springbootapp
-          service springbootapp start
-          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
+          systemctl daemon-reload
+          systemctl enable app.service
+          systemctl start app
+          /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
     CreationPolicy:
       ResourceSignal:
         Count: 1
         Timeout: PT3M
+
+Mappings:
+  #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-0b69ea66ff7391e80    # N Virginia
+    us-east-2:
+      AMI: ami-00c03f7f7f2ec15c3    # Ohio      
+    us-west-1:
+      AMI: ami-0245d318c6788de52    # N California
+    us-west-2:
+      AMI: ami-04b762b4289fba92b    # Oregon
+    eu-west-1:
+      AMI: ami-0ce71448843cb18a1    # Ireland
+    eu-central-1:
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+    sa-east-1:
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
+    ap-southeast-1:
+      AMI: ami-01da99628f381e50a    # Singaport
+    ap-southeast-2:
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
+    ap-northeast-1:
+      AMI: ami-08847abae18baa040    # Tokyo
+
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - PrivateKeyName
         
+
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:
   WebServerIpAddress:
