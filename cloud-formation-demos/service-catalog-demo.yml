@@ -22,11 +22,26 @@ Resources:
       DisplayName: Classroom Demos
       AcceptLanguage: en
 
+  TechEssentialsPortfolio:
+    Type: AWS::ServiceCatalog::Portfolio
+    Properties:
+      ProviderName: Hilltop Technology
+      Description: Demos for use in the AWS Tech Essentials class
+      DisplayName: AWS Technical Essentials Demos
+      AcceptLanguage: en
+
   # Who is allowed to create products in this portfolio?
   PortfolioPermission:
     Type: AWS::ServiceCatalog::PortfolioPrincipalAssociation
     Properties:
       PortfolioId: !Ref ClassroomDemoPortfolio
+      PrincipalARN: !Ref PrincipalARN
+      PrincipalType: IAM                  # Lordy, there's only one possible value, and it is required...
+
+  TechEssentialsPermission:
+    Type: AWS::ServiceCatalog::PortfolioPrincipalAssociation
+    Properties:
+      PortfolioId: !Ref TechEssentialsPortfolio
       PrincipalARN: !Ref PrincipalARN
       PrincipalType: IAM                  # Lordy, there's only one possible value, and it is required...
 
@@ -60,7 +75,7 @@ Resources:
     Type: AWS::ServiceCatalog::CloudFormationProduct
     Properties:
       Owner: Ken Krueger
-      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/my-docker-on-ec2-demo.template.yml
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/ec2-run-docker.template.yml
       Description: This launches an EC2 instance and runs a Docker image on it.  You can take a look at the instance's user data to see how it is done.
       Distributor: Hilltop Technology
       SupportEmail: kenkrueger65@gmail.com
@@ -69,7 +84,7 @@ Resources:
       ProvisioningArtifactParameters: 
         - Description: First Version
           Info: 
-            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/my-docker-on-ec2-demo.template.yml
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/ec2-run-docker.template.yml
           Name: v1
 
   PortfolioDockerOnEc2Demo:
@@ -193,5 +208,77 @@ Resources:
       PortfolioId: !Ref ClassroomDemoPortfolio
       ProductId: !Ref SAMDemo
 
+  # Tech Essentials Lab 1
+  TessLab1:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/AWS-Tess-Lab1.yml
+      Description: This product re-creates Lab 1 from the AWS Tech Essentials class in your own account.  
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: TechEssentialsLab1
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/AWS-Tess-Lab1.yml
+          Name: v1
+
+  PortfolioTessLab1:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TechEssentialsPortfolio
+      ProductId: !Ref TessLab1
+
+  # Tech Essentials Lab 2
+  TessLab2:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/AWS-Tess-Lab2.yml
+      Description: This product re-creates Lab 2 from the AWS Tech Essentials class in your own account.  
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: TechEssentialsLab2
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/AWS-Tess-Lab2.yml
+          Name: v1
+
+  PortfolioTessLab2:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TechEssentialsPortfolio
+      ProductId: !Ref TessLab2
+
+  # Tech Essentials Lab 3
+  TessLab3:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Owner: Ken Krueger
+      SupportDescription: See the source code for this CloudFormation template at https://github.com/kennyk65/aws-teaching-demos/blob/master/cloud-formation-demos/AWS-Tess-Lab3.yml
+      Description: This product re-creates Lab 3 from the AWS Tech Essentials class in your own account.  
+      Distributor: Hilltop Technology
+      SupportEmail: kenkrueger65@gmail.com
+      AcceptLanguage: en
+      Name: TechEssentialsLab3
+      ProvisioningArtifactParameters: 
+        - Description: First Version
+          Info: 
+            LoadTemplateFromURL: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/AWS-Tess-Lab3.yml
+          Name: v1
+
+  PortfolioTessLab3:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      PortfolioId: !Ref TechEssentialsPortfolio
+      ProductId: !Ref TessLab3
 
 
+Outputs:
+  ServiceCatalogLink:
+    Description: Click here to see the service catalog.
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/servicecatalog/home?isSceuc=true&region=${AWS::Region}#/products
