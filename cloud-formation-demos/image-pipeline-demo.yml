@@ -18,9 +18,12 @@ Parameters:
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
 
+  S3LoggingBucket:
+    Type:  String
+    Default: kk-admin/ec2-builder-logs
+    Description:  S3 Bucket / Prefix where you want to put logs.  Must be in same region.
 
 Resources:
-
 
   MyPipe:
     Type: AWS::ImageBuilder::ImagePipeline
@@ -94,6 +97,10 @@ Resources:
       SecurityGroupIds: 
       - !Ref EmptySecurityGroup
       SubnetId: !Ref PublicSubnet
+      Logging:
+        S3Logs:
+          S3BucketName: !Select [0, !Split [ "/" , !Ref S3LoggingBucket ]]
+          S3KeyPrefix: !Select [1, !Split [ "/" , !Ref S3LoggingBucket ]]
 
   # Distribution controls the name and description of the final AMI, which regions / accounts to copy it to, etc.
   MyDistribution:
