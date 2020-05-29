@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 # This CloudFormation template demonstrates an EC2 Image Pipeline
-# TODO:  The pipeline currently hangs and does not install what I told it to install.
+# TODO:  Add a test component for the new AMI.
 
 Parameters:
 
@@ -44,6 +44,10 @@ Resources:
       - ComponentArn: !Ref MyComponent
       Version: 1.0.0
 
+  # This component prepares the new AMI.  Essentially the "Data" property
+  # contains instructions to be run on an EC2 instance.  These instructions
+  # download my Spring Boot environment example and set it up to run as a service.
+  # The resulting AMI will have the application automatically running on port 80 on startup.
   MyComponent:
     Type: AWS::ImageBuilder::Component
     Properties: 
@@ -69,16 +73,16 @@ Resources:
                 - mkdir /var/app
                 - mv app.war /var/app
                 - cat > app.service <<EOF
-                - [Unit]
+                - "[Unit]"
                 - Description=Spring Boot Demo
-                - [Service]
+                - "[Service]"
                 - SuccessExitStatus=143
                 - TimeoutStartSec=30
                 - TimeoutStopSec=10
                 - Restart=on-failure
                 - RestartSec=5
                 - ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80
-                - [Install]
+                - "[Install]"
                 - WantedBy=multi-user.target
                 - EOF
                 - mv app.service /etc/systemd/system/
@@ -87,6 +91,8 @@ Resources:
                 - systemctl start app
       Version: 1.0.0
 
+  # Controls what kind of EC2 instance we should launch to prepare the new AMI.
+  # Also indicates the logging bucket.
   MyInfrastructure:
     Type: AWS::ImageBuilder::InfrastructureConfiguration
     Properties: 
@@ -111,7 +117,7 @@ Resources:
       Distributions: 
       - Region: !Ref AWS::Region
         AmiDistributionConfiguration:
-            Name: 'AmiCopyConfiguration - {{ imagebuilder:buildDate }}'
+            Name: 'MySpringBootDemo-{{ imagebuilder:buildDate }}'
             Description: 'description'
             AmiTags:
                 AmiTagKey: 'AmiTagValue'
@@ -141,14 +147,17 @@ Resources:
             Action:
               - sts:AssumeRole
       Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action: ssm:*
-                Resource: "*"
+      - PolicyName: root
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${S3LoggingBucket}/*
 
   # Attach EC2Role's permissions to each ECS Instance.
   EC2InstanceProfile:
