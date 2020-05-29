@@ -122,7 +122,8 @@ Resources:
             AmiTags:
                 AmiTagKey: 'AmiTagValue'
 
-  # Ingress not needed.
+  # This security group is used on the 'infrastructure' EC2 instance.
+  # Its only purpose is to allow downloads; no ingress needed.
   EmptySecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -132,7 +133,9 @@ Resources:
       - Key: Name
         Value: EmptySecurityGroup
 
-  # Role to be assumed by the EC2 instance when building the image.  Not sure what permissions (if any) are needed:
+  # Role to be assumed by the EC2 instance when building the image.  
+  # Permissions are described here:  https://docs.aws.amazon.com/imagebuilder/latest/userguide/image-builder-setting-up.html#image-builder-IAM-prereq
+  # Allow the instance to write logs to the S3 bucket/prefix you specified earlier.
   InstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -159,7 +162,7 @@ Resources:
             Action: s3:PutObject
             Resource: !Sub arn:aws:s3:::${S3LoggingBucket}/*
 
-  # Attach EC2Role's permissions to each ECS Instance.
+  # Attach EC2Role's permissions to the EC2 Instance.
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
