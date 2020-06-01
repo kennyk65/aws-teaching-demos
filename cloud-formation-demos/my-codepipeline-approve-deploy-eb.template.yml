@@ -168,7 +168,7 @@ Resources:
   MyBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MyBuild" ]]
+      Name: !Sub ${AWS::StackName}-SoftwareBuild
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -206,7 +206,7 @@ Resources:
   MyTests:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MyTests" ]]  
+      Name: !Sub ${AWS::StackName}-SoftwareTest
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -353,6 +353,21 @@ Resources:
       Subscription:
         - Endpoint: !Ref emailAddress
           Protocol: email
+
+  # CloudWatch Logs Groups are created automatically when CodeBuild writes output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroupBuild:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-SoftwareBuild
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupTest:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-SoftwareTest
+      RetentionInDays: 3
+
 
 Outputs:
   CodeBuild:

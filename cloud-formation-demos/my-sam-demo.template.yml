@@ -9,7 +9,7 @@ Resources:
   MyLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-HelloWorldLambda' ]] 
+      FunctionName: !Sub ${AWS::StackName}-HelloWorldLambda
       Description: Example Lambda from CloudFormation
       MemorySize: 128
       Timeout: 4
@@ -88,6 +88,14 @@ Resources:
           Resource: "*"
       Roles: 
         -  !Ref LambdaFunctionRole
+
+  # CloudWatch Logs Groups are created automatically when Lambdas execute, but they are retained forever by default.
+  # To control this, make them part of the stack:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-HelloWorldLambda
+      RetentionInDays: 3
 
 Outputs:
 

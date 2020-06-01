@@ -71,7 +71,7 @@ Resources:
   MyBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name:  !Join ['', [!Ref 'AWS::StackName', "-CodeBuildDemo" ]]
+      Name:  !Sub ${AWS::StackName}-CodeBuildDemo
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -92,6 +92,13 @@ Resources:
         Type: S3
         Location: !Sub ${OutputS3Bucket}/cache
 
+  # CloudWatch Logs Groups are created automatically when CodeBuild writes output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-CodeBuildDemo
+      RetentionInDays: 3
 
 Outputs:
   CodeBuild:

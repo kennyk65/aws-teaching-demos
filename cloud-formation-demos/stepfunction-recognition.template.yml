@@ -22,6 +22,7 @@ Resources:
   # This role is shared (!) by the rekognition function and human notification function:
   rekRole:
     Type: AWS::IAM::Role
+    DependsOn: CloudwatchLogsGroupCleanup    # We need this logs group to be one of the last things deleted.
     Properties:
       RoleName: !Sub ${AWS::StackName}-rekRole
       AssumeRolePolicyDocument:
@@ -105,8 +106,8 @@ Resources:
           - Effect: Allow
             Action: lambda:InvokeFunction
             Resource: 
-            - !GetAtt rekFunction.Arn
-            - !GetAtt notificationFunction.Arn
+            - !GetAtt RekFunction.Arn
+            - !GetAtt NotificationFunction.Arn
       Roles: [ !Ref StateMachineRole ]
 
   #  Bucket into which one can upload images.  If images contain a human, you will be notified.
@@ -179,9 +180,10 @@ Resources:
 
 
   # This Lambda is called by step functions to do image recognition.  It looks for humans in the picture.
-  rekFunction:
+  RekFunction:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: !Sub ${AWS::StackName}-RecognitionFunction
       Code:
         ZipFile: !Sub |
           from __future__ import print_function
@@ -217,9 +219,10 @@ Resources:
   # This Lambda is called by step functions when a human is found.  
   # It sends an SNS notification - you can't do this directly from Step Functions.
   # TODO: REPLACE THIS WITH DIRECT CALL FROM STEP FUNCTIONS, SEE https://docs.aws.amazon.com/step-functions/latest/dg/connect-sns.html
-  notificationFunction:
+  NotificationFunction:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: !Sub ${AWS::StackName}-NotificationFunction
       Code:
         ZipFile: !Sub |
           from __future__ import print_function
@@ -257,7 +260,7 @@ Resources:
           "States": {
             "Process Image": {
               "Type":"Task",
-              "Resource":  "${rekFunction.Arn}",
+              "Resource":  "${RekFunction.Arn}",
               "Next": "Human Found?"
             },
             "Human Found?":{
@@ -269,7 +272,7 @@ Resources:
             },
             "Process Human":{
               "Type":"Task",
-              "Resource": "${notificationFunction.Arn}",
+              "Resource": "${NotificationFunction.Arn}",
               "Next":"We succeeded! Yay!"
             },
             "Other Processing": {
@@ -295,7 +298,7 @@ Resources:
   # This function will cleanup our buckets to allow delete
   CleanupLambda:
     Type: AWS::Lambda::Function
-    DependsOn: CleanupCustomResourcePolicy
+    DependsOn: [CleanupCustomResourcePolicy, CloudwatchLogsGroupCleanup]
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-CleanupFunction
       Role: !GetAtt CleanupCustomResourceRole.Arn
@@ -364,6 +367,25 @@ Resources:
       Roles: 
         -  !Ref CleanupCustomResourceRole   
 
+  # CloudWatch Logs Groups are created automatically when Lambdas execute, but they are retained forever by default.
+  # To control this, make them part of the stack:
+  CloudwatchLogsGroupNotification:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${NotificationFunction}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupCleanup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-CleanupFunction
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupRek:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${RekFunction}
+      RetentionInDays: 3
 
 Outputs:
 

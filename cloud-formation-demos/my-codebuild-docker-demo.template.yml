@@ -5,6 +5,8 @@ AWSTemplateFormatVersion: 2010-09-09
 # Buildspec from that repository will be ignored in place of what is here.
 # The build is using Java, but this could be adjusted to other languages.
 # Much of the work involves setup of the role / policy, so you have to allow this when you run.
+# On delete, there was no (easy) way to clear out the ECR repository, so do this manually.
+
 
 Parameters:
 
@@ -134,6 +136,14 @@ Resources:
           - LOCAL_CUSTOM_CACHE
           - LOCAL_DOCKER_LAYER_CACHE
           - LOCAL_SOURCE_CACHE
+
+  # CloudWatch Logs Groups are created automatically when CodeBuild writes output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-CodeBuildDemo
+      RetentionInDays: 3
 
 Outputs:
   CodeBuild:
