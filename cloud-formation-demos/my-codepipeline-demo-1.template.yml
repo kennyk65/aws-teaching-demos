@@ -35,39 +35,39 @@ Resources:
   # This Role allows CodeBuild to do certain things on our behalf.
   # See the policy for the interesting stuff:
   CodeBuildRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodeBuildRole  
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codebuild.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Role allows CodePipeline to make certain things on our behalf:
   # See the policy for the interesting stuff:
   CodePipelineRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodePipelineRole  
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codepipeline.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodeBuildRole.
   # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodeBuildPolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodeBuildPolicy
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -84,11 +84,11 @@ Resources:
   # This Policy is attached to the CodePipelineRole.
   # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodePipelinePolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodePipelinePolicy
+      PolicyName: !Sub ${AWS::StackName}-CodePipelinePolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
@@ -108,17 +108,17 @@ Resources:
 
   # General Bucket where CodePipeline will store things:
   S3:
-    Type: "AWS::S3::Bucket"
+    Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}-${AWS::Region}
 
 
   # This CodeBuild project is part of the CodePipeline below.
   # It runs a Java / Maven build.  
   MyBuild:
-    Type: "AWS::CodeBuild::Project"
+    Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyBuild
+      Name: !Sub ${AWS::StackName}-MyBuild
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -130,6 +130,9 @@ Resources:
             # The post_build explicitly copies the output to an S3 bucket 
             # because, while this is easy to do in CodeBuild, it is surprisingly difficult to automate in CodePipeline.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               pre_build:
                 commands:
                   - echo Testing started on `date`
@@ -145,19 +148,18 @@ Resources:
                   - echo Copying WAR file to S3
                   - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
 
-
   # This is the CodePipeline with its stages:
   MyPipe:
-    Type: "AWS::CodePipeline::Pipeline"
+    Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: MyPipe
+      Name: !Sub ${AWS::StackName}-MyPipe
       ArtifactStore: 
         Location: !Ref S3
         Type: S3

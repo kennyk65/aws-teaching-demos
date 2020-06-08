@@ -180,6 +180,9 @@ Resources:
             # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Build started on `date`
@@ -195,9 +198,9 @@ Resources:
             # So a suggestion on the forum https://forums.aws.amazon.com/thread.jspa?threadID=244614 is to upload the unzipped folder produced by Maven before it makes the WAR.
             # So the ZIP file contains the same contents of the WAR.  When EB gets it, it unzips it an deploys it without issue - go figure.
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -216,15 +219,18 @@ Resources:
             version: 0.2
             # This AWS CodeBuild buildspec runs the maven tests only.  No output.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Testing started on `date`
                   - mvn test
                   - echo Testing finished on `date`
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 

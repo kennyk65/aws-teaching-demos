@@ -36,39 +36,39 @@ Resources:
   # This Role allows CodeBuild to do certain things on our behalf.
   # See the policy for the interesting stuff:
   CodeBuildRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodeBuildRole  
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codebuild.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Role allows CodePipeline to make certain things on our behalf:
   # See the policy for the interesting stuff:
   CodePipelineRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodePipelineRole  
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codepipeline.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodeBuildRole.
   # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodeBuildPolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodeBuildPolicy
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -85,11 +85,11 @@ Resources:
   # This Policy is attached to the CodePipelineRole.
   # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodePipelinePolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodePipelinePolicy
+      PolicyName: !Sub ${AWS::StackName}-CodePipelinePolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
@@ -109,18 +109,18 @@ Resources:
 
   # General Bucket where CodePipeline will store things:
   S3:
-    Type: "AWS::S3::Bucket"
+    Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}-${AWS::Region}
 
 
   # This CodeBuild project runs packaging only, tests are separate.
   # This is a Java / Maven build.  Most of the details on how to to the build 
   # itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
   MyBuild:
-    Type: "AWS::CodeBuild::Project"
+    Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyBuild
+      Name: !Sub ${AWS::StackName}-MyBuild
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -132,6 +132,9 @@ Resources:
             # The output file is identified by its name only (getting rid of 'target' on the path), which means it will 
             # show up later in the S3 bucket with just its name and no pathing.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Build started on `date`
@@ -146,18 +149,18 @@ Resources:
                 - target/spring-cloud-aws-environment-demo-1.war
               discard-paths: yes
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
   # This CodeBuild project runs unit tests only.  
   # The intent is to run parallel to the packaging to decrease build duration.
   MyTests:
-    Type: "AWS::CodeBuild::Project"
+    Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyTests
+      Name: !Sub ${AWS::StackName}-MyTests
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -167,15 +170,18 @@ Resources:
             version: 0.2
             # This AWS CodeBuild buildspec runs the maven tests only.  No output.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Testing started on `date`
                   - mvn test
                   - echo Testing finished on `date`
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -183,7 +189,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: MyPipe
+      Name: !Sub ${AWS::StackName}-MyPipe
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
