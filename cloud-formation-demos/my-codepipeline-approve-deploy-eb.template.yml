@@ -44,7 +44,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -58,7 +58,7 @@ Resources:
   CodeBuildPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -79,7 +79,7 @@ Resources:
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelineRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -93,7 +93,7 @@ Resources:
   CodePipelinePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]] 
+      PolicyName: !Sub ${AWS::StackName}-CodePipelinePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -121,7 +121,7 @@ Resources:
   BeanstalkServiceRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServiceRole" ]]
+      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -134,7 +134,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServicePolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-BeanstalkServicePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -159,7 +159,7 @@ Resources:
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}${AWS::Region}
 
 
   # This CodeBuild project runs packaging only, tests are separate.
@@ -238,7 +238,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MyPipe" ]]
+      Name: !Sub ${AWS::StackName}-MyPipe
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
@@ -331,14 +331,14 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: !Join ['', [!Ref 'AWS::StackName', "-TestApplication" ]] 
+      ApplicationName: !Sub ${AWS::StackName}-TestApplication
       Description: Quick live-test environment for the app.
 
   MyBeanstalkEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
-      EnvironmentName: TestEnvironment
+      EnvironmentName: !Sub ${AWS::StackName}-TestEnvironment
       Description: Quick live-test environment for the app.
       CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
       SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
