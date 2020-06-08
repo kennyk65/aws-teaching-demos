@@ -132,7 +132,8 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/docker:17.09.0
+        Image: aws/codebuild/standard:3.0  
+        PrivilegedMode: true      
         EnvironmentVariables:
         - Name: REPOSITORY_URI
           Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ServiceToBuild}
@@ -241,9 +242,9 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: ALBListenerRule  # Avoids transient error about TargetGroup not associated with a load balancer.
     Properties:
-        Fn::ImportValue: 
       ServiceName: !Sub ${AWS::StackName}-${ServiceToBuild}-Service
       Cluster: 
+        Fn::ImportValue:
           !Sub ${BaseStack}-ECSCluster
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1   # TODO: Autoscale
