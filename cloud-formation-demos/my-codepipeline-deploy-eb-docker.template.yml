@@ -151,8 +151,8 @@ Resources:
         Statement: 
           Effect: Allow
           Principal:
-            Service: "elasticbeanstalk.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: elasticbeanstalk.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the BeanstalkServiceRole.
   BeanstalkServicePolicy:
@@ -199,8 +199,7 @@ Resources:
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Sub ${CodePipelineBucketPrefix}${AWS::Region}
-
+      BucketName: !Sub ${CodePipelineBucketPrefix}-${AWS::Region}
 
 
   # This CodeBuild project runs packaging, tests are separate.
@@ -220,6 +219,9 @@ Resources:
             # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               pre_build:
                 commands:
                   - aws --version
@@ -235,7 +237,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8      
+        Image: aws/codebuild/standard:3.0
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -284,7 +286,8 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/docker:17.09.0
+        Image: aws/codebuild/standard:3.0  
+        PrivilegedMode: true      
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -303,6 +306,9 @@ Resources:
             version: 0.2
             # This AWS CodeBuild buildspec runs the maven tests only.  No output.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Testing started on `date`
@@ -311,7 +317,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -320,7 +326,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub ${AWS::StackName}-PipeFromGitHubToECS
+      Name: !Sub ${AWS::StackName}-PipeFromGitHubToEB
       ArtifactStore: 
         Location: !Ref S3
         Type: S3

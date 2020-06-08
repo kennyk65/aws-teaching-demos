@@ -32,7 +32,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName:  !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]  
+      RoleName:  !Sub ${AWS::StackName}-CodeBuildRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -47,7 +47,7 @@ Resources:
   CodeBuildPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -80,10 +80,9 @@ Resources:
         Location: !Ref InputGitHubRepo
         #  TODO - WEBHOOK???
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-    #   Image: aws/codebuild/java:openjdk-8   # Replace in 2019 by all-purpose images
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:3.0  
       Artifacts:
         Type: S3
         Name: !Ref OutputS3Prefix
