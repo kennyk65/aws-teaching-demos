@@ -51,7 +51,7 @@ Parameters:
   DockerRepository:
     Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
     Type: String
-    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-1
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo
 
   ContainerName:
     Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
@@ -71,7 +71,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -85,7 +85,7 @@ Resources:
   CodeBuildPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -111,7 +111,7 @@ Resources:
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelineRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -125,7 +125,7 @@ Resources:
   CodePipelinePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-CodePipelinePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -154,7 +154,7 @@ Resources:
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}${AWS::Region}
 
 
   # This CodeBuild project runs packaging, tests are separate.
@@ -162,7 +162,7 @@ Resources:
   MavenBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenBuild" ]]
+      Name: !Sub ${AWS::StackName}-MavenBuild
       Description: Maven build, packaging only (tests are run separately)
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -174,6 +174,9 @@ Resources:
             # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               pre_build:
                 commands:
                   - aws --version
@@ -189,14 +192,14 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8      
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
   DockerBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-DockerBuild" ]]
+      Name: !Sub ${AWS::StackName}-DockerBuild
       Description: Docker image build + push
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -235,7 +238,8 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/docker:17.09.0
+        Image: aws/codebuild/standard:3.0
+        PrivilegedMode: true      
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -246,7 +250,7 @@ Resources:
   MavenTests:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenTests" ]]
+      Name: !Sub ${AWS::StackName}-MavenTests
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -256,6 +260,9 @@ Resources:
             version: 0.2
             # This AWS CodeBuild buildspec runs the maven tests only.  No output.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Testing started on `date`
@@ -264,7 +271,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -273,7 +280,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Join ['', [!Ref 'AWS::StackName', "-PipeFromGitHubToECS" ]]
+      Name: !Sub ${AWS::StackName}-PipeFromGitHubToECS
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
@@ -370,7 +377,7 @@ Resources:
   ECSService:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: !Join ['', [!Ref 'AWS::StackName', "-SpringEnvironmentDemoECSService" ]]
+      ServiceName: !Sub ${AWS::StackName}-SpringEnvironmentDemoECSService
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
@@ -383,7 +390,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoTaskDefinition]]
+      Family: !Sub ${AWS::StackName}-SpringEnvironmentDemoTaskDefinition
       ContainerDefinitions:
 
         # We want to run a little Spring Boot app named "environment-demo",
@@ -407,7 +414,7 @@ Resources:
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoECSLogGroup]]
+      LogGroupName: !Sub ${AWS::StackName}-SpringEnvironmentDemoECSLogGroup
       RetentionInDays: 14
 
 Outputs:
