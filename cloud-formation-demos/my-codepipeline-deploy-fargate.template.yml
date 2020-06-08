@@ -65,6 +65,7 @@ Parameters:
   ClusterType:
     Description:  Do you want to deploy to a standard ECS cluster or Fargate cluster?  Fargate is easier, but more expensive.
     Type: String
+    Default: Fargate
     AllowedValues:
       - ECS
       - Fargate
@@ -94,7 +95,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -103,7 +104,7 @@ Resources:
             Service: codebuild.amazonaws.com
           Action: sts:AssumeRole
       Policies:
-      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodeBuildPolicy" ]]
+      - PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
         PolicyDocument: 
           Version: 2012-10-17
           Statement: 
@@ -127,7 +128,7 @@ Resources:
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelineRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -136,7 +137,7 @@ Resources:
             Service: codepipeline.amazonaws.com
           Action: sts:AssumeRole
       Policies:
-      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CodePipelinePolicy" ]]
+      - PolicyName: !Sub ${AWS::StackName}-CodePipelinePolicy
         PolicyDocument: 
           Version: 2012-10-17
           Statement: 
@@ -163,7 +164,7 @@ Resources:
   EcsTaskRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-EcsTaskRole" ]]
+      RoleName: !Sub ${AWS::StackName}-EcsTaskRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -172,7 +173,7 @@ Resources:
             Service: ecs-tasks.amazonaws.com
           Action: sts:AssumeRole
       Policies:
-      - PolicyName: !Join ['', [!Ref 'AWS::StackName', "-EcsTaskPolicy" ]]
+      - PolicyName: !Sub ${AWS::StackName}-EcsTaskPolicy
         PolicyDocument: 
           Version: 2012-10-17
           Statement: 
@@ -188,24 +189,24 @@ Resources:
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}${AWS::Region}
 
   # Security Group for the ECS containers when running in Fargate mode:
   EcsContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
+      GroupName: !Sub ${AWS::StackName}-EcsSecurityGroup
       GroupDescription: ECS Security Group
       VpcId: !Ref VpcId
       #  Inbound rules for HTTP on 80 and 8080:
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
+        FromPort: 80
+        ToPort: 80
         CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
-        FromPort: '8080'
-        ToPort: '8080'
+        FromPort: 8080
+        ToPort: 8080
         CidrIp: 0.0.0.0/0
 
 
@@ -214,7 +215,7 @@ Resources:
   MavenBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenBuild" ]]
+      Name: !Sub ${AWS::StackName}-MavenBuild
       Description: Maven build, packaging only (tests are run separately)
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -226,6 +227,9 @@ Resources:
             # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               pre_build:
                 commands:
                   - aws --version
@@ -241,14 +245,14 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8      
+        Image: aws/codebuild/standard:3.0  
       Artifacts:    
         Type: CODEPIPELINE
 
   DockerBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-DockerBuild" ]]
+      Name: !Sub ${AWS::StackName}-DockerBuild
       Description: Docker image build + push
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -287,7 +291,8 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/docker:17.09.0
+        Image: aws/codebuild/standard:3.0  
+        PrivilegedMode: true      
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -298,7 +303,7 @@ Resources:
   MavenTests:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Join ['', [!Ref 'AWS::StackName', "-MavenTests" ]]
+      Name: !Sub ${AWS::StackName}-MavenTests
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -308,6 +313,9 @@ Resources:
             version: 0.2
             # This AWS CodeBuild buildspec runs the maven tests only.  No output.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Testing started on `date`
@@ -316,7 +324,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0  
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -325,7 +333,7 @@ Resources:
   MyPipe:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Join ['', [!Ref 'AWS::StackName', "-PipeFromGitHubToECS" ]]
+      Name: !Sub ${AWS::StackName}-PipeFromGitHubToECS
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
@@ -422,7 +430,7 @@ Resources:
   ECSService:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: !Join ['', [!Ref 'AWS::StackName', "-SpringEnvironmentDemoECSService" ]]
+      ServiceName: !Sub ${AWS::StackName}-SpringEnvironmentDemoECSService
       LaunchType: !If [DeployToFargate, FARGATE, EC2]   # Fargate cluster is much less fuss to manage, but much more expensive.
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref TaskDefinition
@@ -442,7 +450,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoTaskDefinition]]
+      Family: !Sub ${AWS::StackName}-SpringEnvironmentDemoTaskDefinition
       ExecutionRoleArn: !GetAtt EcsTaskRole.Arn
       Cpu: 256                            # Required in Fargate, optional otherwise.
       Memory: 512                             # Required in Fargate, optional otherwise.
@@ -469,7 +477,7 @@ Resources:
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Join ['', [!Ref 'AWS::StackName', -SpringEnvironmentDemoECSLogGroup]]
+      LogGroupName: !Sub ${AWS::StackName}-SpringEnvironmentDemoECSLogGroup
       RetentionInDays: 14
 
 Outputs:
