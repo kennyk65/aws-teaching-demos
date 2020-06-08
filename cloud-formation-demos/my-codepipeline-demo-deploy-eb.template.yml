@@ -37,25 +37,25 @@ Resources:
   # This Role allows CodeBuild to do certain things on our behalf.
   # See the policy for the interesting stuff:
   CodeBuildRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodeBuildRole  
+      RoleName: !Sub ${AWS::StackName}-CodeBuildRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codebuild.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodeBuildRole.
   # CodeBuild is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodeBuildPolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: CodeBuildPolicy
+      PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
@@ -72,25 +72,25 @@ Resources:
   # This Role allows CodePipeline to make certain things on our behalf:
   # See the policy for the interesting stuff:
   CodePipelineRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodePipelineRole  
+      RoleName: !Sub ${AWS::StackName}-CodePipelineRole  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "codepipeline.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the CodePipelineRole.
   # CodePipeline is allowed carte blanche on S3, CodeBuild, and CloudWatch Logs; could probably be tightened quite a bit.
   CodePipelinePolicy:
-    Type: "AWS::IAM::Policy"
+    Type: AWS::IAM::Policy
     Properties: 
       PolicyName: CodePipelinePolicy
       PolicyDocument: 
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
           Effect: Allow
           # I can't quite determine which S3 permission CodePipeline wants.  The one-click policy grants everything...
@@ -113,16 +113,16 @@ Resources:
 
   # This Role is given to the ElasticBeanstalk environment:
   BeanstalkServiceRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties: 
-      RoleName: BeanstalkServiceRole  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
           Effect: Allow
           Principal:
-            Service: "elasticbeanstalk.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: elasticbeanstalk.amazonaws.com
+          Action: sts:AssumeRole
 
   # This Policy is attached to the BeanstalkServiceRole.
   BeanstalkServicePolicy:
@@ -185,18 +185,18 @@ Resources:
 
   # General Bucket where CodePipeline will store things:
   S3:
-    Type: "AWS::S3::Bucket"
+    Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}-${AWS::Region}
 
 
   # This CodeBuild project runs packaging only, tests are separate.
   # This is a Java / Maven build.  Most of the details on how to to the build 
   # itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
   MyBuild:
-    Type: "AWS::CodeBuild::Project"
+    Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyBuild
+      Name: !Sub ${AWS::StackName}-MyBuild
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -208,6 +208,9 @@ Resources:
             # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Build started on `date`
@@ -226,20 +229,19 @@ Resources:
             # ElasticBeanstalk doesn't know how to deploy this, and there is no way to make code pipeline stop its zipping.
             # So a suggestion on the forum https://forums.aws.amazon.com/thread.jspa?threadID=244614 is to upload the unzipped folder produced by Maven before it makes the WAR.
             # So the ZIP file contains the same contents of the WAR.  When EB gets it, it unzips it an deploys it without issue - go figure.
-            
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
   # This CodeBuild project runs unit tests only.  
   # The intent is to run parallel to the packaging to decrease build duration.
   MyTests:
-    Type: "AWS::CodeBuild::Project"
+    Type: AWS::CodeBuild::Project
     Properties: 
-      Name: MyTests
+      Name: !Sub ${AWS::StackName}-MyTests
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -249,23 +251,26 @@ Resources:
             version: 0.2
             # This AWS CodeBuild buildspec runs the maven tests only.  No output.
             phases:
+              install:
+                runtime-versions:
+                  java: openjdk8  
               build:
                 commands:
                   - echo Testing started on `date`
                   - mvn test
                   - echo Testing finished on `date`
       Environment:
-        Type: "LINUX_CONTAINER"
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:3.0        
       Artifacts:    
         Type: CODEPIPELINE
 
   # This is the CodePipeline with its stages:
   MyPipe:
-    Type: "AWS::CodePipeline::Pipeline"
+    Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: MyPipe
+      Name: !Sub ${AWS::StackName}-MyPipe
       ArtifactStore: 
         Location: !Ref S3
         Type: S3
@@ -344,14 +349,14 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: TestApplication
+      ApplicationName: !Sub ${AWS::StackName}-TestApplication
       Description: Quick live-test environment for the app.
 
   MyBeanstalkEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
     Properties:
       ApplicationName: !Ref MyBeanstalkApplication
-      EnvironmentName: TestEnvironment
+      EnvironmentName: !Sub ${AWS::StackName}-TestEnvironment
       Description: Quick live-test environment for the app.
       CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
       SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
