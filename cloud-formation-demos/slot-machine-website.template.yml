@@ -44,6 +44,7 @@ Resources:
   # It only needs permissions to write to its own log files
   RoleSlotMachineLambda:
     Type: AWS::IAM::Role
+    DependsOn: CustomResourceWebContentLambda   # Roles are created early and deleted late.  This forces the log group to be deleted late.
     Properties: 
       RoleName: !Sub ${AWS::StackName}-SlotMachine-LambdaRole
       AssumeRolePolicyDocument:
