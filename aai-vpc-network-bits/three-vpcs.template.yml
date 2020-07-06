@@ -18,13 +18,6 @@ Parameters:
     Default: https://aws-vpc-aai-network-bits.s3.amazonaws.com/base-vpc-example-improved.template.yml
     Description: The location on S3 of the CloudFormation template used to create individual VPCs.
 
-  TransitGatewayStack:
-    Type: String 
-    Description:  Name of the stack which produces the transit gateway
-    Default:  TransitGatewayStack
-
-  
-
 Mappings:
   RegionMap:
     ap-southeast-1:           # Singapore
@@ -42,6 +35,11 @@ Mappings:
 
 Resources:
 
+  TransitGateway:
+    Type: AWS::EC2::TransitGateway
+    Properties: 
+      AutoAcceptSharedAttachments: enable   # Hoping this makes attaching VPCs easier
+
   VPCAlpha:
     Type: AWS::CloudFormation::Stack
     Properties: 
@@ -49,10 +47,8 @@ Resources:
         SecondOctet: !FindInMap [ RegionMap, !Ref "AWS::Region", VpcAlphaOctet]
         CidrLambdaArn: !GetAtt CustomResourceLambda.Arn
         PrivateSubnets: false
-        TransitGatewayStack:  !Ref TransitGatewayStack
-        TransitGatewayId:
-          Fn::ImportValue:
-            !Sub ${TransitGatewayStack}-TransitGatewayId 
+#        TransitGatewayStack:  !Ref TransitGatewayStack
+        TransitGatewayId:  !Ref TransitGateway
       Tags: 
       - Key: Name
         Value: !Sub ${AWS::StackName}-VPCAlpha
@@ -66,10 +62,8 @@ Resources:
         SecondOctet: !FindInMap [ RegionMap, !Ref "AWS::Region", VpcBetaOctet]
         CidrLambdaArn: !GetAtt CustomResourceLambda.Arn
         PrivateSubnets: false
-        TransitGatewayStack:  !Ref TransitGatewayStack
-        TransitGatewayId:
-          Fn::ImportValue:
-            !Sub ${TransitGatewayStack}-TransitGatewayId 
+#        TransitGatewayStack:  !Ref TransitGatewayStack
+        TransitGatewayId:  !Ref TransitGateway
       Tags: 
       - Key: Name
         Value: !Sub ${AWS::StackName}-VPCBeta
@@ -83,10 +77,8 @@ Resources:
         SecondOctet: !FindInMap [ RegionMap, !Ref "AWS::Region", VpcGammaOctet]
         CidrLambdaArn: !GetAtt CustomResourceLambda.Arn
         PrivateSubnets: false
-        TransitGatewayStack:  !Ref TransitGatewayStack
-        TransitGatewayId:
-          Fn::ImportValue:
-            !Sub ${TransitGatewayStack}-TransitGatewayId 
+#        TransitGatewayStack:  !Ref TransitGatewayStack
+        TransitGatewayId:  !Ref TransitGateway
       Tags: 
       - Key: Name
         Value: !Sub ${AWS::StackName}-VPCGamma
@@ -184,9 +176,10 @@ Resources:
   #       Value: GammaBetaPeer
 
 
-# Outputs:
-#   CidrLambdaArn:
-#     Description: The ARN of the CIDR generating Lambda function
-#     Value: !GetAtt CustomResourceLambda.Arn
-#     Export:
-#       Name: !Sub ${AWS::StackName}-CidrLambdaArn
+Outputs:
+  TransitGatewayId:
+    Description: The ID of the Transit Gateway created in this region
+    Value: !Ref TransitGateway
+    Export:
+      Name: !Sub ${AWS::StackName}-TransitGatewayId
+

@@ -32,9 +32,9 @@ Parameters:
     Type: String
     Description:  ARN of the Lambda used to acquire CIDR addresses
 
-  TransitGatewayStack:
-    Type: String
-    Description:  Name of the CloudFormation stack containing the transit gateway
+  # TransitGatewayStack:
+  #   Type: String
+  #   Description:  Name of the CloudFormation stack containing the transit gateway
 
   TransitGatewayId:
     Type:  String
@@ -45,44 +45,44 @@ Conditions:
   # HOW TO MAKE TRANSIT GATEWAY CONDITIONAL?
 
 
-Mappings:
-  RegionMap:
-    ap-southeast-1:           # Singapore
-      Vpc1: 10.1.0.0/16
-      Vpc2: 10.2.0.0/16
-      Vpc3: 10.3.0.0/16
-      Vpc4: 10.4.0.0/16
-      Vpc5: 10.5.0.0/16
-      PublicSubnet1A:  10.1.10.0/24
-      PublicSubnet1B:  10.1.20.0/24
-      PublicSubnet1C:  10.1.30.0/24
-      PrivateSubnet1A: 10.1.50.0/24
-      PrivateSubnet1B: 10.1.60.0/24
-      PrivateSubnet1C: 10.1.70.0/24
-    ap-southeast-2:           # Sydney
-      Vpc1: 10.11.0.0/16
-      Vpc2: 10.12.0.0/16
-      Vpc3: 10.13.0.0/16
-      Vpc4: 10.14.0.0/16
-      Vpc5: 10.15.0.0/16
-      PublicSubnet1A:  10.11.10.0/24
-      PublicSubnet1B:  10.11.20.0/24
-      PublicSubnet1C:  10.11.30.0/24
-      PrivateSubnet1A: 10.11.50.0/24
-      PrivateSubnet1B: 10.11.60.0/24
-      PrivateSubnet1C: 10.11.70.0/24
-    ap-northeast-1:           # Tokyo
-      Vpc1: 10.21.0.0/16
-      Vpc2: 10.22.0.0/16
-      Vpc3: 10.23.0.0/16
-      Vpc4: 10.24.0.0/16
-      Vpc5: 10.25.0.0/16
-      PublicSubnet1A:  10.21.10.0/24
-      PublicSubnet1B:  10.21.20.0/24
-      PublicSubnet1C:  10.21.30.0/24
-      PrivateSubnet1A: 10.21.50.0/24
-      PrivateSubnet1B: 10.21.60.0/24
-      PrivateSubnet1C: 10.21.70.0/24
+# Mappings:
+#   RegionMap:
+#     ap-southeast-1:           # Singapore
+#       Vpc1: 10.1.0.0/16
+#       Vpc2: 10.2.0.0/16
+#       Vpc3: 10.3.0.0/16
+#       Vpc4: 10.4.0.0/16
+#       Vpc5: 10.5.0.0/16
+#       PublicSubnet1A:  10.1.10.0/24
+#       PublicSubnet1B:  10.1.20.0/24
+#       PublicSubnet1C:  10.1.30.0/24
+#       PrivateSubnet1A: 10.1.50.0/24
+#       PrivateSubnet1B: 10.1.60.0/24
+#       PrivateSubnet1C: 10.1.70.0/24
+#     ap-southeast-2:           # Sydney
+#       Vpc1: 10.11.0.0/16
+#       Vpc2: 10.12.0.0/16
+#       Vpc3: 10.13.0.0/16
+#       Vpc4: 10.14.0.0/16
+#       Vpc5: 10.15.0.0/16
+#       PublicSubnet1A:  10.11.10.0/24
+#       PublicSubnet1B:  10.11.20.0/24
+#       PublicSubnet1C:  10.11.30.0/24
+#       PrivateSubnet1A: 10.11.50.0/24
+#       PrivateSubnet1B: 10.11.60.0/24
+#       PrivateSubnet1C: 10.11.70.0/24
+#     ap-northeast-1:           # Tokyo
+#       Vpc1: 10.21.0.0/16
+#       Vpc2: 10.22.0.0/16
+#       Vpc3: 10.23.0.0/16
+#       Vpc4: 10.24.0.0/16
+#       Vpc5: 10.25.0.0/16
+#       PublicSubnet1A:  10.21.10.0/24
+#       PublicSubnet1B:  10.21.20.0/24
+#       PublicSubnet1C:  10.21.30.0/24
+#       PrivateSubnet1A: 10.21.50.0/24
+#       PrivateSubnet1B: 10.21.60.0/24
+#       PrivateSubnet1C: 10.21.70.0/24
 
 
 Resources:
@@ -198,6 +198,13 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
+  PublicRoute2:   # Public route table has routing to transit gateway:
+    Type: AWS::EC2::Route
+    DependsOn: TransitGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 10.0.0.0/8
+      TransitGatewayId: !Ref TransitGatewayId
       
   # Here is a private route table:
   PrivateRouteTable:
@@ -215,6 +222,14 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NATGateway
+  PrivateRoute2:            # Private route table can access transit gateway
+    Type: AWS::EC2::Route
+    Condition: BuildPrivateSubnets
+    DependsOn: TransitGatewayAttachment
+    Properties: 
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 10.0.0.0/8
+      TransitGatewayId: !Ref TransitGatewayId
 
 
   # Attach the public subnets to public route tables, 
@@ -254,6 +269,7 @@ Resources:
         Value: !Sub NAT-${AWS::StackName}
   ElasticIPAddress:
     Type: AWS::EC2::EIP
+    Condition: BuildPrivateSubnets
     Properties:
       Domain: VPC
 
