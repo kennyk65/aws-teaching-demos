@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# 1.       If you still have last week’s architecture in your account, make sure you have broken the VPC Peering 
+#     that was created as part of that challenge. If not, deploy 3 VPCs, each with 5 CIDRs in 3 distinct Regions with no peering.
+#2.       Design the same globally distributed and logically separated network as last week, but this time do it using AWS Transit Gateway.
+#3.       Extra step: Give the EC2 instances the ability to download patches from the Internet while still communicating using AWS Transit Gateway.
+ 
+
+
+Resources:
+
+  TransitGateway:
+    Type: AWS::EC2::TransitGateway
+    Properties: 
+      AutoAcceptSharedAttachments: enable   # Hoping this makes attaching VPCs easier
+
+Outputs:
+  TransitGatewayId:
+    Description: Main Transit Gateway
+    Value: !Ref TransitGateway
+    Export:
+      Name: !Sub ${AWS::StackName}-TransitGatewayId

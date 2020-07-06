@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# 1.  Select 3 distinct AWS Regions where the following services are offered: AWS Transit Gateway, 
+#     AWS PrivateLink and AWS CloudTrail. (Note that this is necessary because in subsequent challenges 
+#     you’ll be building off of this solution by leveraging these services.)
+# 2.  Create 3 VPCs inside each Region.
+# 3.  Create 5 CIDR blocks per VPC.
+# 4.  Apply VPC best practices on your IP space design.
+# 5.  Peer VPCs across all 3 Regions to create a full-mesh topology while maintaining logical separation 
+#     amongst the 3 VPCs in any given Region.
+# 6.  Launch one EC2 instance in each Region and make sure all instances can communicate by implementing 
+#     Security Groups that only allow communication from the instances.
+ 
+
+Parameters:
+  VpcCreationTemplateUrl:
+    Type: String
+    Default: https://aws-vpc-aai-network-bits.s3.amazonaws.com/base-vpc-example-improved.template.yml
+    Description: The location on S3 of the CloudFormation template used to create individual VPCs.
+
+  TransitGatewayStack:
+    Type: String 
+    Description:  Name of the stack which produces the transit gateway
+    Default:  TransitGatewayStack
+
+  
+
+Mappings:
+  RegionMap:
+    ap-southeast-1:           # Singapore
+      VpcAlphaOctet: 10
+      VpcBetaOctet: 20
+      VpcGammaOctet: 30
+    ap-southeast-2:           # Sydney
+      VpcAlphaOctet: 40
+      VpcBetaOctet: 50
+      VpcGammaOctet: 60
+    ap-northeast-1:           # Tokyo
+      VpcAlphaOctet: 70
+      VpcBetaOctet: 80
+      VpcGammaOctet: 90
+
+Resources:
+
+  VPCAlpha:
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      Parameters: 
+        SecondOctet: !FindInMap [ RegionMap, !Ref "AWS::Region", VpcAlphaOctet]
+        CidrLambdaArn: !GetAtt CustomResourceLambda.Arn
+        PrivateSubnets: false
+        TransitGatewayStack:  !Ref TransitGatewayStack
+        TransitGatewayId:
+          Fn::ImportValue:
+            !Sub ${TransitGatewayStack}-TransitGatewayId 
+      Tags: 
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-VPCAlpha
+      TemplateURL: !Ref VpcCreationTemplateUrl
+      TimeoutInMinutes: 5
+
+  VPCBeta:
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      Parameters: 
+        SecondOctet: !FindInMap [ RegionMap, !Ref "AWS::Region", VpcBetaOctet]
+        CidrLambdaArn: !GetAtt CustomResourceLambda.Arn
+        PrivateSubnets: false
+        TransitGatewayStack:  !Ref TransitGatewayStack
+        TransitGatewayId:
+          Fn::ImportValue:
+            !Sub ${TransitGatewayStack}-TransitGatewayId 
+      Tags: 
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-VPCBeta
+      TemplateURL: !Ref VpcCreationTemplateUrl
+      TimeoutInMinutes: 5
+
+  VPCGamma:
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      Parameters: 
+        SecondOctet: !FindInMap [ RegionMap, !Ref "AWS::Region", VpcGammaOctet]
+        CidrLambdaArn: !GetAtt CustomResourceLambda.Arn
+        PrivateSubnets: false
+        TransitGatewayStack:  !Ref TransitGatewayStack
+        TransitGatewayId:
+          Fn::ImportValue:
+            !Sub ${TransitGatewayStack}-TransitGatewayId 
+      Tags: 
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-VPCGamma
+      TemplateURL: !Ref VpcCreationTemplateUrl
+      TimeoutInMinutes: 5
+
+  # This function will provide the CIDR values used by the VPC and subnets
+  CustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CustomResourceLambda
+      Description: Determine CIDR values to be used for the VPC and Subnets
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 3         # Usually runs in less than one second.
+      Runtime: python3.7
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          def lambda_handler(event, context):
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              secondOctet = int(event['ResourceProperties']['secondOctet'])
+
+              # If creating or updating...
+              responseData = {}
+              if requestType == 'Create' or requestType == 'Update':
+                  # Compute appropriate CIDR values for VPCs and Subnets.
+                  responseData['VpcCidr']       = '10.' + str(secondOctet) + '.0.0/16'
+                  responseData['VpcCidrExtra1'] = '10.' + str(secondOctet + 1) + '.0.0/16'
+                  responseData['VpcCidrExtra2'] = '10.' + str(secondOctet + 2) + '.0.0/16'
+                  responseData['VpcCidrExtra3'] = '10.' + str(secondOctet + 3) + '.0.0/16'
+                  responseData['VpcCidrExtra4'] = '10.' + str(secondOctet + 4) + '.0.0/16'
+                  responseData['PublicSubnetA'] = '10.' + str(secondOctet) + '.10.0/24'
+                  responseData['PublicSubnetB'] = '10.' + str(secondOctet) + '.20.0/24'
+                  responseData['PublicSubnetC'] = '10.' + str(secondOctet) + '.30.0/24'
+                  responseData['PrivateSubnetA'] = '10.' + str(secondOctet) + '.40.0/24'
+                  responseData['PrivateSubnetB'] = '10.' + str(secondOctet) + '.50.0/24'
+                  responseData['PrivateSubnetC'] = '10.' + str(secondOctet) + '.60.0/24'
+
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              return responseData
+
+  # Role attached to Lambda:
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: "*"
+
+  # AlphaBetaPeer:
+  #   Type: AWS::EC2::VPCPeeringConnection
+  #   Properties: 
+  #     VpcId:  !GetAtt VPCAlpha.Outputs.VPC
+  #     PeerVpcId: !GetAtt VPCBeta.Outputs.VPC
+  #     Tags: 
+  #     - Key: Name
+  #       Value: AlphaBetaPeer
+
+  # AlphaGammaPeer:
+  #   Type: AWS::EC2::VPCPeeringConnection
+  #   Properties: 
+  #     VpcId:  !GetAtt VPCAlpha.Outputs.VPC
+  #     PeerVpcId: !GetAtt VPCGamma.Outputs.VPC
+  #     Tags: 
+  #     - Key: Name
+  #       Value: AlphaGammaPeer
+
+  # GammaBetaPeer:
+  #   Type: AWS::EC2::VPCPeeringConnection
+  #   Properties: 
+  #     VpcId:  !GetAtt VPCGamma.Outputs.VPC
+  #     PeerVpcId: !GetAtt VPCBeta.Outputs.VPC
+  #     Tags: 
+  #     - Key: Name
+  #       Value: GammaBetaPeer
+
+
+# Outputs:
+#   CidrLambdaArn:
+#     Description: The ARN of the CIDR generating Lambda function
+#     Value: !GetAtt CustomResourceLambda.Arn
+#     Export:
+#       Name: !Sub ${AWS::StackName}-CidrLambdaArn
