@@ -19,6 +19,7 @@ Resources:
         ZipFile: !Sub |
           'use strict';
           console.log('Loading function');
+          console.log('just a test');
           exports.justatest = (event, context, callback) => {
               //console.log('Received event:', JSON.stringify(event, null, 2));
               console.log('value1 =', event.key1);
@@ -57,6 +58,7 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             - s3:putObject
+            - s3:get*
           Resource: "*"
       Roles: 
         -  !Ref LambdaFunctionRole   

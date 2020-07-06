@@ -21,6 +21,10 @@ Parameters:
     Default: aws-dev-3/PollyNotes-JavaSolutionFunctions.zip
     Description: object key inside your S3 bucket where your code is located.
 
+  WebSourceCodeUrl:
+    Type: String
+    Default:  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
+    Description:  Download location of the web source code.
 
 Globals:  # This section defines settings that we don't want to repeat over and over in each Lambda.
   Function:
@@ -71,11 +75,6 @@ Resources:
       ProvisionedThroughput:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
-
-  S3CodeBucket:
-    Type: AWS::S3::Bucket
-    Properties: 
-      BucketName: !Sub polly-notes-code-${FirstDashLastName}
 
   S3WebBucket:
     Type: AWS::S3::Bucket
@@ -622,6 +621,7 @@ Resources:
           import string
           import os
           import mimetypes
+          import urllib.request
 
           print('Loading function')
           s3 = boto3.client('s3')
@@ -637,18 +637,18 @@ Resources:
             usrPool = rp['CognitoUserPoolId']
             clientId = rp['CognitoClientId']
             apiGatewayUrl = rp['ApiGatewayUrl']
-            webCodeSourceBucket = rp['WebCodeSourceBucket']
-            webCodeSourceKey = rp['WebCodeSourceKey']
+            WebSourceCodeUrl = rp['WebSourceCodeUrl']
             destinationBucket = rp['DestinationBucket']
 
             if requestType == 'Create' or requestType == 'Update':
-                print ('Downloading ' + webCodeSourceBucket + "/" + webCodeSourceKey )
-                zip_file_name = "/tmp/web.zip"
+                print ('Downloading ' + WebSourceCodeUrl )
+                zip_file_name = "" # "/tmp/web.zip"
                 unzip_location =  "/tmp"
                 try:
-                    s3.download_file(webCodeSourceBucket, webCodeSourceKey, zip_file_name)
+                    zip_file_name, headers = urllib.request.urlretrieve(WebSourceCodeUrl)          
+
                 except Exception as e:
-                    msg = 'Error downloading object {} from bucket {}. Check region.  Exception is {}.'.format(webCodeSourceKey, webCodeSourceBucket,repr(e))
+                    msg = 'Error downloading from {}. Check region.  Exception is {}.'.format(WebSourceCodeUrl,repr(e))
                     print(msg)
                     responseData['Reason'] = msg
                     cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
@@ -768,10 +768,8 @@ Resources:
       CognitoUserPoolId: !Ref CognitoUserPool
       CognitoClientId: !Ref CognitoUserPoolClient
       ApiGatewayUrl: !Sub https://${TheApi}.execute-api.${AWS::Region}.amazonaws.com/prod
-      WebCodeSourceBucket: us-west-2-tcprod
-      WebCodeSourceKey: courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
       DestinationBucket: !Ref S3WebBucket
-
+      WebSourceCodeUrl: !Ref WebSourceCodeUrl
 
 Outputs:
 
@@ -794,11 +792,3 @@ Outputs:
   WebsiteUrl:
     Description:  Link to the website bucket.
     Value: !GetAtt S3WebBucket.WebsiteURL
-
-  # CreateUserCommand1:
-  #   Description:  Run this at the command line to create the user
-  #   Value:  !Sub aws cognito-idp sign-up --client-id ${CognitoUserPoolClient} --username student --password student --region ${AWS::Region}
-
-  # CreateUserCommand2:
-  #   Description:  Run this at the command line to confirm the user
-  #   Value:  !Sub aws cognito-idp admin-confirm-sign-up --user-pool-id ${CognitoUserPool} --username student --region ${AWS::Region}
