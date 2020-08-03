@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-# Stand up an EKS cluster.  
+# Stand up an EKS cluster backed by Amazon Linux instances.  
 
 Parameters:
   
@@ -8,16 +8,6 @@ Parameters:
     Type: String
     Description: The Minimum:Desired:Maximum number of EC2 worker nodes in the cluster.  
     Default:  "2:2:6"
-
-  NodeInstanceType:
-    Type: String
-    Default: t2.medium
-    AllowedValues:
-    - t2.small
-    - t2.medium
-    - t2.large
-    - t2.xlarge
-    - t2.2xlarge
 
   VpcId:
     Type: AWS::EC2::VPC::Id
@@ -34,8 +24,6 @@ Metadata:
       - Label:
           default: Worker Nodes
         Parameters:
-          - NodeInstanceType
-          - NodeImageId
           - ClusterSize
       - Label:
           default: Worker Network Configuration
@@ -43,36 +31,13 @@ Metadata:
           - VpcId
           - SubnetIds
 
-Mappings:
-  MaxPodsPerNode:
-    t2.small:
-      MaxPods: 8
-    t2.medium:
-      MaxPods: 17
-    t2.large:
-      MaxPods: 35
-    t2.xlarge:
-      MaxPods: 44
-    t2.2xlarge:
-      MaxPods: 44
-
-  # TODO: Expect that AWS will update and replace these images over time.  These are current as of October 2018:
-  NodeImageId:
-    us-west-2:
-      AMI: ami-0a54c984b9f908c81    # Oregon
-    us-east-1:
-      AMI: ami-0440e4f6b9713faf6    # N Virginia
-    eu-west-1:
-      AMI: ami-0c7a4976cb6fafd3a    # Ireland
-      
-
 Resources:
   
   #  This role Allows Amazon EKS to manage your clusters on your behalf
   EKSServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-EKSServiceRole" ]]
+      RoleName: !Sub ${AWS::StackName}-EKSServiceRole
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
@@ -87,7 +52,7 @@ Resources:
   EKSNodeRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-EKSNodeRole" ]]
+      RoleName: !Sub ${AWS::StackName}-EKSNodeRole
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
@@ -99,14 +64,6 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
 
-  # Attaches Role to the instances.
-  EKSNodeInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Path: /
-      Roles:
-      - !Ref EKSNodeRole
-
 
   # This security group governs what the control plane instances are allowed to call.
   ControlPlaneSecurityGroup:
@@ -116,7 +73,7 @@ Resources:
       VpcId: !Ref VpcId
       Tags:
       - Key: Name
-        Value: !Join ['', [!Ref "AWS::StackName", "-EKSControlPlaneSecurityGroup" ]]
+        Value: !Sub ${AWS::StackName}-EKSControlPlaneSecurityGroup
   
   ControlPlaneEgressToNodeSecurityGroup:
     Type: AWS::EC2::SecurityGroupEgress
@@ -148,7 +105,7 @@ Resources:
       VpcId: !Ref VpcId
       Tags:
       - Key: Name
-        Value: !Join ['', [!Ref "AWS::StackName", "-EKSNodeSecurityGroup" ]]
+        Value: !Sub ${AWS::StackName}-EKSNodeSecurityGroup
       - Key: !Sub "kubernetes.io/cluster/${EKSCluster}"
         Value: 'owned'
 
@@ -175,87 +132,31 @@ Resources:
       ToPort: 65535
 
 
-  # The EKS Cluster itself, a bit of an anticlimax.  This is basically the "Control Plane".
+  # The EKS Cluster itself, a bit of an anticlimax.  
   # The cluster will run in the subnets you specify using the Security Group above.
   # Can take up to 10 minutes for AWS to provision this, and it costs $.20 per hour.
-  EKSCluster:
+  Cluster:
     Type: AWS::EKS::Cluster
     Properties:
-      Name: !Join ['', [!Ref "AWS::StackName", "-EKSCluster" ]]
+      Name: !Sub ${AWS::StackName}-Cluster
       RoleArn: !GetAtt EKSServiceRole.Arn
       ResourcesVpcConfig: 
         SecurityGroupIds:
           - !Ref ControlPlaneSecurityGroup
         SubnetIds: !Ref SubnetIds
 
-  # This AutoScaleGroup establishes the worker nodes which run our containers.
   NodeGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      LaunchConfigurationName: !Ref NodeLaunchConfig
-      MinSize:         !Select [0,  !Split [ ":", !Ref ClusterSize ]]
-      DesiredCapacity: !Select [1,  !Split [ ":", !Ref ClusterSize ]]
-      MaxSize:         !Select [2,  !Split [ ":", !Ref ClusterSize ]]
-      VPCZoneIdentifier:
-        !Ref SubnetIds
-      Tags:
-      - Key: Name
-        Value: !Ref EKSCluster
-        PropagateAtLaunch: true
-      - Key: !Sub 'kubernetes.io/cluster/${EKSCluster}'
-        Value: owned
-        PropagateAtLaunch: true
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: 1
-        MaxBatchSize: 1
-
-  NodeLaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      AssociatePublicIpAddress: true    # This would really depend on whether your workers were launched in public vs private subnets.
-      IamInstanceProfile: !Ref EKSNodeInstanceProfile
-      ImageId: !FindInMap [ NodeImageId, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
-      InstanceType: !Ref NodeInstanceType
-      SecurityGroups:
-      - !Ref NodeSecurityGroup
-      UserData:
-        Fn::Base64:
-          Fn::Join: [
-            "",
-            [
-              "#!/bin/bash -xe\n",
-              "CA_CERTIFICATE_DIRECTORY=/etc/kubernetes/pki", "\n",
-              "CA_CERTIFICATE_FILE_PATH=$CA_CERTIFICATE_DIRECTORY/ca.crt", "\n",
-              "MODEL_DIRECTORY_PATH=~/.aws/eks", "\n",
-              "MODEL_FILE_PATH=$MODEL_DIRECTORY_PATH/eks-2017-11-01.normal.json", "\n",
-              "mkdir -p $CA_CERTIFICATE_DIRECTORY", "\n",
-              "mkdir -p $MODEL_DIRECTORY_PATH", "\n",
-              "curl -o $MODEL_FILE_PATH https://s3-us-west-2.amazonaws.com/amazon-eks/1.10.3/2018-06-05/eks-2017-11-01.normal.json", "\n",
-              "aws configure add-model --service-model file://$MODEL_FILE_PATH --service-name eks", "\n",
-              "aws eks describe-cluster --region=", { Ref: "AWS::Region" }," --name=", { Ref: EKSCluster }," --query 'cluster.{certificateAuthorityData: certificateAuthority.data, endpoint: endpoint}' > /tmp/describe_cluster_result.json", "\n",
-              "cat /tmp/describe_cluster_result.json | grep certificateAuthorityData | awk '{print $2}' | sed 's/[,\"]//g' | base64 -d >  $CA_CERTIFICATE_FILE_PATH", "\n",
-              "MASTER_ENDPOINT=$(cat /tmp/describe_cluster_result.json | grep endpoint | awk '{print $2}' | sed 's/[,\"]//g')", "\n",
-              "INTERNAL_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)", "\n",
-              "sed -i s,MASTER_ENDPOINT,$MASTER_ENDPOINT,g /var/lib/kubelet/kubeconfig", "\n",
-              "sed -i s,CLUSTER_NAME,", { Ref: EKSCluster }, ",g /var/lib/kubelet/kubeconfig", "\n",
-              "sed -i s,REGION,", { Ref: "AWS::Region" }, ",g /etc/systemd/system/kubelet.service", "\n",
-              "sed -i s,MAX_PODS,", { "Fn::FindInMap": [ MaxPodsPerNode, { Ref: NodeInstanceType }, MaxPods ] }, ",g /etc/systemd/system/kubelet.service", "\n",
-              "sed -i s,MASTER_ENDPOINT,$MASTER_ENDPOINT,g /etc/systemd/system/kubelet.service", "\n",
-              "sed -i s,INTERNAL_IP,$INTERNAL_IP,g /etc/systemd/system/kubelet.service", "\n",
-              "DNS_CLUSTER_IP=10.100.0.10", "\n",
-              "if [[ $INTERNAL_IP == 10.* ]] ; then DNS_CLUSTER_IP=172.20.0.10; fi", "\n",
-              "sed -i s,DNS_CLUSTER_IP,$DNS_CLUSTER_IP,g  /etc/systemd/system/kubelet.service", "\n",
-              "sed -i s,CERTIFICATE_AUTHORITY_FILE,$CA_CERTIFICATE_FILE_PATH,g /var/lib/kubelet/kubeconfig" , "\n",
-              "sed -i s,CLIENT_CA_FILE,$CA_CERTIFICATE_FILE_PATH,g  /etc/systemd/system/kubelet.service" , "\n",
-              "systemctl daemon-reload", "\n",
-              "systemctl restart kubelet", "\n",
-              "/opt/aws/bin/cfn-signal -e $? ",
-              "         --stack ", { Ref: "AWS::StackName" },
-              "         --resource NodeGroup ",
-              "         --region ", { Ref: "AWS::Region" }, "\n"
-            ]
-          ]
+    Type: AWS::EKS::Nodegroup
+    Properties: 
+      AmiType: AL2_x86_64
+      ClusterName: !Ref Cluster
+      NodegroupName: !Sub ${AWS::StackName}-NodeGroup
+      NodeRole: !GetAtt  EKSNodeRole.Arn
+      ScalingConfig: 
+        MinSize:     !Select [0,  !Split [ ":", !Ref ClusterSize ]]
+        DesiredSize: !Select [1,  !Split [ ":", !Ref ClusterSize ]]
+        MaxSize:     !Select [2,  !Split [ ":", !Ref ClusterSize ]]
+      Subnets: !Ref SubnetIds
 
 
 Outputs:
