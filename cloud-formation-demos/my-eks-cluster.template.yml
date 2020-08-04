@@ -65,71 +65,37 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
 
 
-  # This security group governs what the control plane instances are allowed to call.
-  ControlPlaneSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security Group for the EKS Control Plane
-      VpcId: !Ref VpcId
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-EKSControlPlaneSecurityGroup
-  
-  ControlPlaneEgressToNodeSecurityGroup:
-    Type: AWS::EC2::SecurityGroupEgress
-    DependsOn: NodeSecurityGroup
-    Properties:
-      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
-      GroupId: !Ref ControlPlaneSecurityGroup
-      DestinationSecurityGroupId: !Ref NodeSecurityGroup
-      IpProtocol: tcp
-      FromPort: 1025
-      ToPort: 65535
+  # # This security group replaces the default.  It is basically the same except it allows TCP ingress
+  # # on high-order ports, which allows us to use NodePort and LoadBalancer type services with the outside world.
+  # # Probably a more secure way to achieve this in a real-world example.
+  # ReplacementSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupName: !Sub ${AWS::StackName}-ReplacementEKSSecurityGroup
+  #     GroupDescription: Alternate security group for use in an EKS cluster.  Does the same as the default but also opens up high-order ports for external ingress.
+  #     VpcId: !Ref VpcId
+  #     Tags:
+  #     - Key: Name
+  #       Value: !Sub ${AWS::StackName}-ReplacementEKSSecurityGroup
 
-  ControlPlaneSecurityGroupIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
-    Properties:
-      Description: Allow pods to communicate with the cluster API Server
-      GroupId: !Ref ControlPlaneSecurityGroup
-      SourceSecurityGroupId: !Ref NodeSecurityGroup
-      IpProtocol: tcp
-      ToPort: 443
-      FromPort: 443
+  # ReplacementSecurityGroupIntercommunicationIngress:
+  #   Type: AWS::EC2::SecurityGroupIngress
+  #   Properties:
+  #     Description: Allow worker control plane and nodes to intercommunicate
+  #     GroupId: !Ref ReplacementSecurityGroup
+  #     SourceSecurityGroupId: !Ref ReplacementSecurityGroup
+  #     IpProtocol: "-1"
 
-  # This security group protects each worker node.
-  NodeSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for all nodes in the cluster
-      VpcId: !Ref VpcId
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-EKSNodeSecurityGroup
-      - Key: !Sub "kubernetes.io/cluster/${EKSCluster}"
-        Value: 'owned'
+  # ReplacementSecurityGroupGeneralIngress:
+  #   Type: AWS::EC2::SecurityGroupIngress
+  #   Properties:
+  #     Description: Allow outside parties to use high-order ports
+  #     GroupId: !Ref ReplacementSecurityGroup
+  #     IpProtocol: tcp
+  #     CidrIp: 0.0.0.0/0
+  #     FromPort: 1025
+  #     ToPort: 65535
 
-  NodeSecurityGroupIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
-    Properties:
-      Description: Allow node to communicate with each other
-      GroupId: !Ref NodeSecurityGroup
-      SourceSecurityGroupId: !Ref NodeSecurityGroup
-      IpProtocol: '-1'
-      FromPort: 0
-      ToPort: 65535
-
-  NodeSecurityGroupFromControlPlaneIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
-    Properties:
-      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
-      GroupId: !Ref NodeSecurityGroup
-      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
-      IpProtocol: tcp
-      FromPort: 1025
-      ToPort: 65535
 
 
   # The EKS Cluster itself, a bit of an anticlimax.  
@@ -141,8 +107,8 @@ Resources:
       Name: !Sub ${AWS::StackName}-Cluster
       RoleArn: !GetAtt EKSServiceRole.Arn
       ResourcesVpcConfig: 
-        SecurityGroupIds:
-          - !Ref ControlPlaneSecurityGroup
+        # SecurityGroupIds:
+        # - !Ref ReplacementSecurityGroup
         SubnetIds: !Ref SubnetIds
 
   NodeGroup:
@@ -163,19 +129,19 @@ Outputs:
 
   EKSClusterConsole:
     Description: AWS management console screen where you can look at your cluster
-    Value: !Join ['', ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/eks/home?region=", !Ref "AWS::Region", "#/clusters/", !Ref EKSCluster ]]
+    Value: !Join ['', ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/eks/home?region=", !Ref "AWS::Region", "#/clusters/", !Ref Cluster ]]
 
   ClusterName:
     Description: Name of the EKS Cluster
-    Value: !Ref EKSCluster
+    Value: !Ref Cluster
 
   CertificateAuthorityData:
     Description: The certificate-authority-data for your cluster.
-    Value: !GetAtt  EKSCluster.CertificateAuthorityData
+    Value: !GetAtt  Cluster.CertificateAuthorityData
 
   EKSEndpoint:
     Description: The endpoint for your Kubernetes API server.
-    Value: !GetAtt  EKSCluster.Endpoint
+    Value: !GetAtt  Cluster.Endpoint
 
   EKSNodeRole:
     Description: Role applied to the EKS Nodes.  Used when running kubectl apply -f aws-auth-cm.yaml
