@@ -66,12 +66,12 @@ Resources:
             inputs:
               commands: 
                 - yum -y update
-                - yum install wget java-1.8.0 -y
-                - wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
-                - mv spring-cloud-aws-environment-demo-1.war  app.war
-                - chmod +x app.war
+                - amazon-linux-extras install java-openjdk11 -y
+                - wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+                - mv *.jar app.jar
+                - chmod +x app.jar
                 - mkdir /var/app
-                - mv app.war /var/app
+                - mv app.jar /var/app
                 - cat > app.service <<EOF
                 - "[Unit]"
                 - Description=Spring Boot Demo
@@ -81,7 +81,7 @@ Resources:
                 - TimeoutStopSec=10
                 - Restart=on-failure
                 - RestartSec=5
-                - ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80
+                - ExecStart=/usr/bin/java -jar /var/app/app.jar --server.port=80
                 - "[Install]"
                 - WantedBy=multi-user.target
                 - EOF
