@@ -56,18 +56,18 @@ Resources:
         AssociatePublicIpAddress: true            # We will need a public IP address
         SubnetId: !Ref PublicSubnet               # We should sit in a public subnet.
         GroupSet: [ !Ref WebServerSecurityGroup ] # Attach the security group
-      UserData:      #  This code installs a demo Java/Spring app as a init.d service.  Then it signals completion:
+      UserData:      #  This code installs a demo Java/Spring app.  Then it signals completion:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Update the OS and get Java
+          # Update the OS and get Java 
           yum -y update
-          yum install wget java-1.8.0 -y
+          amazon-linux-extras install java-openjdk11 -y
           # Download and start Java/Spring app:
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
-          mv spring-cloud-aws-environment-demo-1.war  app.war
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          mv *.jar app.jar
           # Must signal completion before actually starting the app:
           /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
-          java -jar app.war --server.port=80
+          java -jar app.jar --server.port=80
     CreationPolicy:
       ResourceSignal:
         Count: 1

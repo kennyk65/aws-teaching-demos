@@ -110,11 +110,13 @@ Resources:
       UserData:      #  This code Installs a Spring Boot app. Notice a different way to signal completion:
         Fn::Base64: !Sub |
           #!/bin/bash
-          yum update -y
-          yum install java-1.8.0 -y
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
+          yum -y update
+          amazon-linux-extras install java-openjdk11 -y
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          mv *.jar app.jar
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          java -jar spring-cloud-aws-environment-demo-1.war --server.port=80
+          java -jar app.jar --server.port=80
+
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup

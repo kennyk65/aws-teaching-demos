@@ -18,7 +18,7 @@ Parameters:
   S3Object:
     Description: Object key (optional prefix) of an existing WAR file in an S3 bucket
     Type: String
-    Default: build-output/spring-cloud-aws-environment-demo-1.war
+    Default: spring-cloud-aws-environment-demo-1.original.war
 
 
 Resources:
@@ -27,7 +27,7 @@ Resources:
   BeanstalkServiceRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServiceRole" ]]  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -40,7 +40,7 @@ Resources:
   BeanstalkServicePolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServicePolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-BeanstalkServicePolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -64,7 +64,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkAppRole" ]]  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkAppRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -77,7 +77,7 @@ Resources:
   BeanstalkAppPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkAppPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-BeanstalkAppPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -99,7 +99,7 @@ Resources:
   MyBeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: TestApplication
+      ApplicationName: !Sub ${AWS::StackName}-TestApplication
 
   # Where does the code come from:
   MyBeanstalkVersion:
@@ -119,11 +119,12 @@ Resources:
       VersionLabel: !Ref MyBeanstalkVersion
       EnvironmentName: DemoEnvironment
       CNAMEPrefix: !Ref CNAMEPrefix
-      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      #SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2 v4.1.0 running Tomcat 8.5 Corretto 11"
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:application
           OptionName: "Application Healthcheck URL"
-          Value: /health
+          Value: /actuator/health
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !Ref BeanstalkServiceRole        # What is the ElasticBeanstalk service allowed to do?
@@ -145,4 +146,4 @@ Resources:
 
 Outputs:
   URL:
-    Value: !Join ['', ["http://", !GetAtt MyBeanstalkEnvironment.EndpointURL ]] 
+    Value: !Sub http://${MyBeanstalkEnvironment.EndpointURL} 
