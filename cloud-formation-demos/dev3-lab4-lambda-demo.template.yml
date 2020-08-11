@@ -30,7 +30,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties: 
       FunctionName: PythonCalculator
-      Description: Lambda triggered by S3 upload.
+      Description: Lambda triggered by S3  upload. 2
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
@@ -98,12 +98,12 @@ Resources:
     Properties: 
       RoleName: LambdaS3Role  
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement: 
-          Effect: "Allow"
+          Effect: Allow
           Principal:
-            Service: "lambda.amazonaws.com"
-          Action: "sts:AssumeRole"
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
@@ -113,13 +113,13 @@ Resources:
   BucketPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      Action: 'lambda:InvokeFunction'
+      Action: lambda:InvokeFunction
       FunctionName: !Ref MyLambda
       Principal: s3.amazonaws.com
-      SourceAccount: !Ref "AWS::AccountId"
-      SourceArn: !Sub "arn:aws:s3:::${TheInputBucketName}"
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:aws:s3:::${TheInputBucketName}
 
 Outputs:
   SampleInputFile:
-    Description: File to download, unzip, and upload.
+    Description: File to download, unzip, and  upload.
     Value: http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.2/lab-4-lambda/scripts/numbers.txt
