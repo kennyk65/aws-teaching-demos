@@ -1,0 +1,128 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# This creates EC2 instances to serve as classroom computers, 2 per student.
+# TODO: CREATE KEYPAIR USING THIS:  https://github.com/binxio/cfn-secret-provider
+
+
+Parameters:
+  AmiToUse:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/18.04/stable/current/amd64/hvm/ebs-gp2/ami-id
+    Description: You probably won't need to change this value.  This is looking up the latest Ubuntu AMI using the Parameter Store...
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances access to the Internet.
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at least two public subnets in your selected VPC.  These will be associated with your load balancer.
+
+  NumberOfMachines:
+    Type: Number
+    Description: Number of compute instances to create for your lab environment.  Each student needs 2 instances.
+    Default: 2
+
+  RemoteAccessKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to instances
+
+
+Resources:
+
+
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-Template
+      LaunchTemplateData: 
+        IamInstanceProfile: 
+          Name: !Ref SSMInstanceProfile  # Allows EC2 Instance to talk with SSM
+        ImageId: !Ref AmiToUse            # We lookup AMI using the AWS Systems Manager
+        InstanceType: t3a.large             # 2 VCPU, 8 GB 
+        KeyName: !Ref RemoteAccessKeyName     # Use the keypair from the input parameters
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true
+          SubnetId: !Select [0,  !Ref PublicSubnetIds]  # You have to specify a subnet in this launch template, but this will be ignored when using ASG.
+          Groups: [!Ref WebServerSecurityGroup]           # Plug in the security group.
+        InstanceMarketOptions: 
+          MarketType: spot
+        BlockDeviceMappings: 
+        - DeviceName: "/dev/xvdf"
+          Ebs:
+            VolumeSize: 25
+            VolumeType: gp2
+        UserData:      #  Install AWS Systems Manager:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Install SSM Agent for easy remote access:
+            mkdir /tmp/ssm
+            cd /tmp/ssm
+            wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb
+            dpkg -i amazon-ssm-agent.deb
+            start amazon-ssm-agent
+
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref PublicSubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate 
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber  
+      MinSize: 2
+      MaxSize: !Ref NumberOfMachines
+      DesiredCapacity: !Ref NumberOfMachines
+      HealthCheckGracePeriod: 300
+
+        
+  # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref SSMRole]
+
+  # Allow EC2 instance to make calls to SSM.
+  SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      # Note that any other policies required for the instance to do its job would be defined here as well.  
+
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  AppAutoScalingGroupName:
+    Description: Name of the Auto Scaling group
+    Value: !Ref AppAutoScalingGroup
+
