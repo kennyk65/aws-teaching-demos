@@ -7,6 +7,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 # TODO: CREATE KEYPAIR USING THIS:  https://github.com/binxio/cfn-secret-provider
 # Tell the stack how many students you have.  Recommend setting up 1 or two extra.
 # Recommend running this stack twice, the second time with the K8s software pre-installed.  That way if student environments get hosed you have backups.  You will need to find the "kubeadm join" command in ~/master.out
+# TODO: i'M ABLE TO CREATE USER student AND LOGIN VIA SSH, BUT student IS NOT ALLOWED TO DO ANYTHING.
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
@@ -137,10 +138,19 @@ Resources:
         UserData:      #  Install AWS Systems Manager:
           Fn::Base64: !Sub |
             #!/bin/bash
-            echo ADD A USER CALLED student
+            echo ADD A USER CALLED student AND ALLOW SSH LOGIN
+            echo This assumes we are using the same key pair that the instance was launched with.
+            #useradd -d /home/student student
             adduser student  --disabled-password
             echo "student:lfd459" | sudo chpasswd
-            # TODO:  ALLOW LOGON USING STUDENT
+            usermod -aG sudo student
+            sudo echo "student ALL=(ALL) NOPASSWD: ALL" | (EDITOR="tee -a" visudo)
+            echo ALLOW student USER TO LOGIN VIA SSH
+            mkdir -p /home/student/.ssh
+            chmod 700 /home/student/.ssh
+            cp /home/ubuntu/.ssh/authorized_keys /home/student/.ssh/authorized_keys
+            chmod 600 /home/student/.ssh/authorized_keys
+            chown -R student:student /home/student
             echo GENERAL PACKAGE UPDATE
             apt-get update -y
             echo INSTALL PIP, PYTHON, AND PREPARE FOR SCRIPTING
@@ -164,7 +174,7 @@ Resources:
             # SSM Agent for easy remote access is already installed.
             cd /home/student
             # Install master node software:
-            if [ ${PreInstallK8sSoftware} ]
+            if [ ${PreInstallK8sSoftware} = true ]
             then
               wget https://training.linuxfoundation.org/cm/LFD459/LFD459_V1.18.1_SOLUTIONS.tar.bz2  --user=LFtraining --password=Penguin2014
               tar -xvf LFD459_V1.18.1_SOLUTIONS.tar.bz2
@@ -222,10 +232,19 @@ Resources:
         UserData:      #  Install AWS Systems Manager:
           Fn::Base64: !Sub |
             #!/bin/bash
-            echo ADD A USER CALLED student
+            echo ADD A USER CALLED student AND ALLOW SSH LOGIN
+            echo This assumes we are using the same key pair that the instance was launched with.
+            #useradd -d /home/student student
             adduser student  --disabled-password
             echo "student:lfd459" | sudo chpasswd
-            # TODO:  ALLOW STUDENT TO LOGIN USING KEYPAIR.
+            usermod -aG sudo student
+            sudo echo "student ALL=(ALL) NOPASSWD: ALL" | (EDITOR="tee -a" visudo)
+            echo ALLOW student USER TO LOGIN VIA SSH
+            mkdir -p /home/student/.ssh
+            chmod 700 /home/student/.ssh
+            cp /home/ubuntu/.ssh/authorized_keys /home/student/.ssh/authorized_keys
+            chmod 600 /home/student/.ssh/authorized_keys
+            chown -R student:student /home/student
             echo GENERAL PACKAGE UPDATE
             apt-get update -y
             echo INSTALL PIP, PYTHON, AND PREPARE FOR SCRIPTING
@@ -249,7 +268,7 @@ Resources:
             # SSM Agent for easy remote access is already installed.
             cd /home/student
             # Install worker node software:
-            if [ ${PreInstallK8sSoftware} ]
+            if [ ${PreInstallK8sSoftware} = true]
             then
               echo INSTALLING WORKER NODE SOFTWARE
               wget https://training.linuxfoundation.org/cm/LFD459/LFD459_V1.18.1_SOLUTIONS.tar.bz2 --user=LFtraining --password=Penguin2014
