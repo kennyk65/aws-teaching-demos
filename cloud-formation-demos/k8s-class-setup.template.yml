@@ -8,6 +8,24 @@ AWSTemplateFormatVersion: '2010-09-09'
 # Tell the stack how many students you have.  Recommend setting up 1 or two extra.
 # Recommend running this stack twice, the second time with the K8s software pre-installed.  That way if student environments get hosed you have backups.  You will need to find the "kubeadm join" command in ~/master.out
 
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - PublicSubnetId
+          - RemoteAccessKeyName
+      - Label:
+          default: Classroom details
+        Parameters:
+          - NumberOfStudents
+          - PreInstallK8sSoftware
+          - AmiToUse
+
+
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
