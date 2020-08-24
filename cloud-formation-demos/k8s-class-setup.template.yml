@@ -7,7 +7,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 # TODO: CREATE KEYPAIR USING THIS:  https://github.com/binxio/cfn-secret-provider
 # Tell the stack how many students you have.  Recommend setting up 1 or two extra.
 # Recommend running this stack twice, the second time with the K8s software pre-installed.  That way if student environments get hosed you have backups.  You will need to find the "kubeadm join" command in ~/master.out
-# TODO: i'M ABLE TO CREATE USER student AND LOGIN VIA SSH, BUT student IS NOT ALLOWED TO DO ANYTHING.
+# TODO: AUTOMATIC SOFTWARE INSTALL DOESN'T WORK, RESULTS IN "error: no configuration has been provided, try setting KUBERNETES_MASTER environment variable"
+# You must connect to the worker to run the kubeadm join command.  The command to run is emitted by the system log on the master.  This can be found on the master using "cat /var/log/cloud-init-output.log" or via console / Instance Settings / Get System Log
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
@@ -143,7 +144,7 @@ Resources:
             #useradd -d /home/student student
             adduser student  --disabled-password
             echo "student:lfd459" | sudo chpasswd
-            usermod -aG sudo student
+            usermod -aG sudo,ubuntu,adm,dialout,cdrom,floppy,audio,dip,video,plugdev,lxd,netdev student
             sudo echo "student ALL=(ALL) NOPASSWD: ALL" | (EDITOR="tee -a" visudo)
             echo ALLOW student USER TO LOGIN VIA SSH
             mkdir -p /home/student/.ssh
@@ -172,6 +173,7 @@ Resources:
             EOF
             python /script.py
             # SSM Agent for easy remote access is already installed.
+            su - student
             cd /home/student
             # Install master node software:
             if [ ${PreInstallK8sSoftware} = true ]
@@ -237,7 +239,7 @@ Resources:
             #useradd -d /home/student student
             adduser student  --disabled-password
             echo "student:lfd459" | sudo chpasswd
-            usermod -aG sudo student
+            usermod -aG sudo,ubuntu,adm,dialout,cdrom,floppy,audio,dip,video,plugdev,lxd,netdev student
             sudo echo "student ALL=(ALL) NOPASSWD: ALL" | (EDITOR="tee -a" visudo)
             echo ALLOW student USER TO LOGIN VIA SSH
             mkdir -p /home/student/.ssh
@@ -266,9 +268,10 @@ Resources:
             EOF
             python /script.py
             # SSM Agent for easy remote access is already installed.
+            su - student
             cd /home/student
             # Install worker node software:
-            if [ ${PreInstallK8sSoftware} = true]
+            if [ ${PreInstallK8sSoftware} = true ]
             then
               echo INSTALLING WORKER NODE SOFTWARE
               wget https://training.linuxfoundation.org/cm/LFD459/LFD459_V1.18.1_SOLUTIONS.tar.bz2 --user=LFtraining --password=Penguin2014
