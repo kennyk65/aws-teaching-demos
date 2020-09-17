@@ -272,6 +272,7 @@ Resources:
   # Fire the RecordConsumer Lambda function by polling the Kinesis stream:
   RecordConsumerTrigger:
     Type: AWS::Lambda::EventSourceMapping
+    DependsOn:  KinesisToSqsPolicy   # Fixes permission error when hooking up Lambda to stream.
     Properties: 
       BatchSize: 100
       Enabled: true
