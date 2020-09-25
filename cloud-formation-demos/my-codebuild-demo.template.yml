@@ -5,7 +5,6 @@ AWSTemplateFormatVersion: 2010-09-09
 # The build is assumed to be some kind of Java, so it uses the (hard-coded) jdk 8 image.
 # Output goes to a prefix in an S3 bucket
 # Much of the work involves setup of the role / policy, so you have to allow this when you run.
-# TODO:  Can't figure out how to setup a CodeBuild webhook via CloudFormation.  Easy on screen.
 
 Parameters:
 
@@ -78,7 +77,6 @@ Resources:
       Source:
         Type: GITHUB
         Location: !Ref InputGitHubRepo
-        #  TODO - WEBHOOK???
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -90,6 +88,12 @@ Resources:
       Cache:
         Type: S3
         Location: !Sub ${OutputS3Bucket}/cache
+      Triggers:  # Fire build on any push to master.
+        Webhook: true
+        FilterGroups:
+        - - Type: EVENT
+            Pattern: PUSH
+          
 
   # CloudWatch Logs Groups are created automatically when CodeBuild writes output,
   # but they are easier to cleanup when they are part of the stack.  
