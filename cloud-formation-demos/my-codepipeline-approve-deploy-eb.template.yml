@@ -293,7 +293,7 @@ Resources:
                 Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
                 Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
                 Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
-                PollForSourceChanges: true   # Don't know if/how to control frequency
+                # PollForSourceChanges: true   # Not needed when using OAuth token.  Don't know if/how to control frequency
                 OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
               OutputArtifacts: 
                 - Name: TheSourceCode
