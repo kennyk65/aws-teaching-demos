@@ -108,11 +108,10 @@ Resources:
                   - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
                   - REPOSITORY_URI=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${NewRepo}
                   - IMAGE_TAG=$CODEBUILD_BUILD_NUMBER
+                  - GIT_TAG=$CODEBUILD_RESOLVED_SOURCE_VERSION
                   - echo REPOSITORY_URI is set to $REPOSITORY_URI
                   - echo IMAGE_TAG is set to $IMAGE_TAG
-                  - echo CODEBUILD_RESOLVED_SOURCE_VERSION is set to $CODEBUILD_RESOLVED_SOURCE_VERSION
-                  - echo CODEBUILD_SOURCE_VERSION is set to $CODEBUILD_SOURCE_VERSION
-                  - echo Git commit is $CODEBUILD_SOURCE_VERSION
+                  - echo GIT_TAG is $GIT_TAG
               build:
                 commands:
                   - echo Maven Build started on `date`
@@ -121,12 +120,14 @@ Resources:
                   - echo Docker Image Build started on `date`
                   - docker build -t $REPOSITORY_URI .
                   - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$GIT_TAG
                   - echo Docker Image Build finished on `date`
               post_build:
                 commands:
                   - echo Pushing the Docker images...
                   - docker push $REPOSITORY_URI:latest
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
+                  - docker push $REPOSITORY_URI:$GIT_TAG
             #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
             #  See https://aws.amazon.com/about-aws/whats-new/2019/02/aws-codebuild-now-supports-local-caching/
             cache:
