@@ -1,0 +1,141 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Make a simple bastion host that you can use to connect to EKS.
+
+
+Parameters:
+  AmazonLinux2AMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select the same VPC where your EKS cluster is running
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select 1 or more subnets in your selected VPC.
+
+  EksClusterName:
+    Type: String 
+    Description:  The name of the existing EKS Cluster you want to configure this bastion host to connect to
+
+Resources:
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+
+  # Launch Configuration for our web server running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AmazonLinux2AMI   # We lookup AMI using the AWS Systems Manager
+      InstanceType: t2.micro          # Any instance type will do
+      SecurityGroups:
+      - !Ref WebServerSecurityGroup                   # Plug in the security group.
+      IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
+      BlockDeviceMappings:
+      - DeviceName: "/dev/xvdf"
+        Ebs:
+          VolumeSize: '25'
+          VolumeType: gp2
+      UserData:      #  Install AWS Systems Manager:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          ## Install v2 of AWS CLI (AMI installs v1)
+          #curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          #unzip awscliv2.zip
+          #./aws/install          
+          # Install SSM Agent for session manager (remote connection)
+          cd /tmp
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          start amazon-ssm-agent
+          # Install eksctl
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
+          # Install Kubectl
+          curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.9/2020-08-04/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin
+          kubectl version --short --client
+          # Set current region.  AWS cannot guess to use the region it is in
+          aws configure set region ${AWS::Region}
+          # Configure kubectl
+          aws eks update-kubeconfig --name ${EksClusterName}
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      Tags:
+      - Key: Name
+        Value: EKS Bastion
+        PropagateAtLaunch: true
+
+        
+  # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref BastionRole]
+
+  # Allow EC2 instance to make calls to SSM.
+  BastionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      # Allow us to use SSM session manager for remote connection:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      # Allow us to do things on EKS:  
+      - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+  # This Policy allows our Role to do quite a bit of stuff in EKS.
+  BastionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-BastionRolePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - ecr:*
+            - eks:*
+          Resource: "*"
+      Roles: 
+        -  !Ref BastionRole   # Attach to BastionRole.
+
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  AppAutoScalingGroupName:
+    Description: Name of the Auto Scaling group
+    Value: !Ref AppAutoScalingGroup
+
