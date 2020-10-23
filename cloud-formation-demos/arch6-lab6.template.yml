@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 # This template creates a (nearly) identical environment to what students produce manually in AWS Arch lab 6.
-
+# TODO:  MAKE!
 
 
 arn:aws:iam::277895624507:role/Lambda-Load-Inventory-Role:

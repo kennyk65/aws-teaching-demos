@@ -103,6 +103,7 @@ Resources:
         ToPort: 80
         CidrIp: 0.0.0.0/0
 
+
   # web server:
   WebServer:
     Type: AWS::EC2::Instance
