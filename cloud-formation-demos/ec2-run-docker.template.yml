@@ -69,7 +69,7 @@ Resources:
           yum install -y docker
           service docker start
           docker pull ${DockerImage}
-          docker run -d -p80:8080 ${DockerImage}   
+          docker run -d -p80:80 ${DockerImage}   
           /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
     CreationPolicy:
       ResourceSignal:
