@@ -24,14 +24,14 @@ Parameters:
 
 Resources:
   # Security Group for the web server.  Allow HTTP from anywhere:
-  WebServerSecurityGroup:
+  BastionSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security Group for Web server
+      GroupDescription: Security Group for EKS Bastion Host
       VpcId: !Ref VPC
       Tags:
       - Key: Name
-        Value: WebServerSecurityGroup
+        Value: BastionSecurityGroup
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
@@ -46,7 +46,7 @@ Resources:
       ImageId: !Ref AmazonLinux2AMI   # We lookup AMI using the AWS Systems Manager
       InstanceType: t2.micro          # Any instance type will do
       SecurityGroups:
-      - !Ref WebServerSecurityGroup                   # Plug in the security group.
+      - !Ref BastionSecurityGroup                   # Plug in the security group.
       IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
       BlockDeviceMappings:
       - DeviceName: "/dev/xvdf"
@@ -64,10 +64,6 @@ Resources:
           cd /tmp
           yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
           start amazon-ssm-agent
-          # Install eksctl
-          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-          sudo mv /tmp/eksctl /usr/local/bin
-          eksctl version
           # Install Kubectl
           curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.9/2020-08-04/bin/linux/amd64/kubectl
           chmod +x ./kubectl
@@ -77,6 +73,10 @@ Resources:
           aws configure set region ${AWS::Region}
           # Configure kubectl
           aws eks update-kubeconfig --name ${EksClusterName}
+          # Install eksctl
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup

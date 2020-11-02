@@ -4,11 +4,6 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
   
-  ClusterSize:
-    Type: String
-    Description: The Minimum:Desired:Maximum number of EC2 worker nodes in the cluster.  
-    Default:  "2:2:6"
-
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: Select a VPC with the subnets you want to use
@@ -16,6 +11,19 @@ Parameters:
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 3 subnets in your selected VPC.
+
+  CreateNodeGroup:
+    Type: String 
+    AllowedValues: 
+    - True
+    - False
+    Default: True
+    Description: Do you want to create some cluster nodes?  Probably you do unless you wish to do this manually.
+
+  ClusterSize:
+    Type: String
+    Description: The Minimum:Desired:Maximum number of EC2 worker nodes in the cluster.  
+    Default:  "2:2:6"
 
   CreateBastionHost:
     Type: String 
@@ -49,6 +57,10 @@ Metadata:
         Parameters:
           - VpcId
           - SubnetIds
+      - Label:
+          default: EKS Node Group Details
+        Parameters:
+          - CreateNodeGroup
           - ClusterSize
       - Label:
           default: Bastion Host Details
@@ -60,6 +72,7 @@ Metadata:
 
 Conditions:
   CreateBastionHostCondition:    !Equals [ !Ref CreateBastionHost, "True" ]
+  CreateNodeGroupCondition:      !Equals [ !Ref CreateNodeGroup, "True" ]
 
 Resources:
 
@@ -81,6 +94,7 @@ Resources:
   # This role is assumed by the worker nodes in our cluster
   EKSNodeRole:
     Type: AWS::IAM::Role
+    Condition:  CreateNodeGroupCondition
     Properties:
       RoleName: !Sub ${AWS::StackName}-EKSNodeRole
       AssumeRolePolicyDocument:
@@ -95,37 +109,6 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
 
 
-  # # This security group replaces the default.  It is basically the same except it allows TCP ingress
-  # # on high-order ports, which allows us to use NodePort and LoadBalancer type services with the outside world.
-  # # Probably a more secure way to achieve this in a real-world example.
-  # ReplacementSecurityGroup:
-  #   Type: AWS::EC2::SecurityGroup
-  #   Properties:
-  #     GroupName: !Sub ${AWS::StackName}-ReplacementEKSSecurityGroup
-  #     GroupDescription: Alternate security group for use in an EKS cluster.  Does the same as the default but also opens up high-order ports for external ingress.
-  #     VpcId: !Ref VpcId
-  #     Tags:
-  #     - Key: Name
-  #       Value: !Sub ${AWS::StackName}-ReplacementEKSSecurityGroup
-
-  # ReplacementSecurityGroupIntercommunicationIngress:
-  #   Type: AWS::EC2::SecurityGroupIngress
-  #   Properties:
-  #     Description: Allow worker control plane and nodes to intercommunicate
-  #     GroupId: !Ref ReplacementSecurityGroup
-  #     SourceSecurityGroupId: !Ref ReplacementSecurityGroup
-  #     IpProtocol: "-1"
-
-  # ReplacementSecurityGroupGeneralIngress:
-  #   Type: AWS::EC2::SecurityGroupIngress
-  #   Properties:
-  #     Description: Allow outside parties to use high-order ports
-  #     GroupId: !Ref ReplacementSecurityGroup
-  #     IpProtocol: tcp
-  #     CidrIp: 0.0.0.0/0
-  #     FromPort: 1025
-  #     ToPort: 65535
-
 
 
   # The EKS Cluster itself, a bit of an anticlimax.  
@@ -137,12 +120,11 @@ Resources:
       Name: !Sub ${AWS::StackName}-Cluster
       RoleArn: !GetAtt EKSServiceRole.Arn
       ResourcesVpcConfig: 
-        # SecurityGroupIds:
-        # - !Ref ReplacementSecurityGroup
         SubnetIds: !Ref SubnetIds
 
   NodeGroup:
     Type: AWS::EKS::Nodegroup
+    Condition:  CreateNodeGroupCondition
     Properties: 
       AmiType: AL2_x86_64
       ClusterName: !Ref Cluster
@@ -219,6 +201,9 @@ Resources:
           chmod +x ./kubectl
           sudo mv ./kubectl /usr/local/bin
           kubectl version --short --client
+          # Helm
+          echo Installing Helm
+          curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
           # Set current region.  AWS cannot guess to use the region it is in
           aws configure set region ${AWS::Region}
           echo current region is set to `aws configure get region`
@@ -226,9 +211,6 @@ Resources:
           aws sts get-caller-identity 
           # Configure kubeconfig
           aws eks update-kubeconfig --name ${Cluster}
-          # Helm
-          echo Installing Helm
-          curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
