@@ -20,10 +20,18 @@ Parameters:
   CreateBastionHost:
     Type: String 
     AllowedValues: 
-    - True
-    - False
-    Default: True
+    - true
+    - false
+    Default: true
     Description: Do you want to create a Bastion Host?  It will be configured with Session Manager, eksctl, kubectl.  Very handy.
+
+  CreateNodeGroup:
+    Type: String 
+    AllowedValues: 
+    - true
+    - false
+    Default: true
+    Description: Do you want to create a Node Group?  Usually you'd want to, unless you want to demo doing it manually.
 
   BastionRole:
     Type: String 
@@ -49,6 +57,7 @@ Metadata:
         Parameters:
           - VpcId
           - SubnetIds
+          - CreateNodeGroup
           - ClusterSize
       - Label:
           default: Bastion Host Details
@@ -59,7 +68,8 @@ Metadata:
           - AmazonLinux2AMI
 
 Conditions:
-  CreateBastionHostCondition:    !Equals [ !Ref CreateBastionHost, "True" ]
+  CreateBastionHostCondition:  !Equals [ !Ref CreateBastionHost, "true" ]
+  CreateNodeGroupCondition:    !Equals [ !Ref CreateNodeGroup, "true" ]
 
 Resources:
 
@@ -143,6 +153,7 @@ Resources:
 
   NodeGroup:
     Type: AWS::EKS::Nodegroup
+    Condition:  CreateNodeGroupCondition
     Properties: 
       AmiType: AL2_x86_64
       ClusterName: !Ref Cluster
@@ -153,9 +164,7 @@ Resources:
         DesiredSize: !Select [1,  !Split [ ":", !Ref ClusterSize ]]
         MaxSize:     !Select [2,  !Split [ ":", !Ref ClusterSize ]]
       Subnets: !Ref SubnetIds
-      Tags:
-      - Key: Name
-        Value: EKS Worker 
+
 
   # Security Group for the Bastion Host.  Allow SSH from anywhere:
   BastionHostSecurityGroup:
@@ -194,16 +203,12 @@ Resources:
         BlockDeviceMappings: 
         - DeviceName: "/dev/xvdf"
           Ebs:
-            VolumeSize: 15
+            VolumeSize: '20'
             VolumeType: gp2
       UserData:      #  Install AWS Systems Manager, eksctl, kubectl, helm, etc..:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum install git -y
-          ## Install v2 of AWS CLI (AMI installs v1)
-          #curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          #unzip awscliv2.zip
-          #./aws/install          
           # Install SSM Agent for session manager (remote connection)
           cd /tmp
           yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
@@ -225,7 +230,7 @@ Resources:
           # Display your current identity in the log 
           aws sts get-caller-identity 
           # Configure kubeconfig
-          aws eks update-kubeconfig --name ${Cluster}
+          #aws eks update-kubeconfig --name ${Cluster}
           # Helm
           echo Installing Helm
           curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash

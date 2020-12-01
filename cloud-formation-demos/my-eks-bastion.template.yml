@@ -23,21 +23,20 @@ Parameters:
     Description:  The name of the existing EKS Cluster you want to configure this bastion host to connect to
 
 Resources:
-  # Security Group for the web server.  Allow HTTP from anywhere:
-  WebServerSecurityGroup:
+  # Security Group for the Bastion Host.  Allow SSH from anywhere:
+  BastionHostSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security Group for Web server
+      GroupDescription: Security Group for Bastion Host
       VpcId: !Ref VPC
       Tags:
       - Key: Name
-        Value: WebServerSecurityGroup
+        Value: BastionHostSecurityGroup
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: 0.0.0.0/0
-
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0     # A little bit loose
 
   # Launch Configuration for our web server running within an ASG:            
   LaunchConfig:
@@ -45,15 +44,14 @@ Resources:
     Properties:
       ImageId: !Ref AmazonLinux2AMI   # We lookup AMI using the AWS Systems Manager
       InstanceType: t2.micro          # Any instance type will do
-      SecurityGroups:
-      - !Ref WebServerSecurityGroup                   # Plug in the security group.
+      SecurityGroups: [!Ref BastionHostSecurityGroup] # Plug in the security group.
       IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
       BlockDeviceMappings:
       - DeviceName: "/dev/xvdf"
         Ebs:
-          VolumeSize: '25'
+          VolumeSize: 20
           VolumeType: gp2
-      UserData:      #  Install AWS Systems Manager:
+      UserData:      
         Fn::Base64: !Sub |
           #!/bin/bash
           ## Install v2 of AWS CLI (AMI installs v1)
