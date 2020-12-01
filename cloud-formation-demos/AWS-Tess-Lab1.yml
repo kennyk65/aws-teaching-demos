@@ -140,7 +140,7 @@ Resources:
       ImageId: !Ref AmazonLinux2AMI
       InstanceType: t2.micro
       NetworkInterfaces:
-        - DeviceIndex: '0'
+        - DeviceIndex: 0
           AssociatePublicIpAddress: true
           SubnetId: !Ref PublicSubnet1
           GroupSet:
@@ -150,16 +150,16 @@ Resources:
           Value: Web Server 1
       UserData: 
         Fn::Base64: !Sub |
-          #!/bin/bash -ex
-          yum -y install httpd php mysql php-mysql
+          #!/bin/bash
+          # Install Apache Web Server and PHP
+          yum install -y httpd mysql php
+          # Download Lab files
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.10/lab-1-build-a-web-server/scripts/lab-app.zip
+          unzip lab-app.zip -d /var/www/html/
+          # Turn on web server
           chkconfig httpd on
           service httpd start
-          if [ ! -f /var/www/html/lab-app.tgz ]; then
-          cd /var/www/html
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.5.2/lab-1-build-a-web-server/scripts/lab-app.tgz
-          tar xvfz lab-app.tgz
-          chown apache:root /var/www/html/rds.conf.php
-          fi
+
 
   # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
   NATGateway:
@@ -185,12 +185,12 @@ Resources:
           Value: Web-Security-Group
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: '80'
-          ToPort: '80'
+          FromPort: 80
+          ToPort: 80
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
-          FromPort: '22'
-          ToPort: '22'
+          FromPort: 22
+          ToPort: 22
           CidrIp: 0.0.0.0/0
 
 Outputs:

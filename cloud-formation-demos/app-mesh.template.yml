@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# 
+
+
+Resources:
+
+  MyMesh:
+    Type: AWS::AppMesh::Mesh
+    Properties: 
+      MeshName: mymesh
+
+  MyService:
+    Type: AWS::AppMesh::VirtualService
+    Properties: 
+      MeshName:  !GetAtt MyMesh.MeshName
+      VirtualServiceName:  serviceA.mymesh.local
+      Spec:  
+        Provider :  
+          VirtualNode :  
+            VirtualNodeName :  !GetAtt VirtualNodeServiceA.VirtualNodeName
+
+  VirtualNodeServiceA:
+    Type: AWS::AppMesh::VirtualNode
+    Properties : 
+      MeshName:  !GetAtt MyMesh.MeshName
+      VirtualNodeName:  ServiceA
+      Spec:  
+        Listeners:
+          - PortMapping: 
+              Port:  80
+              Protocol:  http
+
+
+# HealthCheckPolicy: 
+#               HealthyThreshold :  5
+#               IntervalMillis:  30000
+#               Path:  /
+#               Port:  80
+#               Protocol:  http
+#               TimeoutMillis:  5000
+#               UnhealthyThreshold:  2
+            
