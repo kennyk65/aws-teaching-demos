@@ -79,7 +79,8 @@ Resources:
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier: !Ref SubnetIds
+      VPCZoneIdentifier: 
+      - !Select [ 0, !Ref SubnetIds ]
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: 1
       MaxSize: 1

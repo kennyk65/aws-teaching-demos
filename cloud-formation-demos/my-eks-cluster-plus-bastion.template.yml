@@ -65,6 +65,9 @@ Metadata:
         Parameters:
           - VpcId
           - SubnetIds
+      - Label:
+          default: EKS Node Group Details
+        Parameters:
           - CreateNodeGroup
           - ClusterSize
       - Label:
@@ -117,7 +120,7 @@ Resources:
 
 
   # The EKS Cluster itself, a bit of an anticlimax.  
-  # The cluster will run in the subnets you specify using the Security Group above.
+  # The cluster will run in the subnets you specified above.
   # Can take up to 10 minutes for AWS to provision this, and it costs $.20 per hour.
   Cluster:
     Type: AWS::EKS::Cluster
@@ -181,44 +184,45 @@ Resources:
           Ebs:
             VolumeSize: '20'
             VolumeType: gp2
-      UserData:      #  Install AWS Systems Manager, eksctl, kubectl, helm, etc..:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum install git -y
-          # Install SSM Agent for session manager (remote connection)
-          cd /tmp
-          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-          start amazon-ssm-agent
-          # eksctl
-          echo Installing eksctl
-          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-          sudo mv /tmp/eksctl /usr/local/bin
-          eksctl version
-          # Kubectl
-          echo Installing Kubectl
-          curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.9/2020-08-04/bin/linux/amd64/kubectl
-          chmod +x ./kubectl
-          sudo mv ./kubectl /usr/local/bin
-          kubectl version --short --client
-          # Helm
-          echo Installing Helm
-          curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
-          # Set current region.  AWS cannot guess to use the region it is in
-          aws configure set region ${AWS::Region}
-          echo current region is set to `aws configure get region`
-          # Display your current identity in the log 
-          aws sts get-caller-identity 
-          # Configure kubeconfig
-          #aws eks update-kubeconfig --name ${Cluster}
-          # Helm
-          echo Installing Helm
-          curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+        UserData:      #  Install AWS Systems Manager, eksctl, kubectl, helm, etc..:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum install git -y
+            # Install SSM Agent for session manager (remote connection)
+            cd /tmp
+            yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+            start amazon-ssm-agent
+            # eksctl
+            echo Installing eksctl
+            curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+            sudo mv /tmp/eksctl /usr/local/bin
+            eksctl version
+            # Kubectl
+            echo Installing Kubectl
+            curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.9/2020-08-04/bin/linux/amd64/kubectl
+            chmod +x ./kubectl
+            sudo mv ./kubectl /usr/local/bin
+            kubectl version --short --client
+            # Helm
+            echo Installing Helm
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+            # Set current region.  AWS cannot guess to use the region it is in
+            aws configure set region ${AWS::Region}
+            echo current region is set to `aws configure get region`
+            # Display your current identity in the log 
+            aws sts get-caller-identity 
+            # Configure kubeconfig
+            aws eks update-kubeconfig --name ${Cluster}
+            # Helm
+            echo Installing Helm
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Condition:  CreateBastionHostCondition
     Properties:
-      VPCZoneIdentifier: !Select [ 0, !Ref SubnetIds ]
+      VPCZoneIdentifier: 
+      - !Select [ 0, !Ref SubnetIds ]
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate 
         Version: !GetAtt LaunchTemplate.LatestVersionNumber  
