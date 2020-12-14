@@ -1,0 +1,51 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
+  IAMOwner:
+    Type: String 
+    Description:  IAM user or role.  To use an IAM user 'kennyk' enter 'user/kennyk'.  To use an IAM role 'allPowerful' enter 'role/allPowerful'.  Template will prefix your entry with arn:aws:iam::${AWS::AccountId}
+    Default: user/kennyk
+
+  RepositoryUrl:
+    Type: String
+    Description:  URL of a Git repository that you wish to clone into this EnvironmentEC2
+    Default: https://github.com/kennyk65/aws-teaching-demos
+
+Resources:
+  Cloud9: 
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties: 
+      Name: !Sub ${AWS::StackName} 
+      InstanceType: t2.micro 
+      AutomaticStopTimeMinutes: 60
+      SubnetId: !Ref PublicSubnet 
+      OwnerArn: !Sub arn:aws:iam::${AWS::AccountId}:${IAMOwner} 
+      Repositories: 
+        - PathComponent: /git
+          RepositoryUrl: !Ref RepositoryUrl
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - RepositoryUrl
+          - IAMOwner
+
+Outputs:
+  Cloud9Console:
+    Description: Click here to go to the Cloud9 console
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloud9/home?region=${AWS::Region}#
