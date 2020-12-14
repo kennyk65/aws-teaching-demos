@@ -23,7 +23,7 @@ Parameters:
 
 Resources:
   Cloud9: 
-    Type: AWS::Cloud9::EnvironmentEC2
+    Type: AWS::Cloud9::EnvironmentEC2 
     Properties: 
       Name: !Sub ${AWS::StackName} 
       InstanceType: t2.micro 
