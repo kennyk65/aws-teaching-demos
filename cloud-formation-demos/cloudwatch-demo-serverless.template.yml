@@ -31,10 +31,10 @@ Parameters:
     Default: False
     Description: Do you want to setup an alarm and notification?  Recommend demonstrating this last.
 
-  EmailAddress:
-    Description: Eamail address to send alerts to
-    Type: String
-    Default: kenkrueger65@gmail.com
+  NotificationPhoneNumber:
+    Description:  Cell Phone / SMS Number to be contacted at.  
+    Type:  String
+    Default:  "+14072223333"
 
 Conditions:
   ImplementMetricsFilter:   !Equals [ !Ref UseMetricsFilter, True ] 
@@ -161,7 +161,7 @@ Resources:
           cloudwatch.putMetricData(
             { 'Namespace': 'Training',
               'MetricData': [ {
-                'MetricName': "Boredom",
+                'MetricName': "BoredomLevel",
                 'Value': obj.level
               } ]
             }, function (err, data) {
@@ -233,8 +233,8 @@ Resources:
       DisplayName: Boredom Alert! 
       TopicName: BoredomAlert
       Subscription:
-        - Endpoint: !Ref EmailAddress
-          Protocol: email
+        - Endpoint: !Ref NotificationPhoneNumber
+          Protocol: sms
 
   # This function will setup the web content in our S3 web bucket
   CustomResourceWebContentLambda:
@@ -379,7 +379,7 @@ Metadata:
           default: "Alarm configuration"
         Parameters: 
           - UseAlarm
-          - EmailAddress
+          - NotificationPhoneNumber
 
 
 Outputs:
