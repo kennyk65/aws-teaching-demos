@@ -44,7 +44,7 @@ Parameters:
   BastionRole:
     Type: String 
     Description:  IAM roles NAME (NOT ARN!) of the role we wish this Bastion Host to assume.  Should be same role used to create the cluster.
-    Default:  AdminRole
+    Default:  EksClusterCreatorRole
 
   BastionHostKeyName:
     Type: AWS::EC2::KeyPair::KeyName
@@ -55,6 +55,18 @@ Parameters:
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
+  # CreateCloud9:
+  #   Type: String 
+  #   AllowedValues: 
+  #   - true
+  #   - false
+  #   Default: true
+  #   Description: Do you want to create a Cloud9 environment?  This will be similar in many ways to a Bastion Host.
+    
+  # RepositoryUrl:
+  #   Type: String
+  #   Description:  URL of a Git repository that you wish to clone into this EnvironmentEC2
+  #   Default: https://github.com/kennyk65/k8s-teaching-demos
 
 Metadata:
   # Controlling the order of the parameters on the CloudFormation page;
@@ -77,10 +89,17 @@ Metadata:
           - BastionRole
           - BastionHostKeyName
           - AmazonLinux2AMI
+      # - Label:
+      #     default: Cloud9 Details
+      #   Parameters:
+      #     - CreateCloud9
+      #     - IAMOwner
+      #     - RepositoryUrl
 
 Conditions:
   CreateBastionHostCondition:  !Equals [ !Ref CreateBastionHost, "true" ]
   CreateNodeGroupCondition:    !Equals [ !Ref CreateNodeGroup, "true" ]
+  # CreateCloud9Condition:       !Equals [ !Ref CreateCloud9, "true" ]
 
 Resources:
 
@@ -243,6 +262,18 @@ Resources:
       Path: /
       Roles: [ !Ref BastionRole]
 
+  # Cloud9: 
+  #   Type: AWS::Cloud9::EnvironmentEC2 
+  #   Condition:  CreateCloud9Condition
+  #   Properties: 
+  #     Name: !Sub ${AWS::StackName} 
+  #     InstanceType: t2.micro 
+  #     AutomaticStopTimeMinutes: 60
+  #     SubnetId: !Select [ 0, !Ref SubnetIds ] 
+  #     Repositories: 
+  #       - PathComponent: /git
+  #         RepositoryUrl: !Ref RepositoryUrl
+
 Outputs:
 
   EKSClusterConsole:
@@ -264,3 +295,8 @@ Outputs:
   EKSNodeRole:
     Description: Role applied to the EKS Nodes.  Used when running kubectl apply -f aws-auth-cm.yaml
     Value: !GetAtt EKSNodeRole.Arn
+
+  Cloud9Console:
+    Condition:  CreateCloud9Condition  
+    Description: Click here to go to the Cloud9 console
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloud9/home?region=${AWS::Region}#    
