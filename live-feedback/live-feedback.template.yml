@@ -162,10 +162,7 @@ Resources:
               //      'Value': obj.student
               //  } ]
               } ]
-            }, function (err, data) {
-              if (err) console.log(err, err.stack); // an error occurred
-              else     console.log(data);           // successful response
-            });  
+            });  // Note: this code is a bit dangerous since we won't know if the API call fails.  However it runs far quicker since we don't have to wait for the callback.
 
           // return the JSON result to the caller of the Lambda function.
           // Since API Gateway calls Lambda using Proxy mode, this code must set the CORS headers.
