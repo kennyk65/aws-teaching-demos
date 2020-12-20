@@ -5,7 +5,7 @@ AWSTemplateFormatVersion: 2010-09-09
 # This template requires that you are running in us-east-1 to detect this particular event.
 # TODO: The notification is quite raw, the original JSON.  Maybe call a lambda to make a clean message.
 # TODO: AssumeRole happens quite a bit for innocent reasons.  Perhaps focus on a specific role.
-
+ 
 Parameters:
 
   EmailAddress:
