@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Sets up some parameters in the AWS Systems Manager Parameter store.
+# The lambda function reads them
+
+Resources:
+
+  ParameterA:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Name: !Sub /${AWS::StackName}/key/a
+      Type: String    # Can't do SecureString via CloudFormation
+      Value: This is A
+      Description: Just an example parameter
+
+  ParameterB:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Name: !Sub /${AWS::StackName}/key/b
+      Type: String    # Can't do SecureString via CloudFormation
+      Value: This is B
+      Description: Just an example parameter
+
+  SecretC:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub /${AWS::StackName}/key/c
+      Description: This secret has a dynamically generated secret password.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "test-user"}'
+        GenerateStringKey: password
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
+      Tags:
+      - Key: AppName
+        Value: AppB
+
+  # This lambda reads the CSV file from S3, and puts each row into DynamoDB.
+  MyLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: ParameterStoreDemo
+      Description: Illustrates how to  retrieve parameters from SSM parameter store and secrets manager
+      MemorySize: 128
+      Timeout: 10
+      Role: !GetAtt LambdaFunctionRole.Arn 
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Environment:
+        Variables:
+          PREFIX: !Ref AWS::StackName
+      Code:
+        ZipFile: !Sub |
+          from __future__ import print_function
+          import os
+          import boto3
+          print('Loading function')
+          ssm = boto3.client('ssm')
+          secrets = boto3.client('secretsmanager')
+
+          def lambda_handler(event, context):
+
+            # This code will retrieve and decrypt all parameters matching the given prefix:
+            path = "/" + os.getenv('PREFIX')
+            response = ssm.get_parameters_by_path(
+              Path=path,
+              Recursive=True,
+              WithDecryption=True )
+              
+            for parameter in response['Parameters']:
+              print('Parameter {} = {}'.format(parameter['Name'],parameter['Value'] ))      
+              
+            
+            # This code will retrieve all secrets which match the prefix.  But it does not provide values or decrypt:
+            secretList = secrets.list_secrets(
+                Filters=[{ 'Key': 'name', 'Values': [ path  ] }]
+            )
+            
+            # Using secrets manager, separate calls are needed to retrieve and decrypt individual secret values:
+            for secret in secretList['SecretList']:
+              name = secret['Name']
+              response = secrets.get_secret_value(
+                  SecretId=name
+              )
+              print('Secret {} = {}'.format(name,response['SecretString'] )) 
+
+          # Note: you can retrieve individual secrets from secret manager via the parameter store's get_parameter call.  
+          # You only need to prefix the secret with: "/aws/reference/secretsmanager/"
+          # However, you can't LIST the secrets using get_parameters_by_path, and you can't retrieve the secret if it contains a "/"
+
+
+
+  # This Role allows the Lambda function to make API calls if needed.
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-ParameterStoreLambdaRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  # This Policy is attached to the CsvToDynamoRole.
+  # Basic permissions for CloudWatch Logs, plus get on S3, put on DynamoDB.  expand as needed.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-ParameterStoreLambdaPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - ssm:Describe*
+            - ssm:Get*
+            - ssm:List*
+            - secretsmanager:ListSecrets
+            - secretsmanager:GetSecretValue
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaFunctionRole   
+
+
+Outputs:
+  ParameterAValue:
+    Description: The value of parameter A.
+    Value: !GetAtt ParameterA.Value 
+
+  ParameterBValue:
+    Description: The value of parameter B.
+    Value: !GetAtt ParameterB.Value 
