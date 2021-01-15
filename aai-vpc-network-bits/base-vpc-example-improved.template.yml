@@ -3,25 +3,26 @@ AWSTemplateFormatVersion: 2010-09-09
 # This CloudFormation template deploys a basic VPC / Network.  Specifically:
 # It deploys a VPC with 4 subnets (2 public, 2 private) across 2 Availability Zones
 # The VPC and subnets are exported for use by other stacks.
+# Creation of private subnets is optional
+# Optionally will create a TransitGateway and attach it
 
-Metadata: 
-  # Control the UI display when running this template from the AWS Management Console:
-  AWS::CloudFormation::Interface: 
-    ParameterGroups: 
-      - Label: 
-          default: "Network Configuration"
-        Parameters: 
-          - NumberOfAZs
-          - PrivateSubnets
 
 Parameters:
-  PrivateSubnets:
+  CreatePrivateSubnets:
+    Type: String
+    AllowedValues: 
+    - True
+    - False
+    Default: False
+    Description: Do you want to create private subnets in addition to public subnets?
+
+  CreateTransitGateway:
     Type: String
     AllowedValues: 
     - True
     - False
     Default: True
-    Description: Do you want to create private subnets in addition to public subnets?
+    Description: Do you want to create a transit gateway or not?
 
   SecondOctet: 
     Type: Number
@@ -32,63 +33,23 @@ Parameters:
     Type: String
     Description:  ARN of the Lambda used to acquire CIDR addresses
 
-  # TransitGatewayStack:
-  #   Type: String
-  #   Description:  Name of the CloudFormation stack containing the transit gateway
-
-  TransitGatewayId:
-    Type:  String
-    Description:  ID of the TransitGateway.  May be in another region.  
+  Network: 
+    Type: String
+    Description:  The logical name of the network we are building
+    AllowedValues: 
+    - Alpha
+    - Beta
+    - Gamma
 
 Conditions:
-  BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
-  # HOW TO MAKE TRANSIT GATEWAY CONDITIONAL?
-
-
-# Mappings:
-#   RegionMap:
-#     ap-southeast-1:           # Singapore
-#       Vpc1: 10.1.0.0/16
-#       Vpc2: 10.2.0.0/16
-#       Vpc3: 10.3.0.0/16
-#       Vpc4: 10.4.0.0/16
-#       Vpc5: 10.5.0.0/16
-#       PublicSubnet1A:  10.1.10.0/24
-#       PublicSubnet1B:  10.1.20.0/24
-#       PublicSubnet1C:  10.1.30.0/24
-#       PrivateSubnet1A: 10.1.50.0/24
-#       PrivateSubnet1B: 10.1.60.0/24
-#       PrivateSubnet1C: 10.1.70.0/24
-#     ap-southeast-2:           # Sydney
-#       Vpc1: 10.11.0.0/16
-#       Vpc2: 10.12.0.0/16
-#       Vpc3: 10.13.0.0/16
-#       Vpc4: 10.14.0.0/16
-#       Vpc5: 10.15.0.0/16
-#       PublicSubnet1A:  10.11.10.0/24
-#       PublicSubnet1B:  10.11.20.0/24
-#       PublicSubnet1C:  10.11.30.0/24
-#       PrivateSubnet1A: 10.11.50.0/24
-#       PrivateSubnet1B: 10.11.60.0/24
-#       PrivateSubnet1C: 10.11.70.0/24
-#     ap-northeast-1:           # Tokyo
-#       Vpc1: 10.21.0.0/16
-#       Vpc2: 10.22.0.0/16
-#       Vpc3: 10.23.0.0/16
-#       Vpc4: 10.24.0.0/16
-#       Vpc5: 10.25.0.0/16
-#       PublicSubnet1A:  10.21.10.0/24
-#       PublicSubnet1B:  10.21.20.0/24
-#       PublicSubnet1C:  10.21.30.0/24
-#       PrivateSubnet1A: 10.21.50.0/24
-#       PrivateSubnet1B: 10.21.60.0/24
-#       PrivateSubnet1C: 10.21.70.0/24
+  BuildPrivateSubnets:  !Equals [ !Ref CreatePrivateSubnets, True ] 
+  BuildTransitGateway:  !Equals [ !Ref CreateTransitGateway, True ] 
 
 
 Resources:
 
   # This custom resource calls the Lambda function which generates CIDR values for VPCs and Subnets.
-  HelperCustomResource:
+  CidrGenerator:
     Type: Custom::helper
     Properties:
       ServiceToken: !Ref CidrLambdaArn
@@ -99,7 +60,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !GetAtt HelperCustomResource.VpcCidr
+      CidrBlock: !GetAtt CidrGenerator.VpcCidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
@@ -109,25 +70,25 @@ Resources:
   VPCExtraBlock1:
     Type: AWS::EC2::VPCCidrBlock
     Properties: 
-      CidrBlock: !GetAtt HelperCustomResource.VpcCidrExtra1
+      CidrBlock: !GetAtt CidrGenerator.VpcCidrExtra1
       VpcId: !Ref VPC
 
   VPCExtraBlock2:
     Type: AWS::EC2::VPCCidrBlock
     Properties: 
-      CidrBlock: !GetAtt HelperCustomResource.VpcCidrExtra2
+      CidrBlock: !GetAtt CidrGenerator.VpcCidrExtra2
       VpcId: !Ref VPC
 
   VPCExtraBlock3:
     Type: AWS::EC2::VPCCidrBlock
     Properties: 
-      CidrBlock: !GetAtt HelperCustomResource.VpcCidrExtra3
+      CidrBlock: !GetAtt CidrGenerator.VpcCidrExtra3
       VpcId: !Ref VPC
 
   VPCExtraBlock4:
     Type: AWS::EC2::VPCCidrBlock
     Properties: 
-      CidrBlock: !GetAtt HelperCustomResource.VpcCidrExtra4
+      CidrBlock: !GetAtt CidrGenerator.VpcCidrExtra4
       VpcId: !Ref VPC
 
 
@@ -147,7 +108,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock:  !GetAtt HelperCustomResource.PublicSubnetA
+      CidrBlock:  !GetAtt CidrGenerator.PublicSubnetA
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
       Tags:
       - Key: Name
@@ -156,7 +117,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock:  !GetAtt HelperCustomResource.PublicSubnetB
+      CidrBlock:  !GetAtt CidrGenerator.PublicSubnetB
       AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
       Tags:
       - Key: Name
@@ -167,7 +128,7 @@ Resources:
     Condition: BuildPrivateSubnets
     Properties:
       VpcId: !Ref VPC
-      CidrBlock:  !GetAtt HelperCustomResource.PrivateSubnetA
+      CidrBlock:  !GetAtt CidrGenerator.PrivateSubnetA
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
       Tags:
       - Key: Name
@@ -177,7 +138,7 @@ Resources:
     Condition: BuildPrivateSubnets
     Properties:
       VpcId: !Ref VPC
-      CidrBlock:  !GetAtt HelperCustomResource.PrivateSubnetB
+      CidrBlock:  !GetAtt CidrGenerator.PrivateSubnetB
       AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
       Tags:
       - Key: Name
@@ -204,7 +165,7 @@ Resources:
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 10.0.0.0/8
-      TransitGatewayId: !Ref TransitGatewayId
+      TransitGatewayId: !Ref TransitGateway
       
   # Here is a private route table:
   PrivateRouteTable:
@@ -229,7 +190,7 @@ Resources:
     Properties: 
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 10.0.0.0/8
-      TransitGatewayId: !Ref TransitGatewayId
+      TransitGatewayId: !Ref TransitGateway
 
 
   # Attach the public subnets to public route tables, 
@@ -273,16 +234,27 @@ Resources:
     Properties:
       Domain: VPC
 
-  # If there was a transit gateway provided, attach this vpc to it:
+  TransitGateway:
+    Type: AWS::EC2::TransitGateway
+    Condition: BuildTransitGateway
+    Properties: 
+      AutoAcceptSharedAttachments: enable   # Hoping this makes attaching VPCs easier
+      Tags:
+      - Key: Network
+        Value: !Ref Network
+
   TransitGatewayAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
+    Condition: BuildTransitGateway
     Properties: 
-      TransitGatewayId: !Ref TransitGatewayId
+      TransitGatewayId: !Ref TransitGateway
       VpcId: !Ref VPC
       SubnetIds: 
-        - !Ref PublicSubnetA
-        - !Ref PublicSubnetB
-
+      - !Ref PublicSubnetA
+      - !Ref PublicSubnetB
+      Tags:
+      - Key: Network
+        Value: !Ref Network
 
 
 Outputs:
@@ -313,3 +285,9 @@ Outputs:
     Value: !Ref PrivateSubnetB
     Export:
       Name: !Sub ${AWS::StackName}-PrivateSubnetB
+  TransitGatewayId:
+    Description: ID of the transit gateway
+    Condition: BuildTransitGateway
+    Value: !Ref TransitGateway
+    Export:
+      Name: !Sub ${AWS::StackName}-TransitGateway
