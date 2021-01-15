@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  UserName:
+    Type: String
+    Description:  Name of the existing IAM user that you wish to be able to assume this role
+    Default: kennyk
+
+  RoleName:
+    Type: String
+    Description:  Name of the IAM Role to be created
+    Default: EksClusterCreatorRole
+
+Resources:
+  IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      RoleName: !Ref RoleName
+      Description: Role used to demonstrate creation of an EKS cluster.  Assumable by users and EC2 instances.
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:user/${UserName}
+          Action: sts:AssumeRole
+      MaxSessionDuration: 7200
+
+  IAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${RoleName}Policy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action:
+          - eks:*
+          - autoscaling:*
+          - iam:PassRole
+          - iam:*
+          - ec2:*
+          - cloudformation:*
+          - s3:*
+          - cloudwatch:*
+          - ssm:*
+          - cloud9:*
+          - sns:*
+          Resource: 
+          - "*"
+      Roles: 
+      - !Ref IAMRole
+
