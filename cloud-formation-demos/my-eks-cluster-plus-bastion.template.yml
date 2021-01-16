@@ -264,6 +264,7 @@ Resources:
     Condition:  CreateCloud9Condition
     Properties: 
       Name: !Sub ${AWS::StackName} 
+      # OwnerArn:  !Sub arn:aws:sts::${AWS::AccountId}:assumed-role/${BastionRole}
       InstanceType: t2.micro 
       AutomaticStopTimeMinutes: 60
       SubnetId: !Select [ 0, !Ref SubnetIds ] 
@@ -296,4 +297,5 @@ Outputs:
   Cloud9Console:
     Condition:  CreateCloud9Condition  
     Description: Click here to go to the Cloud9 console
-    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloud9/home?region=${AWS::Region}#    
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloud9/home?region=${AWS::Region}#   
+
