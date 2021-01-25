@@ -18,6 +18,8 @@ Parameters:
     - t2.micro
     - t3.micro
     - t3.small
+    - t3.medium
+    - t3.xlarge
     Default: t3.micro
     Description: Select the backing EC2 instance type.
 
