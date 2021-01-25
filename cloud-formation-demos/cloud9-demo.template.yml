@@ -12,12 +12,22 @@ Parameters:
     Description:  URL of a Git repository that you wish to clone into this EnvironmentEC2
     Default: https://github.com/kennyk65/aws-teaching-demos
 
+  InstanceType:
+    Type: String 
+    AllowedValues: 
+    - t2.micro
+    - t3.micro
+    - t3.small
+    Default: t3.micro
+    Description: Select the backing EC2 instance type.
+
+
 Resources:
   Cloud9: 
     Type: AWS::Cloud9::EnvironmentEC2 
     Properties: 
       Name: !Sub ${AWS::StackName} 
-      InstanceType: t2.micro 
+      InstanceType: !Ref InstanceType 
       AutomaticStopTimeMinutes: 60
       SubnetId: !Ref PublicSubnet 
       Repositories: 
