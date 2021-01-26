@@ -19,7 +19,7 @@ Parameters:
     ConstraintDescription: must be between 5 and 1024Gb.
 
   DBInstanceClass:
-    Default: db.t2.micro
+    Default: db.t3.micro
     Description: The database instance type
     Type: String
     AllowedValues:
@@ -49,8 +49,8 @@ Resources:
           Value: DB-Security-Group
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: '3306'
-          ToPort: '3306'
+          FromPort: 3306
+          ToPort: 3306
           SourceSecurityGroupId: 
             Fn::ImportValue:
               !Sub ${Lab1Stack}:WebSecurityGroup
@@ -70,7 +70,7 @@ Resources:
       AllocatedStorage: !Ref DBAllocatedStorage
       DBInstanceClass: !Ref DBInstanceClass
       Engine: MySQL
-      MasterUsername: master
+      MasterUsername: lab-admin
       MasterUserPassword: lab-password
       MultiAZ: !Ref MultiAZDatabase
       DBSubnetGroupName: !Ref dbsubnetgroup
