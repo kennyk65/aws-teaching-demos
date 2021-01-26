@@ -10,11 +10,6 @@ Parameters:
     Description:  The name of the stack from Lab 1.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
     Default: lab1
 
-  Lab2Stack:
-    Type:  String
-    Description:  The name of the stack from Lab 2.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
-    Default: lab2
-
   AmazonLinux2AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
