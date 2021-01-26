@@ -12,7 +12,7 @@ Parameters:
 
   AmazonLinux1AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn1-ami-hvm-x86_64-gp2
+    Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
 
