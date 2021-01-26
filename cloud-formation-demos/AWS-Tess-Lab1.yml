@@ -11,9 +11,9 @@ Parameters:
     AllowedValues:
       - 10.0.0.0/16
 
-  AmazonLinux2AMI:
+  AmazonLinux1AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
 Resources:
@@ -137,7 +137,7 @@ Resources:
   WebInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinux2AMI
+      ImageId: !Ref AmazonLinux1AMI
       InstanceType: t2.micro
       NetworkInterfaces:
         - DeviceIndex: 0
@@ -150,15 +150,17 @@ Resources:
           Value: Web Server 1
       UserData: 
         Fn::Base64: !Sub |
-          #!/bin/bash
-          # Install Apache Web Server and PHP
-          yum install -y httpd mysql php
-          # Download Lab files
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.11/lab-1-build-a-web-server/scripts/lab-app.zip
-          unzip lab-app.zip -d /var/www/html/
-          # Turn on web server
+          #!/bin/bash -ex
+          # Uses Amazon Linux 1 due to PHP incompatibilities
+          yum -y update
+          yum -y install httpd php mysql php-mysql
           chkconfig httpd on
-          service httpd start 
+          /etc/init.d/httpd start
+          cd /var/www/html
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.11/lab-3-manage-your-infrastructure/scripts/lab-app.zip
+          unzip lab-app.zip -d /var/www/html/
+          chown apache:root /var/www/html/rds.conf.php
+
 
   # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
   NATGateway:
