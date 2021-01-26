@@ -31,6 +31,7 @@ Resources:
           #!/bin/bash
           # Install Apache Web Server and PHP
           yum install -y httpd mysql php
+          amazon-linux-extras install php7.4
           # Download Lab files
           wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.11/lab-1-build-a-web-server/scripts/lab-app.zip
           unzip lab-app.zip -d /var/www/html/
