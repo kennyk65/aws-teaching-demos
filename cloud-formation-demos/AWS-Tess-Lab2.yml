@@ -91,7 +91,7 @@ Outputs:
 
   RDSMasterUser:
     Description: Username
-    Value: master
+    Value: lab_admin
 
   RDSPassword:
     Description: password
