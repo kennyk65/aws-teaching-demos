@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
-# Implement Lab 7 of AWS Dev 3
+# Implement Lab 6 of AWS Dev 3
 # Warning: This code can presently only run in us-east-1, since that is where the (default) code bucket is.
 # Note that custom resource python code is creating the test user (student) and populating the web bucket.
 
@@ -23,6 +23,8 @@ Parameters:
 
   WebSourceCodeUrl:
     Type: String
+    # Latest code results in infinite flipping between home and login page
+    # Default:  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-200-DODEVA/v3.4.0/lab-6-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
     Default:  https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-DODEVA/v3.1.0/lab-7-end-to-end-app/scripts/polly-notes-web-bucket-root.zip
     Description:  Download location of the web source code.
 
@@ -557,7 +559,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-PollyNotesTestUserCustomResource
-      Description: Sets up the test user for lab 7.
+      Description: Sets up the test user for lab 6.
       Role: !GetAtt CustomResourceRole.Arn
       Code:
         ZipFile: !Sub |
@@ -610,7 +612,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-PollyNotesWebContentCustomResource
-      Description: Handles miscellaneous tasks associated with lab 7.
+      Description: Handles miscellaneous tasks associated with lab 6.
       Role: !GetAtt CustomResourceRole.Arn
       Code:
         ZipFile: !Sub |
