@@ -67,7 +67,7 @@ Resources:
       TargetGroupARNs:  [ !Ref ALBTargetGroup ]
       Tags:
       - Key: Name
-        Value: AppServer
+        Value: Lab Instance
         PropagateAtLaunch: true
 
   StepScalingOut: 
