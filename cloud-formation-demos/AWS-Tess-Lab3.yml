@@ -27,6 +27,7 @@ Resources:
       SecurityGroups: 
         - Fn::ImportValue: !Sub ${Lab1Stack}:WebSecurityGroup  # Plug in the security group.
       UserData:                     #  This code Installs the apache server and web app.
+          # TRYING TO USE AMAZON LINUX 1 DUE TO PHP INCOMPATIBILITIES.  This code came from lab 3 userdata
         Fn::Base64: !Sub |
           #!/bin/bash -ex
           # Uses Amazon Linux 1 due to PHP incompatibilities
@@ -35,7 +36,7 @@ Resources:
           chkconfig httpd on
           /etc/init.d/httpd start
           cd /var/www/html
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.11/lab-3-manage-your-infrastructure/scripts/lab-app.zip
+          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.13/lab-3-manage-your-infrastructure/scripts/lab-app.zip
           unzip lab-app.zip -d /var/www/html/
           chown apache:root /var/www/html/rds.conf.php
 
@@ -49,6 +50,7 @@ Resources:
 #           # Turn on web server
 #           chkconfig httpd on
 #           service httpd start
+
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
