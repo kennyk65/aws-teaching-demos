@@ -263,31 +263,35 @@ Resources:
   NatInstanceWaitHandle:
     Type: AWS::CloudFormation::WaitConditionHandle
 
-
-  # Launch Configuration for our web server running within an ASG:            
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
-      KeyName: !Ref PrivateInstancesKeyName                           # We get the keypair name from the input parameters
-      InstanceType: t2.micro          # Any instance type will do
-      SecurityGroups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
-      UserData:                     #  This code Installs a Spring Boot app. Notice a different way to signal completion:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum -y update
-          amazon-linux-extras install java-openjdk11 -y
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
-          mv *.jar app.jar
-          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          java -jar app.jar --server.port=80
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-Lab-Template
+      LaunchTemplateData: 
+        ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+        KeyName: !Ref PrivateInstancesKeyName                           # We get the keypair name from the input parameters
+        InstanceType: t3.micro 
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
+        UserData:      
+          Fn::Base64: !Sub |
+            #!/bin/bash 
+            yum -y update
+            amazon-linux-extras install java-openjdk11 -y
+            wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+            mv *.jar app.jar
+            /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+            java -jar app.jar --server.port=80
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: [ NatInstanceWaitCondition ]
     Properties:
       VPCZoneIdentifier: [ !Ref PrivateSubnet1,  !Ref PrivateSubnet2 ]
-      LaunchConfigurationName: !Ref LaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
       MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
       MaxSize: 4
       DesiredCapacity: 4
