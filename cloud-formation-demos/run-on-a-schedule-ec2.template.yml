@@ -153,32 +153,39 @@ Resources:
       - Key: Name
         Value: VanillaSecurityGroup
 
-  # Launch Configuration for our instance running within an ASG:            
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      ImageId: !Ref AmazonLinuxAMI              # Latest Amazon Linux 2
-      InstanceType: t2.micro                      # Any instance type will do
-      IamInstanceProfile: !Ref InstanceProfile      # Allows EC2 Instance to talk with SSM
-      SecurityGroups: [ !Ref VanillaSecurityGroup ]   # Need a SG to allow outbound access.
-      UserData:                                         #  This code runs some innocent activity, then terminates the instance
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum update -y
-          # Set region.  EC2 can't infer it from Metadata:
-          aws configure set region ${AWS::Region}
-          # DO WHATEVER WORK YOU WANT TO DO HERE!!
-          # Send a text message, just to prove that we are running;
-          aws sns publish --phone-number ${NotificationPhoneNumber} --message 'EC2 instance has just completed its work, shutting down now...'
-          # Shut the instance down:
-          aws autoscaling set-desired-capacity --auto-scaling-group-name ${AWS::StackName}-ASG --desired-capacity 0
+  # Launch Template for our instance running within an ASG:  
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-Template
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinuxAMI              # Latest Amazon Linux 2
+        InstanceType: t3.micro                    # Any instance type will do
+        IamInstanceProfile: 
+          Name:  !Ref InstanceProfile             # Allows EC2 Instance to talk with SSM
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref VanillaSecurityGroup ]   # Plug in the security group.
+        UserData:                                 # This code runs some innocent activity, then terminates the instance 
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            # Set region.  EC2 can't infer it from Metadata:
+            aws configure set region ${AWS::Region}
+            # DO WHATEVER WORK YOU WANT TO DO HERE!!
+            # Send a text message, just to prove that we are running;
+            aws sns publish --phone-number ${NotificationPhoneNumber} --message 'EC2 instance has just completed its work, shutting down now...'
+            # Shut the instance down:
+            aws autoscaling set-desired-capacity --auto-scaling-group-name ${AWS::StackName}-ASG --desired-capacity 0
 
-  AppAutoScalingGroup:
+  AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       AutoScalingGroupName: !Sub ${AWS::StackName}-ASG
       VPCZoneIdentifier: [ !Ref PublicSubnet ]
-      LaunchConfigurationName: !Ref LaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
       MinSize: 0        
       MaxSize: 1
       DesiredCapacity: 0  # This value will be set to 1 by the Lambda function, and set to 0 by the EC2 Instance

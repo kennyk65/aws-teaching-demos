@@ -306,7 +306,7 @@ Resources:
         Value: AppServer
         PropagateAtLaunch: true
     # This creation policy is more elegant than the clumsy wait condition shown earlier, but it only works on EC2
-    # and ASG/LaunchConfigurtions.  Essentially it says 'this resource is not really created until you get 1 signal back'.
+    # and ASGs.  Essentially it says 'this resource is not really created until you get 1 signal back'.
     # Best to make the number of signals match the minimum or desired capacity of the ASG.
     CreationPolicy:
       ResourceSignal:

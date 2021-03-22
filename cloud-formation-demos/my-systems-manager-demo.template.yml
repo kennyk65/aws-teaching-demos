@@ -111,50 +111,50 @@ Resources:
         CidrIp: 0.0.0.0/0
 
 
-  # Launch Configuration for our web server running within an ASG:            
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      ImageId: !Ref AmazonLinux2AMI   # We lookup AMI using the AWS Systems Manager
-      InstanceType: t2.micro          # Any instance type will do
-      SecurityGroups:
-      - !Ref WebServerSecurityGroup                   # Plug in the security group.
-      IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
-      BlockDeviceMappings:
-      - DeviceName: "/dev/xvdf"
-        Ebs:
-          VolumeSize: '25'
-          VolumeType: gp2
-      UserData:      #  Install AWS Systems Manager:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          cd /tmp
-          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-          start amazon-ssm-agent
+  # Linux launch template:
+  LaunchTemplateLinux:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-LinuxTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinux2AMI             # We lookup AMI using the AWS Systems Manager
+        InstanceType: t3.micro 
+        IamInstanceProfile: 
+          Name:  !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
+        UserData:      
+          Fn::Base64: |
+            #!/bin/bash 
+            cd /tmp
+            yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+            start amazon-ssm-agent
 
-  # Here's a Windows launch config: 
-  LaunchConfigWindows:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      ImageId: !Ref WindowsAMI        # We lookup AMI using the AWS Systems Manager
-      InstanceType: t2.micro          # Any instance type will do
-      SecurityGroups:
-      - !Ref WebServerSecurityGroup                   # Plug in the security group.
-      IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
-      BlockDeviceMappings:
-      - DeviceName: "/dev/xvdf"
-        Ebs:
-          VolumeSize: '25'
-          VolumeType: gp2
+  # Here's a Windows launch template: 
+  LaunchTemplateWindows:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-WindowsTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref WindowsAMI        # We lookup AMI using the AWS Systems Manager
+        InstanceType: t3.micro 
+        IamInstanceProfile: 
+          Name:  !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
 
 
-  AppAutoScalingGroup:
+  AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier:
       - Ref: PublicSubnet1
       - Ref: PublicSubnet2
-      LaunchConfigurationName: !Ref LaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplateLinux
+        Version: !GetAtt LaunchTemplateLinux.LatestVersionNumber        
       MinSize: 2
       MaxSize: 6
       DesiredCapacity: 2
@@ -167,13 +167,15 @@ Resources:
         Value: Example
         PropagateAtLaunch: true
 
-  AppAutoScalingGroupWindows:
+  AutoScalingGroupWindows:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier:
       - Ref: PublicSubnet1
       - Ref: PublicSubnet2
-      LaunchConfigurationName: !Ref LaunchConfigWindows
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplateWindows
+        Version: !GetAtt LaunchTemplateWindows.LatestVersionNumber        
       MinSize: 2     
       MaxSize: 6
       DesiredCapacity: 2
@@ -208,10 +210,4 @@ Resources:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
       # Note that any other policies required for the instance to do its job would be defined here as well.  
 
-
-# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
-Outputs:
-  AppAutoScalingGroupName:
-    Description: Name of the Auto Scaling group
-    Value: !Ref AppAutoScalingGroup
 
