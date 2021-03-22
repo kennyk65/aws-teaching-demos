@@ -18,39 +18,30 @@ Parameters:
 
 Resources:
 
-  # Launch Configuration for our web server running within an ASG:            
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      ImageId: !Ref AmazonLinux1AMI                   # We lookup AMI from parameter store
-      InstanceType: t2.micro                          # Any instance type will do
-      SecurityGroups: 
-        - Fn::ImportValue: !Sub ${Lab1Stack}:WebSecurityGroup  # Plug in the security group.
-      UserData:                     #  This code Installs the apache server and web app.
-          # TRYING TO USE AMAZON LINUX 1 DUE TO PHP INCOMPATIBILITIES.  This code came from lab 3 userdata
-        Fn::Base64: !Sub |
-          #!/bin/bash -ex
-          # Uses Amazon Linux 1 due to PHP incompatibilities
-          yum -y update
-          yum -y install httpd php mysql php-mysql
-          chkconfig httpd on
-          /etc/init.d/httpd start
-          cd /var/www/html
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.13/lab-3-manage-your-infrastructure/scripts/lab-app.zip
-          unzip lab-app.zip -d /var/www/html/
-          chown apache:root /var/www/html/rds.conf.php
-
-#           #!/bin/bash
-#           # Install Apache Web Server and PHP
-#           yum install -y httpd mysql php
-#           amazon-linux-extras install php7.4
-#           # Download Lab files
-#           wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.11/lab-1-build-a-web-server/scripts/lab-app.zip
-#           unzip lab-app.zip -d /var/www/html/
-#           # Turn on web server
-#           chkconfig httpd on
-#           service httpd start
-
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-LaunchTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinux1AMI     # We lookup AMI from parameter store
+        InstanceType: t3.micro              # hard-coded
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: false     # No public IP needed - all access via load balancer
+          Groups: 
+          - Fn::ImportValue: !Sub ${Lab1Stack}:WebSecurityGroup
+        UserData:  #  This code Installs the apache server and web app.  Lab is different, uses custom AMI.
+          Fn::Base64: !Sub |
+            #!/bin/bash -ex
+            # Uses Amazon Linux 1 due to PHP incompatibilities
+            yum -y update
+            yum -y install httpd php mysql php-mysql
+            chkconfig httpd on
+            /etc/init.d/httpd start
+            cd /var/www/html
+            wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-TECESS/v4.7.13/lab-3-manage-your-infrastructure/scripts/lab-app.zip
+            unzip lab-app.zip -d /var/www/html/
+            chown apache:root /var/www/html/rds.conf.php
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -58,8 +49,10 @@ Resources:
       VPCZoneIdentifier:
         - Fn::ImportValue: !Sub ${Lab1Stack}:PrivateSubnet1
         - Fn::ImportValue: !Sub ${Lab1Stack}:PrivateSubnet2
-      LaunchConfigurationName: !Ref LaunchConfig
-      MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
+      MinSize: 1       
       MaxSize: 4
       DesiredCapacity: 2
       HealthCheckType: ELB
