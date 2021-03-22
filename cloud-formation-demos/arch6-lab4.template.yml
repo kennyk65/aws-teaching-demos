@@ -43,13 +43,13 @@ Mappings:
   #  This is just the Amazon Linux 2 AMI.  These values change every few months:  
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-04681a1dbd79675a5
+      AMI: ami-0533f2ba8a1995cf9
     us-east-2:
-      AMI: ami-0cf31d971a3ca20d6
+      AMI: ami-089c6f2e3866f0f14
     us-west-1:
-      AMI: ami-0782017a917e973e7
+      AMI: ami-0a245a00f741d6301
     us-west-2:
-      AMI: ami-6cd6f714
+      AMI: ami-05b622b5fa0269787
 
 
 Resources:
@@ -130,39 +130,44 @@ Resources:
       Path: /
       Roles: [!Ref RoleNameInventoryApp]
 
-  # Launch Configuration for our web server running within an ASG:            
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      LaunchConfigurationName: Inventory-LC
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
-      KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
-      InstanceType: t2.micro 
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      SecurityGroups: [ !Ref AppSg ]
-      UserData:      
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          # Install Apache Web Server and PHP
-          yum install -y httpd mysql
-          amazon-linux-extras install -y php7.2
-          # Download Lab files
-          wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-100-ARCHIT/v6.3.5/lab-2-webapp/scripts/inventory-app.zip
-          unzip inventory-app.zip -d /var/www/html/
-          # Download and install the AWS SDK for PHP
-          wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
-          unzip aws -d /var/www/html
-          # Turn on web server
-          chkconfig httpd on
-          service httpd start
-
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-Lab-Template
+      LaunchTemplateData: 
+        ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+        KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
+        InstanceType: t3.micro 
+        IamInstanceProfile: 
+          Name:  !Ref EC2InstanceProfile  # Allows EC2 Instance to talk with SSM
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: false     # No public IP needed - all access via load balancer
+          Groups: [ !Ref AppSg ]
+        UserData:      
+          Fn::Base64: !Sub |
+            #!/bin/bash 
+            # Install Apache Web Server and PHP 
+            yum install -y httpd mysql 
+            amazon-linux-extras install -y php7.2 
+            # Download Lab files 
+            wget  
+            unzip inventory-app.zip -d /var/www/html/ 
+            # Download and install the AWS SDK for PHP 
+            wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip 
+            unzip aws -d /var/www/html 
+            # Turn on web server 
+            chkconfig httpd on 
+            service httpd start
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       AutoScalingGroupName: Inventory-ASG
       VPCZoneIdentifier: !Ref PrivateSubnets
-      LaunchConfigurationName: !Ref LaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
       MinSize: 2        
       MaxSize: 2
       DesiredCapacity: 2
@@ -177,4 +182,4 @@ Resources:
 Outputs:
   ECSALB:
     Description: Your ALB DNS URL
-    Value: !Join ['', ["http://", !GetAtt [ALB, DNSName]]]
+    Value: !Sub http://${ALB.DNSName}
