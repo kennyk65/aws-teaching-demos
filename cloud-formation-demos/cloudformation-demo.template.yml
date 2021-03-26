@@ -1,0 +1,445 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# For input parameters, we'll need the key pair to use for the Bastion host, the private instances, 
+# and a CIDR range from where input can come into the Bastion host.
+Parameters:
+  BastionHostKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the
+      bastion host.
+  BastionSecurityCIDR:
+    Type: String
+    Description: The CIDR range to use to lock down security on the bastion host.
+    Default: 0.0.0.0/0
+  PrivateInstancesKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to instances
+      in private subnets.
+      
+Resources:
+  # First, A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: Demo VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now some subnets, 2 public and 2 private:
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.20.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Public Subnet 2
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.50.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 1
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.60.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 2
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  # Here is a private route table:
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private
+  PrivateRoute1:                  # Private route table can access web via NAT (created below)
+    Type: AWS::EC2::Route
+    DependsOn: 
+    - AttachGateway
+    - NatInstanceWaitCondition    # We can't add this entry to the table until after the NAT is up and running!
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NATInstance
+
+  
+  # Attach the public subnets to public route tables, 
+  # and attach the private subnets to private route tables:    
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+      
+  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
+  NATSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Enable internal access to the NAT device
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 1024
+        CidrIp: !GetAtt VPC.CidrBlock
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: udp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+
+  # Here is a SecurityGroup for the Bastion server:
+  BastionServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for bastion server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: BastionServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref BastionSecurityCIDR    # Note how we reference an input parameter
+
+  # Security Group for the web server.  Allow HTTP from anywhere, but SSH only from the Bastion server:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      - Key: ResourceGroup
+        Value: CloudFormationResource
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+      
+  # This instance is our Bastion server
+  BastionServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # Lookup the AMI in the region map
+      InstanceType: t2.micro                                          # Any size is fine
+      KeyName: !Ref BastionHostKeyName                                # Use the keypair from the input parameters
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true                                # We will need a public IP address
+        SubnetId: !Ref PublicSubnet1                                  # We should sit in a public subnet.  Either one is fine.
+        GroupSet:
+        - Ref: BastionServerSecurityGroup                             # Attach the security group
+      Tags:
+      - Key: Name
+        Value: BastionServer
+      UserData:      #  Very simple userdata script.  Simply do a yum update when starting.
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          yum -y update
+            
+  # Create a NAT instance:    
+  NATInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
+      KeyName: !Ref BastionHostKeyName                                # We use the Key specified in input parameters
+      InstanceType: t2.small                                          # Any instance type is fine
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        SubnetId: !Ref PublicSubnet1                                  # Any public subnet is fine
+        AssociatePublicIpAddress: true                              # We will definitely need a public IP address
+        GroupSet:
+        - Ref: NATSecurityGroup                                       # Plug in the security group
+      SourceDestCheck: false                                        # NATs don't work if EC2 tries the match source addresses with destinations.
+      Tags:
+      - Key: Name
+        Value: NAT
+      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum -y update
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
+          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
+          /sbin/iptables-save > /etc/sysconfig/iptables
+          mkdir -p /etc/sysctl.d/
+          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.eth0.send_redirects = 0
+          NatConfFileMarker
+          /opt/aws/bin/cfn-signal -s true '${NatInstanceWaitHandle}'    
+
+    
+  # This WaitCondition helps us wait until the NAT is ready to handle traffic before creating other stuff.
+  # It waits for someone to call the wait handler, which we do from the end of the user data script.  
+  NatInstanceWaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: NATInstance
+    Properties:
+      Handle: !Ref NatInstanceWaitHandle
+      Timeout: 300    # 5 minutes
+
+  # This WaitHandle is critical.  The WaitCondition won't be satisfied until it is called.
+  # It is called from the last line of the user data script in the NAT instance.
+  NatInstanceWaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-Lab-Template
+      LaunchTemplateData: 
+        ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
+        KeyName: !Ref PrivateInstancesKeyName                           # We get the keypair name from the input parameters
+        InstanceType: t3.micro 
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
+        UserData:      
+          Fn::Base64: !Sub |
+            #!/bin/bash 
+            yum -y update
+            amazon-linux-extras install java-openjdk11 -y
+            wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+            mv *.jar app.jar
+            /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+            java -jar app.jar --server.port=80
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: [ NatInstanceWaitCondition ]
+    Properties:
+      VPCZoneIdentifier: [ !Ref PrivateSubnet1,  !Ref PrivateSubnet2 ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
+      MinSize: 1        # Minimum = 1 & Max = 1 means always keep 1 running :-)
+      MaxSize: 4
+      DesiredCapacity: 4
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:  [ !Ref ALBTargetGroup ]
+      Tags:
+      - Key: ApplicationRole
+        Value: OurWebApp
+        PropagateAtLaunch: true
+      - Key: Name
+        Value: AppServer
+        PropagateAtLaunch: true
+    # This creation policy is more elegant than the clumsy wait condition shown earlier, but it only works on EC2
+    # and ASGs.  Essentially it says 'this resource is not really created until you get 1 signal back'.
+    # Best to make the number of signals match the minimum or desired capacity of the ASG.
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+
+  StepScalingOut: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      MetricAggregationType: Average
+      EstimatedInstanceWarmup: 120        #  Estimated time for new instance to contribute to metrics.  Used in step scaling policies.
+      StepAdjustments: 
+        - MetricIntervalLowerBound: 0     #  If breach between 70 & 90, increase by 1
+          MetricIntervalUpperBound: 20
+          ScalingAdjustment: 1
+        - MetricIntervalLowerBound: 20    #  If breach over 90, increase by 2
+          ScalingAdjustment: 2
+
+  StepScalingIn: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      MetricAggregationType: Average
+      StepAdjustments: 
+        - MetricIntervalLowerBound: 0     #  If breach is any size, decrease by 1.
+#          MetricIntervalUpperBound: 100
+          ScalingAdjustment: -1
+
+  # Fire alarm when average CPU > 70 for one 5 minute period.  Fire scale out policy.
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fire alarm when ASG's average CPU > 70 for one 5 minute period.  Fire scale out policy.
+      AlarmActions: 
+        - !Ref StepScalingOut
+      Statistic: Average
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 70
+      EvaluationPeriods: 1
+      Period: 300
+
+  # Fire alarm when average CPU < 10 for two 5 minute periods.  Fire scale in policy.
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fire alarm when ASG's average CPU < 10 for two 5 minute period.s  Fire scale in policy.
+      AlarmActions: 
+        - !Ref StepScalingIn
+      Statistic: Average
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+      Threshold: 10
+      EvaluationPeriods: 2
+      Period: 300
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-ALB
+      Scheme: internet-facing
+      Subnets: [ !Ref PublicSubnet1,  !Ref PublicSubnet2 ]
+      SecurityGroups: [!Ref WebServerSecurityGroup ]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-App
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+Mappings:
+  #  This is the Amazon Linux 2 AMI:
+  AmazonLinuxAMI:
+    us-east-1:
+      AMI: ami-0b69ea66ff7391e80    # N Virginia
+    us-east-2:
+      AMI: ami-00c03f7f7f2ec15c3    # Ohio      
+    us-west-1:
+      AMI: ami-0245d318c6788de52    # N California
+    us-west-2:
+      AMI: ami-04b762b4289fba92b    # Oregon
+    eu-west-1:
+      AMI: ami-0ce71448843cb18a1    # Ireland
+    eu-central-1:
+      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+    sa-east-1:
+      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
+    ap-southeast-1:
+      AMI: ami-01da99628f381e50a    # Singaport
+    ap-southeast-2:
+      AMI: ami-00e17d1165b9dd3ec    # Sydney
+    ap-northeast-1:
+      AMI: ami-08847abae18baa040    # Tokyo
+
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  AppAutoScalingGroupName:
+    Description: Name of the Auto Scaling group
+    Value: !Ref AppAutoScalingGroup
+
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !Sub http://${ALB.DNSName}

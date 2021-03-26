@@ -1,0 +1,294 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# This demo build a simple stack running 4 instances of a "blue" version of an app.
+# Build the stack, and when it is running, change to the "green" version and watch the update.   
+      
+Parameters:
+  
+  S3Bucket:
+    Type: String
+    Default: kk-uploads-oregon
+    Description: Location of the blue and green WAR files.
+
+  WARFile:
+    Type: String
+    Default: zero-downtime-blue.war
+    Description: Object key (optional prefix) of WAR file to run as a webserver.
+
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
+
+Resources:
+  # First, A VPC:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: Lab VPC
+        
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now some subnets, 2 public and 2 private:
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.20.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Public Subnet 2
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.50.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 1
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.60.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: Private Subnet 2
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  # Here is a private route table:
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private
+  PrivateRoute1:                  # Private route table can access web via NAT (created below)
+    Type: AWS::EC2::Route
+    DependsOn: 
+    - AttachGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NATInstance
+
+  
+  # Attach the public subnets to public route tables, 
+  # and attach the private subnets to private route tables:    
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+      
+  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
+  NATSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Enable internal access to the NAT device
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '1024'
+        CidrIp: !GetAtt VPC.CidrBlock
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: udp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+
+
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      
+            
+  # Create a NAT instance.  I could use a gateway instead but this is fine:    
+  NATInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMI   # We lookup the AMI from SSM to always get the latest one in this Region
+      InstanceType: t2.small                                          # Any instance type is fine
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        SubnetId: !Ref PublicSubnet1                                  # Any public subnet is fine
+        AssociatePublicIpAddress: 'true'                              # We will definitely need a public IP address
+        GroupSet:
+        - Ref: NATSecurityGroup                                       # Plug in the security group
+      SourceDestCheck: 'false'                                        # NATs don't work if EC2 tries the match source addresses with destinations.
+      Tags:
+      - Key: Name
+        Value: NAT
+      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum -y update
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
+          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
+          /sbin/iptables-save > /etc/sysconfig/iptables
+          mkdir -p /etc/sysctl.d/
+          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.eth0.send_redirects = 0
+          NatConfFileMarker
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NATInstance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M     # 5 minutes
+    
+
+  # Launch Configuration for our web server running within an ASG:            
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AmazonLinuxAMI   # We lookup the AMI from SSM to always get the latest one in this Region
+      InstanceType: t2.micro          # Any instance type will do
+      SecurityGroups:
+      - !Ref WebServerSecurityGroup   # Plug in the security group.
+      UserData:      #  This code Installs the "blue" version of our code:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install java-1.8.0 -y
+          yum remove java-1.7.0-openjdk -y    
+          java -version     
+          wget https://${S3Bucket}.s3.amazonaws.com/${WARFile}
+          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+          sudo java -jar ${WARFile} --server.port=80        
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: 
+    - NATInstance
+    Properties:
+      VPCZoneIdentifier:
+      - Ref: PrivateSubnet1
+      - Ref: PrivateSubnet2
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: 4        
+      MaxSize: 6
+      DesiredCapacity: 4
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      LoadBalancerNames: 
+      - Ref: AppLoadBalancer
+      Tags:
+      - Key: Name
+        Value: WebServer
+        PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M # 5 minutes to download and launch the Spring app - more than enough.
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 2
+        MinInstancesInService: 4              # Have CF add two before removing 2         
+#        MinSuccessfulInstancesPercent: 50    # Requires precision with resource signals that I don't want to mess with right now.
+        WaitOnResourceSignals: true           # It takes a few minutes to download and install, so don't shift traffic until ready.
+        PauseTime: PT5M                       # We'll wait up to 5 minutes for new instances to get ready.
+        
+  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Listeners:
+      - LoadBalancerPort: '80'
+        InstancePort: '80'
+        Protocol: HTTP
+      SecurityGroups:
+      - Ref: WebServerSecurityGroup
+      Subnets:
+      - Ref: PublicSubnet1
+      - Ref: PublicSubnet2
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '10'
+        Timeout: '5'
+        
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  AppAutoScalingGroupName:
+    Description: Name of the Auto Scaling group
+    Value: !Ref AppAutoScalingGroup
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !Join ['', ["http://", !GetAtt [AppLoadBalancer, DNSName]]]
