@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-# Stand up an ECS cluster.  
+# Stand up an ECS cluster.      
 
 Metadata: 
   AWS::CloudFormation::Interface: 
