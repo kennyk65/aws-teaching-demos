@@ -25,7 +25,8 @@ Metadata:
       - Label:
           default: Target ECS Cluster
         Parameters:
-          - DockerRepository
+          - DockerRepositoryPrefix
+          - DockerImage
           - ECSCluster
           - ClusterType
           - ContainerName
@@ -52,10 +53,15 @@ Parameters:
     Type: String    
     Default: default
 
-  DockerRepository:
-    Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
+  DockerRepositoryPrefix:
+    Description:  The prefix of the existing private ECR repository.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
     Type: String
-    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com
+
+  DockerImage:
+    Description:  The docker image name, no prefix, no tag. You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
+    Type: String
+    Default: spring-cloud-aws-environment-demo
 
   ContainerName:
     Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
@@ -229,23 +235,23 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               pre_build:
                 commands:
                   - aws --version
               build:
                 commands:
                   - echo Maven Build started on `date`
-                  - mvn package -DskipTests
+                  - mvn -f pom-jar.xml package -DskipTests
                   - echo Maven Build finished on `date`
             artifacts:
               files:
-                - target/spring-cloud-aws-environment-demo-1.war
+                - target/cloud-build-demo-1.jar
                 - Dockerfile
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0  
+        Image: aws/codebuild/standard:5.0  
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -264,19 +270,18 @@ Resources:
             phases:
               pre_build:
                 commands:
-                  - aws --version
+                  - echo Version of AWS CLI is $(aws --version)
+                  - echo Version of Docker is $(docker --version)
                   - echo Logging in to Amazon ECR...
-                  - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
-                  - REPOSITORY_URI=${DockerRepository}   
-                  - IMAGE_TAG=1111
+                  - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${DockerRepositoryPrefix}
+                  - REPOSITORY_URI=${DockerRepositoryPrefix}/${DockerImage}  
+                  - IMAGE_TAG=$CODEBUILD_BUILD_NUMBER
                   - echo REPOSITORY_URI is set to $REPOSITORY_URI
                   - echo IMAGE_TAG is set to $IMAGE_TAG
-                  - echo CODEBUILD_RESOLVED_SOURCE_VERSION is set to $CODEBUILD_RESOLVED_SOURCE_VERSION
-                  - echo CODEBUILD_SOURCE_VERSION is set to $CODEBUILD_SOURCE_VERSION
               build:
                 commands:
                   - echo Docker Image Build started on `date`
-                  - docker build -t $REPOSITORY_URI:latest .
+                  - docker build -t $REPOSITORY_URI .
                   - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
                   - echo Docker Image Build finished on `date`
               post_build:
@@ -291,7 +296,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0  
+        Image: aws/codebuild/standard:5.0  
         PrivilegedMode: true      
       Artifacts:    
         Type: CODEPIPELINE
@@ -315,16 +320,16 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
                   - echo Testing started on `date`
-                  - mvn test
+                  -  mvn -f pom-jar.xml package 
                   - echo Testing finished on `date`
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0  
+        Image: aws/codebuild/standard:5.0  
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -461,7 +466,7 @@ Resources:
         # We want to run a little Spring Boot app named "environment-demo",
         # but since the DockerImage is an input parameter it could be anything.  
       - Name: !Ref ContainerName
-        Image: !Sub ${DockerRepository}
+        Image: !Sub ${DockerRepositoryPrefix}/${DockerImage} 
         Essential: true
         LogConfiguration:
           LogDriver: awslogs
