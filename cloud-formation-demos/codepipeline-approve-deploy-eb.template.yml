@@ -463,7 +463,7 @@ Resources:
               - s3:Delete*
             Resource: "*"
 
-  # CloudWatch Logs Groups are created automatically when CodeBuild writes output,
+  # CloudWatch Logs Groups are created automatically when CodeBuild or Lambda writes output,
   # but they are easier to cleanup when they are part of the stack.  
   CloudwatchLogsGroupBuild:
     Type: AWS::Logs::LogGroup
