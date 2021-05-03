@@ -210,18 +210,15 @@ Resources:
         BuildSpec: !Sub |
             version: 0.2
             # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
-            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
+            # The output file will be ./target/cloud-build-demo-1.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
               install:
                 runtime-versions:
-                  java: openjdk11 
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Build started on `date`
                   - mvn package -DskipTests
-                  - echo Build finished on `date`
-                  - echo $CODEBUILD_SRC_DIR
             artifacts:
               files:
                 - '**/*'
@@ -233,7 +230,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -254,16 +251,14 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk11
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Testing started on `date`
                   - mvn test
-                  - echo Testing finished on `date`
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0 
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -374,7 +369,7 @@ Resources:
       EnvironmentName: !Sub ${AWS::StackName}-TestEnvironment
       Description: Quick live-test environment for the app.
       CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
-      SolutionStackName: "64bit Amazon Linux 2 v4.1.1 running Tomcat 8.5 Corretto 11"
+      SolutionStackName: "64bit Amazon Linux 2 v4.1.7 running Tomcat 8.5 Corretto 11"
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
@@ -401,6 +396,73 @@ Resources:
       Roles:
       - !Ref BeanstalkAppRole 
 
+
+  # This custom resource calls our Lambda function:
+  CustomResourceBucketCleaner:
+    Type: Custom::bucketCleaner
+    Properties:
+      ServiceToken: !GetAtt CustomResourceBucketCleanerLambda.Arn
+      destinationBucket: !Ref S3
+
+  # This function will cleanup the S3 bucket before delete.
+  CustomResourceBucketCleanerLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: CloudwatchLogsGroupBucketCleaner
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-BucketCleanerCustomResource
+      Description: Cleans out the S3 bucket on stack delete
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 10         
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import cfnresponse
+          import boto3
+
+          # Entry point:
+          def lambda_handler(event, context):
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              destinationBucket = event['ResourceProperties']['destinationBucket']
+
+              responseData = {}
+              s3 = boto3.client('s3')
+
+              if requestType == 'Delete':
+                print ('Clean out bucket to enable delete... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:List*
+              - s3:Delete*
+            Resource: "*"
+
   # CloudWatch Logs Groups are created automatically when CodeBuild writes output,
   # but they are easier to cleanup when they are part of the stack.  
   CloudwatchLogsGroupBuild:
@@ -413,6 +475,12 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-SoftwareTest
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupBucketCleaner:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-BucketCleanerCustomResource
       RetentionInDays: 3
 
 
