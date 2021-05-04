@@ -21,10 +21,10 @@ Metadata:
           - GitHubRepository
           - GitHubOAuthToken
       - Label:
-          default: Target ECS Cluster
+          default: Docker Image
         Parameters:
-          - DockerRepository
-          - ContainerName
+          - DockerRepositoryPrefix
+          - DockerImageName
       - Label:
           default: Other
         Parameters:
@@ -41,13 +41,13 @@ Parameters:
     Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
-  DockerRepository:
-    Description:  The name of the existing ECR repository, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
+  DockerRepositoryPrefix:
+    Description:  The name of the existing ECR repository, no image, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
     Type: String
-    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com
 
-  ContainerName:
-    Description:  The label of the container as seen on the task definition that will be created.  Just used to visually identify your container later.  I usually make mine based on the Docker image name.
+  DockerImageName:
+    Description:  The name of the docker container imaage, no tag suffixes.  
     Type: String
     Default:  spring-cloud-aws-environment-demo
 
@@ -201,92 +201,61 @@ Resources:
     Properties: 
       BucketName: !Sub ${CodePipelineBucketPrefix}-${AWS::Region}
 
-
-  # This CodeBuild project runs packaging, tests are separate.
-  # This is a Java / Maven build, Followed by Dockerization / push to ECR
-  MavenBuild:
-    Type: AWS::CodeBuild::Project
-    Properties: 
-      Name: !Sub ${AWS::StackName}-MavenBuild
-      Description: Maven build, packaging only (tests are run separately)
-      ServiceRole: !Ref CodeBuildRole
-      TimeoutInMinutes: 5
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: !Sub |
-            version: 0.2
-            # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
-            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on.
-            # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
-            phases:
-              install:
-                runtime-versions:
-                  java: openjdk8  
-              pre_build:
-                commands:
-                  - aws --version
-              build:
-                commands:
-                  - echo Maven Build started on `date`
-                  - mvn package -DskipTests
-                  - echo Maven Build finished on `date`
-            artifacts:
-              files:
-                - target/spring-cloud-aws-environment-demo-1.war
-                - Dockerfile
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0
-      Artifacts:    
-        Type: CODEPIPELINE
-
   DockerBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Sub ${AWS::StackName}-DockerBuild
-      Description: Docker image build + push
+      Name: !Sub ${AWS::StackName}-SoftwareBuild
+      Description: Maven build, Docker image build + push to ECR
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
       Source:
         Type: CODEPIPELINE
         BuildSpec: !Sub |
             version: 0.2
-            # This AWS CodeBuild buildspec runs a Docker build, plus push to ECR
+            # This AWS CodeBuild buildspec runs a Maven build, packages as a Docker container, uploads to ECR.
             phases:
+              install:
+                runtime-versions:
+                  java: corretto11  # formerly openjdk11             
               pre_build:
                 commands:
-                  - echo Version of AWS CLI is
-                  - aws --version
-                  - echo Version of Docker is
-                  - docker --version
+                  - echo Version of AWS CLI is $(aws --version)
+                  - echo Version of Docker is $(docker --version)
                   - echo Logging in to Amazon ECR...
-                  - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
-                  - REPOSITORY_URI=${DockerRepository}   
-                  - IMAGE_TAG=1111
+                  - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${DockerRepositoryPrefix}
+                  - REPOSITORY_URI=${DockerRepositoryPrefix}/${DockerImageName}
+                  - IMAGE_TAG=$CODEBUILD_BUILD_NUMBER
+                  - GIT_TAG=$CODEBUILD_RESOLVED_SOURCE_VERSION
                   - echo REPOSITORY_URI is set to $REPOSITORY_URI
                   - echo IMAGE_TAG is set to $IMAGE_TAG
-                  - echo CODEBUILD_RESOLVED_SOURCE_VERSION is set to $CODEBUILD_RESOLVED_SOURCE_VERSION
-                  - echo CODEBUILD_SOURCE_VERSION is set to $CODEBUILD_SOURCE_VERSION
+                  - echo GIT_TAG is $GIT_TAG
               build:
                 commands:
-                  - echo Docker Image Build started on `date`
-                  - docker build -t $REPOSITORY_URI:latest .
+                  - mvn package -f pom-jar.xml
+                  - docker build -t $REPOSITORY_URI .
                   - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$GIT_TAG
                   - echo Docker Image Build finished on `date`
               post_build:
                 commands:
                   - echo Pushing the Docker images...
                   - docker push $REPOSITORY_URI:latest
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
+                  - docker push $REPOSITORY_URI:$GIT_TAG
                   - echo Creating the Dockerrun.aws.json file needed by ElasticBeanstalk
-                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":8080,"HostPort":80}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
+                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":8080}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
             artifacts:
-                files: Dockerrun.aws.json
+                files: Dockerrun.aws.json                  
+            #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
+            #  See https://aws.amazon.com/about-aws/whats-new/2019/02/aws-codebuild-now-supports-local-caching/
+            cache:
+              paths:
+                - '/root/.m2/**/*' 
+                - '/root/var/lib/docker/**/*'                 
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0  
+        Image: aws/codebuild/standard:5.0  
         PrivilegedMode: true
       Artifacts:    
         Type: CODEPIPELINE
@@ -296,7 +265,7 @@ Resources:
   MavenTests:
     Type: AWS::CodeBuild::Project
     Properties: 
-      Name: !Sub ${AWS::StackName}-MavenTests
+      Name: !Sub ${AWS::StackName}-SoftwareTest
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
@@ -308,16 +277,17 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Testing started on `date`
                   - mvn test
-                  - echo Testing finished on `date`
+            cache:
+              paths:
+                - '/root/.m2/**/*' 
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -357,7 +327,7 @@ Resources:
         - Name: Build
           Actions:
             # This runs a Maven build which packages the WAR.  Test are run in the parallel action below: 
-            - Name: MavenBuild
+            - Name: DockerBuild
               RunOrder: 1
               InputArtifacts: 
                 - Name: TheSourceCode           # Duh, the output from the previous step.
@@ -367,20 +337,7 @@ Resources:
                 Provider: CodeBuild        
                 Version: 1                      # Required, meaningless and must be 1.
               Configuration:
-                ProjectName:  !Ref MavenBuild   # See the CodeBuild definition above.       
-              OutputArtifacts: 
-                - Name: TheWarAndDockerfile  
-            - Name: DockerBuild
-              RunOrder: 2
-              InputArtifacts: 
-                - Name: TheWarAndDockerfile     # Output from the previous step.
-              ActionTypeId: 
-                Category: Build
-                Owner: AWS       
-                Provider: CodeBuild        
-                Version: 1                      # Required, meaningless and must be 1.
-              Configuration:
-                ProjectName:  !Ref DockerBuild  # See the CodeBuild definition above.       
+                ProjectName:  !Ref DockerBuild   # See the CodeBuild definition above.       
               OutputArtifacts: 
                 - Name: TheDockerrunAwsJson 
 
@@ -411,36 +368,36 @@ Resources:
                 Provider: ElasticBeanstalk        
                 Version: 1                  # Don't know the purpose of 'version'
               Configuration:
-                ApplicationName:  !Ref MyBeanstalkApplication  # See the EB definition below.       
-                EnvironmentName:  !Ref MyBeanstalkEnvironment  # See the EB definition below.       
+                ApplicationName:  !Ref BeanstalkApplication  # See the EB definition below.       
+                EnvironmentName:  !Ref BeanstalkEnvironment  # See the EB definition below.       
  
 
-  MyBeanstalkApplication:
+  BeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
       ApplicationName: !Sub ${AWS::StackName}-TestApplication
       Description: Quick live-test environment for the app.
 
-  MyBeanstalkEnvironment:
+  BeanstalkEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
     Properties:
-      ApplicationName: !Ref MyBeanstalkApplication
+      ApplicationName: !Ref BeanstalkApplication
       EnvironmentName: TestEnvironment
       Description: Quick live-test environment for the app.
-      CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
-      SolutionStackName: "64bit Amazon Linux 2018.03 v2.12.11 running Docker 18.06.1-ce"
+      CNAMEPrefix: !Sub ${DockerImageName}    # This will become part of the DNS name.
+      SolutionStackName: "64bit Amazon Linux 2018.03 v2.16.7 running Docker 19.03.13-ce"
       OptionSettings: 
-        - Namespace: aws:elasticbeanstalk:application
-          OptionName: "Application Healthcheck URL"
-          Value: /info
+      - Namespace: aws:elasticbeanstalk:application
+        OptionName: "Application Healthcheck URL"
+        Value: /actuator/health
 
-        - Namespace: aws:elasticbeanstalk:environment
-          OptionName: ServiceRole
-          Value: !Ref BeanstalkServiceRole
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: ServiceRole
+        Value: !Ref BeanstalkServiceRole
 
-        - Namespace: aws:autoscaling:launchconfiguration
-          OptionName: IamInstanceProfile
-          Value: !Ref EBInstanceProfile
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: IamInstanceProfile
+        Value: !Ref EBInstanceProfile
 
   EBInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -448,10 +405,96 @@ Resources:
       InstanceProfileName: !Sub ${AWS::StackName}-InstanceProfile
       Roles: [!Ref BeanstalkInstanceRole ]
 
+  # This custom resource calls our Lambda function:
+  CustomResourceBucketCleaner:
+    Type: Custom::bucketCleaner
+    Properties:
+      ServiceToken: !GetAtt CustomResourceBucketCleanerLambda.Arn
+      destinationBucket: !Ref S3
+
+  # This function will cleanup the S3 bucket before delete.
+  CustomResourceBucketCleanerLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: CloudwatchLogsGroupBucketCleaner
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-BucketCleanerCustomResource
+      Description: Cleans out the S3 bucket on stack delete
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 10         
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import cfnresponse
+          import boto3
+
+          # Entry point:
+          def lambda_handler(event, context):
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              destinationBucket = event['ResourceProperties']['destinationBucket']
+
+              responseData = {}
+              s3 = boto3.client('s3')
+
+              if requestType == 'Delete':
+                print ('Clean out bucket to enable delete... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:List*
+              - s3:Delete*
+            Resource: "*"
+
+
+  # CloudWatch Logs Groups are created automatically when CodeBuild or Lambda writes output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroupBuild:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-SoftwareBuild
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupTest:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-SoftwareTest
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupBucketCleaner:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-BucketCleanerCustomResource
+      RetentionInDays: 3
+
 
 Outputs:
-  CodeBuild:
-    Value: !Ref MyPipe
-  IamRole:
-    Value: !Ref CodeBuildRole  
+  WebsiteURL:
+    Value: !Sub http://${BeanstalkEnvironment.EndpointURL} 
+
 
