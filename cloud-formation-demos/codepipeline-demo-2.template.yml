@@ -124,6 +124,10 @@ Resources:
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0        
       Source:
         Type: CODEPIPELINE
         BuildSpec: !Sub |
@@ -134,24 +138,23 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Build started on `date`
                   - mvn package -DskipTests
-                  - echo Build finished on `date`
               post_build:
                 commands:
                   - echo Copying WAR file to S3
                   - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
             artifacts:
               files:
-                - target/spring-cloud-aws-environment-demo-1.war
+                - target/cloud-build-demo-1.war
               discard-paths: yes
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+            #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
+            #  See https://aws.amazon.com/about-aws/whats-new/2019/02/aws-codebuild-now-supports-local-caching/
+            cache:
+              paths:
+                - '/root/.m2/**/*' 
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -164,6 +167,10 @@ Resources:
       Description: Demo of CodeBuild with CodeDeploy pipeline.
       ServiceRole: !Ref CodeBuildRole
       TimeoutInMinutes: 5
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0        
       Source:
         Type: CODEPIPELINE
         BuildSpec: !Sub |
@@ -172,16 +179,17 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
                   - echo Testing started on `date`
                   - mvn test
                   - echo Testing finished on `date`
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+            #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
+            #  See https://aws.amazon.com/about-aws/whats-new/2019/02/aws-codebuild-now-supports-local-caching/
+            cache:
+              paths:
+                - '/root/.m2/**/*' 
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -197,65 +205,145 @@ Resources:
       RoleArn: !GetAtt CodePipelineRole.Arn
       Stages: 
 
-        # Stage 1:  Get the source from GitHub:
-        - Name: Source
-          Actions: 
-            - Name: SourceAction
-              RunOrder: 1
-              ActionTypeId: 
-                Category: Source
-                Owner: ThirdParty       
-                Provider: GitHub        
-                Version: 1              # Don't know the purpose of 'version'
-              Configuration: 
-                Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
-                Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
-                Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
-                PollForSourceChanges: true   # Don't know if/how to control frequency
-                OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
-              OutputArtifacts: 
-                - Name: TheSourceCode
+      # Stage 1:  Get the source from GitHub:
+      - Name: Source
+        Actions: 
+          - Name: SourceAction
+            RunOrder: 1
+            ActionTypeId: 
+              Category: Source
+              Owner: ThirdParty       
+              Provider: GitHub        
+              Version: 1              # Don't know the purpose of 'version'
+            Configuration: 
+              Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
+              Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
+              Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
+              PollForSourceChanges: true   # Don't know if/how to control frequency
+              OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
+            OutputArtifacts: 
+              - Name: TheSourceCode
 
-        # Stage 2:  Build using CodeBuild / Maven, Test in parallel using CodeBuild / Maven:
-        - Name: Build
-          Actions:
-            # This runs a Maven build which packages the WAR.  Test are run in the parallel action below: 
-            - Name: Build
-              RunOrder: 1
-              InputArtifacts: 
-                - Name: TheSourceCode       # Duh, the output from the previous step.
-              ActionTypeId: 
-                Category: Build
-                Owner: AWS       
-                Provider: CodeBuild        
-                Version: 1                  # Don't know the purpose of 'version'
-              Configuration:
-                ProjectName:  !Ref MyBuild  # See the CodeBuild definition above.       
-              OutputArtifacts: 
-                - Name: TheArtifact  
+      # Stage 2:  Build using CodeBuild / Maven, Test in parallel using CodeBuild / Maven:
+      - Name: Build
+        Actions:
+          # This runs a Maven build which packages the WAR.  Test are run in the parallel action below: 
+          - Name: Build
+            RunOrder: 1
+            InputArtifacts: 
+              - Name: TheSourceCode       # Duh, the output from the previous step.
+            ActionTypeId: 
+              Category: Build
+              Owner: AWS       
+              Provider: CodeBuild        
+              Version: 1                  # Don't know the purpose of 'version'
+            Configuration:
+              ProjectName:  !Ref MyBuild  # See the CodeBuild definition above.       
+            OutputArtifacts: 
+              - Name: TheArtifact  
 
-            # This runs a Maven build featuring only the unit tests.  No output:   
-            - Name: UnitTest
-              RunOrder: 1
-              InputArtifacts: 
-                - Name: TheSourceCode       
-              ActionTypeId: 
-                Category: Build
-                Owner: AWS       
-                Provider: CodeBuild        
-                Version: 1                  
-              Configuration:
-                ProjectName:  !Ref MyTests  # See the CodeBuild definition above.       
+          # This runs a Maven build featuring only the unit tests.  No output:   
+          - Name: UnitTest
+            RunOrder: 1
+            InputArtifacts: 
+              - Name: TheSourceCode       
+            ActionTypeId: 
+              Category: Build
+              Owner: AWS       
+              Provider: CodeBuild        
+              Version: 1                  
+            Configuration:
+              ProjectName:  !Ref MyTests  # See the CodeBuild definition above.       
+
+  # This custom resource calls our Lambda function:
+  CustomResourceBucketCleaner:
+    Type: Custom::bucketCleaner
+    Properties:
+      ServiceToken: !GetAtt CustomResourceBucketCleanerLambda.Arn
+      destinationBucket: !Ref S3
+
+  # This function will cleanup the S3 bucket before delete.
+  CustomResourceBucketCleanerLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: CloudwatchLogsGroupBucketCleaner
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-BucketCleanerCustomResource
+      Description: Cleans out the S3 bucket on stack delete
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 10         
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import cfnresponse
+          import boto3
+
+          # Entry point:
+          def lambda_handler(event, context):
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              destinationBucket = event['ResourceProperties']['destinationBucket']
+
+              responseData = {}
+              s3 = boto3.client('s3')
+
+              if requestType == 'Delete':
+                print ('Clean out bucket to enable delete... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:List*
+              - s3:Delete*
+            Resource: "*"
+
+  # CloudWatch Logs Groups are created automatically when CodeBuild or Lambda writes output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroupBuild:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-MyBuild
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupTest:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-MyTest
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupBucketCleaner:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-BucketCleanerCustomResource
+      RetentionInDays: 3
+
 
 Outputs:
   CodeBuild:
     Value: !Ref MyPipe
   IamRole:
     Value: !Ref CodeBuildRole  
-
-
-
-
-
-
-
