@@ -3,7 +3,6 @@ AWSTemplateFormatVersion: 2010-09-09
 # Stand up an ECS and run a container on it.  Front it with an ALB.
 # You will need an existing VPC with at least 2 subnets in two different AZs.  If you use private subnets be sure NATting is enabled.
 
-
 Metadata: 
   AWS::CloudFormation::Interface: 
     ParameterGroups: 
@@ -40,7 +39,7 @@ Parameters:
     Description: The port that the Docker container will listen on.  For example nginx would listen on port 80, mysql would expect 3306, etc.
     
   ClusterType:
-    Description:  Do you want to deploy to a standard ECS cluster or Fargate cluster?  Fargate is easier, but more expensive.
+    Description:  Do you want to deploy to a standard ECS cluster or Fargate cluster?  Fargate is easier, but more expensive - takes a lot more CPU and memory.
     Type: String
     Default: Fargate
     AllowedValues:
@@ -63,7 +62,7 @@ Parameters:
     AllowedValues:
     - enabled
     - disabled
-    Description:  Do you want to turn on Container Insights?  It is fun to play with, but can add extra charges on your account.
+    Description:  Do you want to turn on Container Insights?  It is fun to play with, but can add extra charges on your account.  
 
   VpcId:
     Type: AWS::EC2::VPC::Id
@@ -321,8 +320,8 @@ Resources:
     Condition: DeployToFargate
     Properties:
       Family: !Sub ${AWS::StackName}-ecs-demo-app
-      Cpu: 256                            # Required in Fargate, optional otherwise.  256 CPU units is 1/4 of a vCPU 
-      Memory: 512                             # Required in Fargate, optional otherwise.
+      Cpu: 1024                            # Task-level setting required in Fargate, plus it seems to require more memory. 
+      Memory: 2GB                             # Task-level setting required in Fargate, plus it seems to require more memory.
       ExecutionRoleArn: !GetAtt EcsTaskRole.Arn    # Required in Fargate, optional otherwise
       NetworkMode: !If [DeployToFargate, awsvpc, bridge] # Required for Fargate, ironic because this is the only option in Fargate.
       RequiresCompatibilities:  
