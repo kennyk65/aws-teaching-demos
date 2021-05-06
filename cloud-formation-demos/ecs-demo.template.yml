@@ -21,6 +21,7 @@ Metadata:
       - Label: 
           default: ECS Cluster
         Parameters: 
+        - ClusterType
         - MaxSize
         - DesiredCapacity
         - ContainerInsights
@@ -31,13 +32,21 @@ Parameters:
   DockerImage:
     Type: String
     Default: kennyk65/spring-cloud-aws-environment-demo
-    Description: Image to use for a container.  Can be from DockerHub (try "nginx:latest") or ECR public ( try "public.ecr.aws/kkrueger/spring-cloud-environment-demo") or ECR private ( such as "011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo:latest" in my account) or include registry URL for a different source (repository-url/image:tag). 
+    Description: Image to use for a container.  Can be from DockerHub (try "nginx:latest") or ECR public ( try "public.ecr.aws/kkrueger/spring-cloud-aws-environment-demo") or ECR private ( such as "011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo:latest" in my account) or include registry URL for a different source (repository-url/image:tag). 
 
   ContainerPort:
     Type: String
     Default: 80
     Description: The port that the Docker container will listen on.  For example nginx would listen on port 80, mysql would expect 3306, etc.
     
+  ClusterType:
+    Description:  Do you want to deploy to a standard ECS cluster or Fargate cluster?  Fargate is easier, but more expensive.
+    Type: String
+    Default: Fargate
+    AllowedValues:
+      - ECS
+      - Fargate
+
   MaxSize:
     Type: String
     Default: 1
@@ -75,6 +84,8 @@ Parameters:
 
 Conditions:
   UseContainerInsights: !Equals [ !Ref ContainerInsights, enabled ]
+  DeployToFargate:     !Equals [ !Ref ClusterType, Fargate ]
+  DeployToEc2:  !Not [ !Equals [ !Ref ClusterType, Fargate ] ]
 
 Resources:
 
@@ -101,6 +112,32 @@ Resources:
               - ec2:Describe*
               - ec2:AuthorizeSecurityGroupIngress
             Resource: '*'
+
+  # When running in Fargate, the task definition MUST have a role
+  # providing "to support log driver awslogs", whatever that is.
+  # It also needs permission to pull images from ECR:
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-EcsTaskRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-EcsTaskPolicy
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:*    #  Not sure which permissions are needed for some kind of logging activity.
+              - ecr:*     #  Not sure which permissions are needed to pull an ECR image.
+            Resource: 
+              - "*"
 
   # Allow application autoscaling to change the # of ECS tasks:
   AutoscalingRole:
@@ -129,6 +166,7 @@ Resources:
   # Permissions associated with each ECS Instance.
   EC2Role:
     Type: AWS::IAM::Role
+    Condition: DeployToEc2
     Properties:
       AssumeRolePolicyDocument:
         Statement:
@@ -143,6 +181,7 @@ Resources:
   # Attach EC2Role's permissions to each ECS Instance.
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
+    Condition: DeployToEc2
     Properties:
       Path: /
       Roles: [!Ref 'EC2Role']
@@ -175,6 +214,7 @@ Resources:
   # Auto-Scaling Group controls the number of EC2 instances backing the cluser:
   ECSAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: DeployToEc2
     Properties:
       AutoScalingGroupName: !Ref AWS::StackName
       VPCZoneIdentifier: !Ref PrivateSubnetIds
@@ -196,6 +236,7 @@ Resources:
   # The LaunchConfiguration for the cluster:      
   ECSLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
+    Condition: DeployToEc2
     Properties:
       LaunchConfigurationName: !Ref AWS::StackName
       ImageId: !Ref ECSAMI
@@ -213,24 +254,49 @@ Resources:
           echo "ECS_CLUSTER=${ECSCluster}" >> /etc/ecs/ecs.config        
 
 
-  # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers.
-  ECSService:
+  # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers. 
+  # The settings are significantly different for Fargate vs normal EC2-backed Cluster, hence two separate definitions.
+  # EC2 requires role setting, but Fargate must not have this.  Fargate requires network configuration, generally not needed for EC2.
+  ECSServiceEc2:
     Type: AWS::ECS::Service
-    DependsOn: [ALBListener, ECSAutoScalingGroup]  # Problematic to create service before cluster nodes or load balancer in place.
+    Condition: DeployToEc2
+    DependsOn: [ALBListener, ECSAutoScalingGroup]   # Problematic to create service before cluster nodes or load balancer in place.
     Properties:
       ServiceName: TheService
       Cluster: !Ref ECSCluster
       Role: !Ref ECSServiceRole
-      TaskDefinition: !Ref TaskDefinition
+      TaskDefinition: !Ref TaskDefinitionEc2
       DesiredCount: 1
       LoadBalancers:        
       - ContainerName: TheContainer  # The name of the container cannot be a reasonable value like the image name.
         ContainerPort: !Ref ContainerPort
         TargetGroupArn: !Ref ALBTargetGroup
 
+  ECSServiceFargate:
+    Type: AWS::ECS::Service
+    Condition: DeployToFargate
+    DependsOn: ALBListener  # Problematic to create service before cluster nodes or load balancer in place.
+    Properties:
+      ServiceName: TheService
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinitionFargate
+      DesiredCount: 1
+      LoadBalancers:        
+      - ContainerName: TheContainer  # The name of the container cannot be a reasonable value like the image name.
+        ContainerPort: !Ref ContainerPort
+        TargetGroupArn: !Ref ALBTargetGroup
+      NetworkConfiguration: 
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+          - !Ref EcsSecurityGroup
+          Subnets: !Ref PrivateSubnetIds        
+
   # This TaskDefinition defines the image(s) we want to run on ECS
-  TaskDefinition:
+  TaskDefinitionEc2:
     Type: AWS::ECS::TaskDefinition
+    Condition: DeployToEc2
     Properties:
       Family: !Sub ${AWS::StackName}-ecs-demo-app
       ContainerDefinitions:
@@ -249,6 +315,33 @@ Resources:
         - ContainerPort: !Ref ContainerPort
           # Notice how the HostPort is not defined.  This means it will be assigned randomly.  The ALB will find it automatically.  Cool huh?
         
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinitionFargate:
+    Type: AWS::ECS::TaskDefinition
+    Condition: DeployToFargate
+    Properties:
+      Family: !Sub ${AWS::StackName}-ecs-demo-app
+      Cpu: 256                            # Required in Fargate, optional otherwise.  256 CPU units is 1/4 of a vCPU 
+      Memory: 512                             # Required in Fargate, optional otherwise.
+      ExecutionRoleArn: !GetAtt EcsTaskRole.Arn    # Required in Fargate, optional otherwise
+      NetworkMode: !If [DeployToFargate, awsvpc, bridge] # Required for Fargate, ironic because this is the only option in Fargate.
+      RequiresCompatibilities:  
+      - !If [DeployToFargate, FARGATE, EC2]  # Must be Fargate on Fargate
+      ContainerDefinitions:
+      - Name: TheContainer    # The name of the container cannot be a reasonable value like the image name.
+        Image: !Ref DockerImage
+        Essential: true
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: ecs-demo-app
+        PortMappings:
+        - ContainerPort: !Ref ContainerPort
+          # Notice how the HostPort is not defined.  This means it will be assigned randomly.  The ALB will find it automatically.  Cool huh?
+
+
   # Now the Load Balancer, with all of its sub-components:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -273,39 +366,40 @@ Resources:
     Properties:
       Name: !Sub ${AWS::StackName}-ALBTargetGroup
       VpcId: !Ref VpcId
+      TargetType: !If [DeployToFargate, ip, instance]  # Fargate deploy must be IP for awsvpc mode, otherwise instance.
       Port: 80
       Protocol: HTTP
       HealthCheckProtocol: HTTP
       HealthCheckPath: /       
-      HealthCheckIntervalSeconds: 10
-      HealthCheckTimeoutSeconds: 5
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 10
       HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
 
-  # This is scaling the actual ECS Tasks, not EC2 Instances.  
-  # The ECSService (above) ties the TaskDefinition to the cluster, and this teaches it how to scale:
-  ServiceScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      MinCapacity: 1
-      MaxCapacity: 2
-      ResourceId: !Sub service/${ECSCluster}/${ECSService.Name}  
-      RoleARN: !GetAtt [AutoscalingRole, Arn]
-      ScalableDimension: ecs:service:DesiredCount
-      ServiceNamespace: ecs
-  ServiceScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: ServiceScalingPolicy
-      PolicyType: StepScaling
-      ScalingTargetId: !Ref ServiceScalingTarget
-      StepScalingPolicyConfiguration:
-        AdjustmentType: PercentChangeInCapacity
-        Cooldown: 60
-        MetricAggregationType: Average
-        StepAdjustments:
-        - MetricIntervalLowerBound: 0
-          ScalingAdjustment: 200
+  # # This is scaling the actual ECS Tasks, not EC2 Instances.  
+  # # The ECSService (above) ties the TaskDefinition to the cluster, and this teaches it how to scale:
+  # ServiceScalingTarget:
+  #   Type: AWS::ApplicationAutoScaling::ScalableTarget
+  #   Properties:
+  #     MinCapacity: 1
+  #     MaxCapacity: 2
+  #     ResourceId: Fn::Sub !If [ DeployToFargate, service/${ECSCluster}/${ECSServiceFargate.Name}, service/${ECSCluster}/${ECSServiceEc2.Name} ] 
+  #     RoleARN: !GetAtt [AutoscalingRole, Arn]
+  #     ScalableDimension: ecs:service:DesiredCount
+  #     ServiceNamespace: ecs
+  # ServiceScalingPolicy:
+  #   Type: AWS::ApplicationAutoScaling::ScalingPolicy
+  #   Properties:
+  #     PolicyName: ServiceScalingPolicy
+  #     PolicyType: StepScaling
+  #     ScalingTargetId: !Ref ServiceScalingTarget
+  #     StepScalingPolicyConfiguration:
+  #       AdjustmentType: PercentChangeInCapacity
+  #       Cooldown: 60
+  #       MetricAggregationType: Average
+  #       StepAdjustments:
+  #       - MetricIntervalLowerBound: 0
+  #         ScalingAdjustment: 200
 
 
   # This LogsGroup will be useful when several containers emit output:
@@ -319,11 +413,3 @@ Outputs:
   ECSALB:
     Description: Your ALB DNS URL
     Value: !Sub http://${ALB.DNSName}
-
-
-
-
-
-
-
-
