@@ -148,40 +148,40 @@ Resources:
       Roles: 
         -  !Ref BeanstalkServiceRole
 
-  # # This Role is given to the EC2 instance(s) run by ElasticBeanstalk:
-  # BeanstalkAppRole:
-  #   Type: AWS::IAM::Role
-  #   Properties: 
-  #     RoleName: BeanstalkAppRole  
-  #     AssumeRolePolicyDocument:
-  #       Version: 2012-10-17
-  #       Statement: 
-  #         Effect: Allow
-  #         Principal:
-  #           Service: ec2.amazonaws.com
-  #         Action: sts:AssumeRole
+  # This Role is given to the EC2 instance(s) run by ElasticBeanstalk:
+  BeanstalkAppRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: BeanstalkAppRole  
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
 
-  # # This Policy is attached to the BeanstalkAppRole.
-  # BeanstalkAppPolicy:
-  #   Type: AWS::IAM::Policy
-  #   Properties: 
-  #     PolicyName: BeanstalkAppPolicy
-  #     PolicyDocument: 
-  #       Version: 2012-10-17
-  #       Statement: 
-  #         Effect: Allow
-  #         # I'm not sure exactly what permissions are needed here.
-  #         Action: 
-  #           - logs:CreateLogStream
-  #           - logs:GetLogEvents
-  #           - logs:PutLogEvents
-  #           - logs:DescribeLogGroups
-  #           - logs:DescribeLogStreams
-  #           - logs:PutRetentionPolicy
-  #         Resource: 
-  #           - "*"
-  #     Roles: 
-  #       -  !Ref BeanstalkAppRole
+  # This Policy is attached to the BeanstalkAppRole.
+  BeanstalkAppPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: BeanstalkAppPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          # I'm not sure exactly what permissions are needed here.
+          Action: 
+            - logs:CreateLogStream
+            - logs:GetLogEvents
+            - logs:PutLogEvents
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+            - logs:PutRetentionPolicy
+          Resource: 
+            - "*"
+      Roles: 
+        -  !Ref BeanstalkAppRole
 
   # General Bucket where CodePipeline will store things:
   S3:
@@ -210,12 +210,10 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Build started on `date`
                   - mvn package -DskipTests
-                  - echo Build finished on `date`
               post_build:
                 commands:
                   - echo Copying WAR file to S3
@@ -224,7 +222,7 @@ Resources:
             artifacts:
               files:
                 - '**/*'
-              base-directory: 'target/spring-cloud-aws-environment-demo-1'
+              base-directory: 'target/cloud-build-demo-1'
             # THE PROBLEM I HAD is that codepipeline Zips the output artifacts, so it is a WAR within a ZIP.  
             # ElasticBeanstalk doesn't know how to deploy this, and there is no way to make code pipeline stop its zipping.
             # So a suggestion on the forum https://forums.aws.amazon.com/thread.jspa?threadID=244614 is to upload the unzipped folder produced by Maven before it makes the WAR.
@@ -232,7 +230,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -253,16 +251,14 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Testing started on `date`
                   - mvn test
-                  - echo Testing finished on `date`
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0 
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -359,32 +355,21 @@ Resources:
       EnvironmentName: !Sub ${AWS::StackName}-TestEnvironment
       Description: Quick live-test environment for the app.
       CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
-      SolutionStackName: "64bit Amazon Linux 2017.09 v2.7.2 running Tomcat 8 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2 v4.1.7 running Tomcat 8.5 Corretto 11"
       OptionSettings: 
-        - Namespace: aws:elasticbeanstalk:application
-          OptionName: "Application Healthcheck URL"
-          Value: /info
-
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !Ref BeanstalkServiceRole
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref MyBeanstalkInstanceProfile  # What is my EC2 instance allowed to do?
 
-        # - Namespace: String
-        #   OptionName: String
-        #   ResourceName: String
-        #   Value: String
-
-        # - Namespace: String
-        #   OptionName: String
-        #   ResourceName: String
-        #   Value: String
-
-  # MyBeanstalkInstanceProfile:
-  #   Type: "AWS::IAM::InstanceProfile"
-  #   Properties: 
-  #     Roles:
-  #     - !Ref BeanstalkAppRole 
-  #     InstanceProfileName: MyBeanstalkInstanceProfile
+  MyBeanstalkInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Roles:
+      - !Ref BeanstalkAppRole 
+      InstanceProfileName: MyBeanstalkInstanceProfile
 
 Outputs:
   CodeBuild:
