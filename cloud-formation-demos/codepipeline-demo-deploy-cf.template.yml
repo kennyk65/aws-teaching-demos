@@ -9,6 +9,26 @@ AWSTemplateFormatVersion: 2010-09-09
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
 # The default value you see here will work only if you prepend it with a '0'.
 
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Source Code"
+        Parameters: 
+          - GitHubRepository
+          - GitHubOAuthToken
+      - Label: 
+          default: "Resulting Stack"
+        Parameters: 
+          - ResultStackName
+          - VPC
+          - PublicSubnet
+      - Label: 
+          default: "Utilities"
+        Parameters: 
+          - CodePipelineBucketPrefix
+          - OutputS3BucketAndPrefix
+
 
 Parameters:
   CodePipelineBucketPrefix:
@@ -35,6 +55,15 @@ Parameters:
     Default: Test-MyDeployStack
     Description: What do you want to name the resulting CloudFormation stack where the code is deployed?
     Type: String
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
 
 Resources:
 
@@ -134,7 +163,9 @@ Resources:
             Version: 2012-10-17
             Statement:
                 Effect: Allow
-                Action: ec2:*       # Probably should tighten this up a bit.
+                Action: 
+                - ec2:*       # Probably should tighten this up a bit.
+                - ssm:*
                 Resource: '*'
 
   # General Bucket where CodePipeline will store things:
@@ -164,29 +195,27 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Build started on `date`
                   - mvn package -DskipTests
-                  - echo Build finished on `date`
               post_build:
                 commands:
                   - echo Copying WAR file to S3
                   - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
-                  - echo $CODEBUILD_SRC_DIR
+                  - printf '{"Parameters":{"VPC":"%s","PublicSubnet":"%s"}}' ${VPC} ${PublicSubnet} > ./target/cloud-build-demo-1/stack-config.json
+                  - echo The configuration parameters that will be sent in to deploy the CloudFormation stack:
+                  - cat ./target/cloud-build-demo-1/stack-config.json
             artifacts:
+              # The artifact sent to the next CodePipeline stage will be everything under the target/cloud-build-demo-1 folder.
+              # CodePipeline will refer to this content as "TheArtifact".
               files:
                 - '**/*'
-              base-directory: 'target/spring-cloud-aws-environment-demo-1'
-            # THE PROBLEM I HAD is that codepipeline Zips the output artifacts, so it is a WAR within a ZIP.  
-            # ElasticBeanstalk doesn't know how to deploy this, and there is no way to make code build stop its zipping.
-            # So a suggestion on the forum https://forums.aws.amazon.com/thread.jspa?threadID=244614 is to upload the unzipped folder produced by Maven before it makes the WAR.
-            # So the ZIP file contains the same contents of the WAR.  When EB gets it, it unzips it an deploys it without issue - go figure.
+              base-directory: 'target/cloud-build-demo-1'
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -207,16 +236,14 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: openjdk8  
+                  java: corretto11  # formerly openjdk11 
               build:
                 commands:
-                  - echo Testing started on `date`
                   - mvn test
-                  - echo Testing finished on `date`
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:3.0        
+        Image: aws/codebuild/standard:5.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -244,8 +271,8 @@ Resources:
                 Version: 1              # Required, meaningless and must be 1, go figure.
               Configuration: 
                 Owner: !Select [0, !Split [ "/" , !Ref GitHubRepository ]]
-                Repo: !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
-                Branch: !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
+                Repo:   !Select [1, !Split [ "/" , !Ref GitHubRepository ]]
+                Branch:  !Select [2, !Split [ "/" , !Ref GitHubRepository ]]
                 PollForSourceChanges: true   # Don't know if/how to control frequency
                 OAuthToken: !Ref GitHubOAuthToken     # Public repository, Don't know why AWS needs this
               OutputArtifacts: 
@@ -289,28 +316,23 @@ Resources:
             - Name: Deploy
               RunOrder: 1
               InputArtifacts: 
-                - Name: TheArtifact         # Duh, the output from the previous step.
+                - Name: TheSourceCode      
+                - Name: TheArtifact      
               ActionTypeId: 
                 Category: Deploy
                 Owner: AWS       
                 Provider: CloudFormation        
                 Version: 1                  # Don't know the purpose of 'version'
               Configuration:
-                ActionMode: REPLACE_ON_FAILURE
+                ActionMode: CREATE_UPDATE
                 RoleArn: !GetAtt [CFNRole, Arn]
                 StackName: !Ref ResultStackName
-                TemplateConfiguration: TheArtifact::WEB-INF/classes/cloudformation-deploy/stack-config.json
-                TemplatePath: TheArtifact::WEB-INF/classes/cloudformation-deploy/very-simple-ec2-deploy.template.yml
+                TemplateConfiguration: TheArtifact::stack-config.json
+                TemplatePath: TheSourceCode::src/main/resources/cloudformation-deploy/minimal-ec2-deploy.template.yml
                 # TODO: STUCK HERE.  I DON'T KNOW HOW TO TAKE THE ARTIFACT PRODUCED FROM THE BUILD AND PASS IT TO 
-                # THE CLOUDFORMATION STACK.  I DON'T KNOW THE NATURE OF THE INPUTARTIFACT AND OUTPUTARTIFACT EXCEPT THAT
-                # IT IS ZIPPED WITHOUT ME ASKING.  DONT KNOW HOW TO GET IT TO UNZIP.
-
+                # THE CLOUDFORMATION STACK.  RIGHT NOW I'M HAVING CODEBUILD UPLOAD THIS ARTIFACT INTO AN S3 BUCKET 
+                # LOCATION KNOWN TO THE TEMPLATE, BUT THIS SEEMS CLUMSY.
+                
 Outputs:
   CodeBuild:
     Value: !Ref MyPipe
-
-
-
-
-
-
