@@ -98,32 +98,15 @@ Resources:
       RetentionInDays: 3
 
 Outputs:
-
   # They don't give you the URL, you have to EARN it.
   # This output depends on the names of the SAM-generated resources.  
   # If they change the generated resource names, this code won't work:
   RestAPIProdStageURL:
-    Value: !Join
-      - ''
-      - - https://
-        - !Ref ServerlessRestApi
-        - '.execute-api.'
-        - !Ref 'AWS::Region'
-        - '.amazonaws.com/'
-        - !Ref ServerlessRestApiProdStage 
-        - '/hello'
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/hello
     Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
 
   ApiGatewayInManagementConsole:
-    Value: !Join
-      - ''
-      - - https://
-        - !Ref 'AWS::Region'
-        - '.console.aws.amazon.com/apigateway/home?region='
-        - !Ref 'AWS::Region'
-        - '#/apis/'
-        - !Ref ServerlessRestApi
-        - '/resources/'
-        - !Ref ServerlessRestApiProdStage 
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/apigateway/home?region=${AWS::Region}#/apis/${ServerlessRestApi}/resources/${ServerlessRestApiProdStage} 
     Description: Handy link to the Management Console location where this API can be seen.
     
+

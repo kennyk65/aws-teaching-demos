@@ -333,6 +333,94 @@ Resources:
                 # THE CLOUDFORMATION STACK.  RIGHT NOW I'M HAVING CODEBUILD UPLOAD THIS ARTIFACT INTO AN S3 BUCKET 
                 # LOCATION KNOWN TO THE TEMPLATE, BUT THIS SEEMS CLUMSY.
                 
+
+  # This custom resource calls our Lambda function:
+  CustomResourceBucketCleaner:
+    Type: Custom::bucketCleaner
+    Properties:
+      ServiceToken: !GetAtt CustomResourceBucketCleanerLambda.Arn
+      destinationBucket: !Ref S3
+
+  # This function will cleanup the S3 bucket before delete.
+  CustomResourceBucketCleanerLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: CloudwatchLogsGroupBucketCleaner
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-BucketCleanerCustomResource
+      Description: Cleans out the S3 bucket on stack delete
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 10         
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import cfnresponse
+          import boto3
+
+          # Entry point:
+          def lambda_handler(event, context):
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              destinationBucket = event['ResourceProperties']['destinationBucket']
+
+              responseData = {}
+              s3 = boto3.client('s3')
+
+              if requestType == 'Delete':
+                print ('Clean out bucket to enable delete... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+        PolicyDocument: 
+          Version: 2012-10-17
+          Statement: 
+            Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:List*
+              - s3:Delete*
+            Resource: "*"
+
+  # CloudWatch Logs Groups are created automatically when CodeBuild or Lambda writes output,
+  # but they are easier to cleanup when they are part of the stack.  
+  CloudwatchLogsGroupBuild:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-MyBuild
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupTest:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-MyTests
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupBucketCleaner:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-BucketCleanerCustomResource
+      RetentionInDays: 3
+
+
 Outputs:
   CodeBuild:
     Value: !Ref MyPipe
