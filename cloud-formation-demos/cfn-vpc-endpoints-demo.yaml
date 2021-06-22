@@ -1,0 +1,261 @@
+# Architecting With AWS - implements the VPC Interface Endpoints slide (Module 6, Slide 30)
+# Steps:
+# 1. Go to https://aws.amazon.com/marketplace/pp?sku=ej5p7oc8q1j95exrfh8luz08e and accept terms to use the Bitnami AMI
+# 1  Navigate to https://us-west-2.console.aws.amazon.com/cloudshell (NOTE us-west-2)
+# 2. aws cloudformation create-stack --stack-name cfn-vpc-endpoints-demo --template-url https://amcginlay-cfn.s3.amazonaws.com/cfn-vpc-endpoints-demo.yaml --capabilities CAPABILITY_IAM
+# 3. Note the CF stack outputs
+# 4. Locate the <JumpboxInstanceId> EC2 instance and connect via Session Manager
+# 5. curl http://<VPCEndpointDnsEntry>
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: https://amcginlay-cfn.s3.amazonaws.com/cfn-vpc-endpoints-demo.yaml
+Parameters:
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+Resources:
+
+  VPCPrivate:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.100.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Private
+
+  SubnetPrivate:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCPrivate
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      CidrBlock: 10.100.100.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Private
+
+  # SubnetPrivateRouteTable:
+  #   Type: AWS::EC2::RouteTable
+  #   Properties:
+  #     VpcId: !Ref VPCPrivate
+  #     Tags:
+  #       - Key: Name
+  #         Value: cfn-vpn-endpoints-vpc-private-route-table
+
+  # SubnetPrivateRouteToNAT:
+  #   Type: AWS::EC2::Route
+  #   Properties:
+  #     RouteTableId: !Ref SubnetPrivateRouteTable
+  #     DestinationCidrBlock: 0.0.0.0/0
+  #     NatGatewayId: !Ref VPCPublicNAT
+
+  # SubnetPrivateRouteTableAssociation:
+  #   Type: AWS::EC2::SubnetRouteTableAssociation
+  #   Properties:
+  #     RouteTableId: !Ref SubnetPrivateRouteTable
+  #     SubnetId: !Ref SubnetPrivate
+
+  VPCPrivateAllowHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPCPrivate
+      GroupDescription: HTTP access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0 
+
+  # TODO: USE PARAMETER STORE, REMOVE REGION DEPENDENCY
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ac4e639f173c3c47 # us-west-2 nginx (May 2021)
+      InstanceType: t2.micro
+      SubnetId: !Ref SubnetPrivate
+      SecurityGroupIds:
+        - !Ref VPCPrivateAllowHTTP
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-WebServer
+
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-NetworkLoadBalancer
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !Ref SubnetPrivate
+
+  LoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-TargetGroup
+      VpcId: !Ref VPCPrivate
+      Port: 80
+      Protocol: TCP
+      Targets:
+        - Id: !Ref WebServer
+
+  NetworkLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref LoadBalancerTargetGroup
+
+  VPCEndpointService:
+    Type: AWS::EC2::VPCEndpointService
+    Properties:
+      # Name: cfn-vpn-endpoints-nlb-vpce-svc (https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/350)
+      AcceptanceRequired: false
+      NetworkLoadBalancerArns:
+        - !Ref NetworkLoadBalancer
+
+  VPCPublic:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Public
+
+  VPCPublicIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-IGW
+
+  InternetGatewayAttachmentToVpc:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPCPublic
+      InternetGatewayId: !Ref VPCPublicIGW
+
+  SubnetPublic:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCPublic
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      CidrBlock: 10.0.0.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Public
+
+  # VPCPublicNATIP:
+  #   Type: "AWS::EC2::EIP"
+  #   Properties:
+  #     Domain: "vpc"
+
+  # VPCPublicNAT:
+  #   Type: AWS::EC2::NatGateway
+  #   Properties:
+  #     SubnetId: !Ref SubnetPublic
+  #     AllocationId: !GetAtt [VPCPublicNATIP, AllocationId]
+  #     Tags:
+  #       - Key: Name
+  #         Value: cfn-vpn-endpoints-nat
+
+  SubnetPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCPublic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PublicRouteTable
+
+  SubnetPublicRouteToIGW:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachmentToVpc
+    Properties:
+      RouteTableId: !Ref SubnetPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref VPCPublicIGW
+
+  SubnetPublicRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref SubnetPublicRouteTable
+      SubnetId: !Ref SubnetPublic
+
+  VPCPublicAllowHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPCPublic
+      GroupDescription: HTTP access
+      SecurityGroupIngress:
+      # No need for ingress, but security groups can't be empty.
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0 
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AllowHTTP
+
+  SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-Ec2Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: 
+        - !Ref SSMRole
+
+  Jumpbox:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref SubnetPublic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-JumpBox
+
+  VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCPublic
+      SubnetIds:
+        - !Ref SubnetPublic
+      SecurityGroupIds:
+        - !Ref VPCPublicAllowHTTP
+      VpcEndpointType: Interface
+      ServiceName: !Sub com.amazonaws.vpce.${AWS::Region}.${VPCEndpointService}
+
+Outputs:
+  JumpboxInstanceId:
+    Value: !Ref Jumpbox
+    Description: ID of the publicly accessible EC2 instance
+  VPCEndpointDnsEntry:
+    Value: !Select [ 1, !Split [ ":", !Select [ 0, !GetAtt [VPCEndpoint, DnsEntries] ] ] ]
+    Description: DNS Name of the VPC Endpoint
+
+  JumpboxConnectionScreen:
+    Description:  link to AWS Management Console, connect to jumpbox
+    Value:  !Sub https://${AWS::Region}.console.aws.amazon.com/ec2/v2/home?region=${AWS::Region}#ConnectToInstance:instanceId=${Jumpbox}
