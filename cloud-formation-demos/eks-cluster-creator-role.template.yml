@@ -14,6 +14,7 @@ Parameters:
 Resources:
   IAMRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Retain
     Properties:
       Path: "/"
       RoleName: !Ref RoleName
@@ -28,28 +29,116 @@ Resources:
           Action: sts:AssumeRole
       MaxSessionDuration: 7200
 
-  IAMPolicy:
+  # IAMPolicy:
+  #   Type: AWS::IAM::Policy
+  #   Properties:
+  #     PolicyName: !Sub ${RoleName}Policy
+  #     PolicyDocument: 
+  #       Version: 2012-10-17
+  #       Statement: 
+  #         Effect: Allow
+  #         Action:
+  #         - eks:*
+  #         - autoscaling:*
+  #         - iam:PassRole
+  #         - iam:*
+  #         - ec2:*
+  #         - cloudformation:*
+  #         - s3:*
+  #         - cloudwatch:*
+  #         - ssm:*
+  #         - cloud9:*
+  #         - sns:*
+  #         Resource: 
+  #         - "*"
+  #     Roles: 
+  #     - !Ref IAMRole
+
+  # Minimum permissions needed to create a cluster:
+  IAMPolicyMinimum:
     Type: AWS::IAM::Policy
+    DeletionPolicy: Retain
     Properties:
-      PolicyName: !Sub ${RoleName}Policy
+      PolicyName: !Sub ${RoleName}MinimumPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
           Effect: Allow
-          Action:
+          Action: 
           - eks:*
-          - autoscaling:*
+          - kms:list*
           - iam:PassRole
+          Resource: 
+          - "*"
+      Roles: 
+      - !Ref IAMRole
+
+  # Not necessary to create cluster, but makes classroom demos less cumbersome:
+  IAMPolicyEaseOfClassroomDemo:
+    Type: AWS::IAM::Policy
+    DeletionPolicy: Retain
+    Properties:
+      PolicyName: !Sub ${RoleName}EaseOfClassroomDemoPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
           - iam:*
+          - elasticloadbalancing:*
           - ec2:*
+          - ecr:*
           - cloudformation:*
           - s3:*
           - cloudwatch:*
           - ssm:*
           - cloud9:*
           - sns:*
+          - xray:*
+          - resource-groups:List*
+          - logs:Describe*
+          - logs:Get*
+          - health:Describe*
+          - access-analyzer:List*
+          - access-analyzer:Validate*
+          - trustedadvisor:Describe*
+          - cloudshell:*
+          - sts:Get*
+          - cloudtrail:Lookup*
+          - cloudtrail:Describe*
+          - config:Describe*
           Resource: 
           - "*"
       Roles: 
       - !Ref IAMRole
 
+  # Necessary for error-free Cloudwatch Insights usage:
+  IAMPolicyCloudWatchInsights:
+    Type: AWS::IAM::Policy
+    DeletionPolicy: Retain
+    Properties:
+      PolicyName: !Sub ${RoleName}CloudWatchInsightsPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - cloudwatch:Describe*
+          - cloudwatch:Get*
+          - cloudwatch:List*
+          - logs:StartQuery
+          - logs:StopQuery
+          - logs:Describe*
+          - logs:Get*
+          Resource: 
+          - "*"
+      Roles: 
+      - !Ref IAMRole
+
+  # To allow this role to be assumable by EC2 instances, there is an extra step:
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    DeletionPolicy: Retain
+    Properties:
+      InstanceProfileName: !Ref RoleName
+      Roles: [ !Ref IAMRole ]
