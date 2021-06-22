@@ -5,7 +5,7 @@
 # 2. aws cloudformation create-stack --stack-name cfn-vpc-endpoints-demo --template-url https://amcginlay-cfn.s3.amazonaws.com/cfn-vpc-endpoints-demo.yaml --capabilities CAPABILITY_IAM
 # 3. Note the CF stack outputs
 # 4. Locate the <JumpboxInstanceId> EC2 instance and connect via Session Manager
-# 5. curl http://<VPCEndpointDnsEntry>
+# 5. curl http://<VPCEndpointDnsEntry>   
 
 AWSTemplateFormatVersion: 2010-09-09
 Description: https://amcginlay-cfn.s3.amazonaws.com/cfn-vpc-endpoints-demo.yaml
