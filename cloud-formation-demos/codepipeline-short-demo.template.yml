@@ -37,7 +37,7 @@ Parameters:
 
   GitHubOAuthToken:
     Type: String
-    Default:  b45b4b39fe35179592ceb5259c481b05a0eb27d
+    Default:  hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
     Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
 
   MaxSize:
