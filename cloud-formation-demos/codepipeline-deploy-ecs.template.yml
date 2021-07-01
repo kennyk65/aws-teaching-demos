@@ -267,19 +267,23 @@ Resources:
                   - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${DockerRepositoryPrefix}
                   - REPOSITORY_URI=${DockerRepositoryPrefix}/${DockerImage}
                   - IMAGE_TAG=$CODEBUILD_BUILD_NUMBER
+                  - GIT_TAG=$CODEBUILD_RESOLVED_SOURCE_VERSION
                   - echo REPOSITORY_URI is set to $REPOSITORY_URI
                   - echo IMAGE_TAG is set to $IMAGE_TAG
+                  - echo GIT_TAG is $GIT_TAG
               build:
                 commands:
                   - mvn package -f pom-jar.xml
                   - docker build -t $REPOSITORY_URI .
                   - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$GIT_TAG
                   - echo Docker Image Build finished on `date`
               post_build:
                 commands:
                   - echo Pushing the Docker images...
                   - docker push $REPOSITORY_URI:latest
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
+                  - docker push $REPOSITORY_URI:$GIT_TAG
                   - echo Writing image definitions file...
                   - printf '[{"name":"TheContainer","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
             artifacts:
