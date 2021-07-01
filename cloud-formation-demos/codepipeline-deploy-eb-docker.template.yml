@@ -243,7 +243,7 @@ Resources:
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
                   - docker push $REPOSITORY_URI:$GIT_TAG
                   - echo Creating the Dockerrun.aws.json file needed by ElasticBeanstalk
-                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":8080}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
+                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":80}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
             artifacts:
                 files: Dockerrun.aws.json                  
             #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
