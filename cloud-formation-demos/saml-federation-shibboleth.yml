@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Re:Invent 2016, Federation Workshop, Shibboleth 3.x IdP Infrastructure
+  Template - NOT FOR PRODUCTION USE
+  Part of this workshop:  https://identity-federation.awssecworkshops.com/opensource/build/ 
+
+Parameters:
+  VPC:
+    Description: VPC to launch Shibboleth IdP instance into, must contain a public subnet
+    Type: AWS::EC2::VPC::Id
+  
+  PublicSubnetId:
+    Description: Public subnet for Shibboleth IdP instance, must exist within the selected VPC
+    Type: AWS::EC2::Subnet::Id
+  
+  InstanceType:
+    Description: Shibboleth IdP instance type
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+  
+  KeyName:
+    Description: Amazon EC2 key pair name for Shibboleth IdP instance
+    Type: AWS::EC2::KeyPair::KeyName
+
+  SourceCidr:
+    AllowedPattern: ^([0-9]+\.){3}[0-9]+/[0-9]+$
+    Default: 172.31.0.0/16
+    Description: The CIDR notation for the IP range that access should be restricted to.
+    MaxLength: 18
+    MinLength: 9
+    Type: String
+
+Mappings:
+  # AMI for Shibboleth 3.x IdP, Federation Workshop, Re:Invent 2016
+  RegionMap:
+    us-east-1:
+      AMI: ami-0249952b9be02cbea
+    us-west-2:
+      AMI: ami-0d198545c69227de8
+    ap-northeast-1:
+      AMI: ami-095af46bb9a92f505
+
+
+Resources:
+  ShibbolethIdP:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ RegionMap, !Ref 'AWS::Region', AMI ]
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref ShibbolethIdPSecurityGroup
+          AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          DeleteOnTermination: true
+          SubnetId: !Ref PublicSubnetId
+      IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ShibbolethIdP
+      SourceDestCheck: true
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash -v
+          # install systems manager:
+          cd /tmp
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          start amazon-ssm-agent
+          yum update -y aws-cfn-bootstrap
+          # Trigger CloudFormation Init
+          /opt/aws/bin/cfn-init -s ${AWS::StackName} -r ShibbolethIdP --region ${AWS::Region}
+          # Configure the proper JRE for Tomcat8
+          cp /etc/tomcat8/tomcat8.conf /etc/tomcat8/tomcat8.conf.original
+          sed -e 's/\/usr\/lib\/jvm\/jre/\/usr\/java\/jdk1.8.0_102\/jre/g' -i /etc/tomcat8/tomcat8.conf
+          sed -e 's/#JAVA_OPTS="-Xminf0.1 -Xmaxf0.3"/JAVA_OPTS="-Xmx1500m"/g' -i /etc/tomcat8/tomcat8.conf
+          ldappasswd -H ldap://localhost:389 -x -D "cn=Manager,dc=example,dc=com" -w ILov3F3d3ration\!1 -s sUAgktgInfswniKq uid=bob,ou=accounts,dc=example,dc=com
+          ldappasswd -H ldap://localhost:389 -x -D "cn=Manager,dc=example,dc=com" -w ILov3F3d3ration\!1 -s sUAgktgInfswniKq uid=alice,ou=accounts,dc=example,dc=com
+       
+
+
+    Metadata:
+      'AWS::CloudFormation::Init':
+        config:
+          packages:
+            yum:
+              tomcat8: []
+              openldap: []
+              openldap-clients: []
+              openldap-servers: []
+          services:
+            sysvinit:
+              tomcat8:
+                enabled: 'true'
+                ensureRunning: 'true'
+              slapd:
+                enabled: 'true'
+                ensureRunning: 'true'
+
+        
+  # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref SSMRole]
+
+  # Allow EC2 instance to make calls to SSM.
+  SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      # Note that any other policies required for the instance to do its job would be defined here as well.  
+
+  ShibbolethIdPEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  ShibbolethIdPEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ShibbolethIdPEIP.AllocationId
+      InstanceId: !Ref ShibbolethIdP
+
+  ShibbolethIdPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Shibboleth IdP instance
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ShibbolethIdPSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          ToPort: 8443
+          FromPort: 8443
+          CidrIp: !Ref SourceCidr
+        - IpProtocol: tcp
+          ToPort: 22
+          FromPort: 22
+          CidrIp: !Ref SourceCidr
+        - IpProtocol: icmp
+          ToPort: -1
+          FromPort: -1
+          CidrIp: !Ref SourceCidr
+
+  RoleForRandomStrFunctionLambda:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-RandomStrFunctionLambda
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  RandomStrFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Generate a random string of characters
+      FunctionName: !Sub ${AWS::StackName}-RandomStrFunction
+      Handler: index.handler
+      Role: !GetAtt RoleForRandomStrFunctionLambda.Arn
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          import string
+          import random
+          def handler(event, context):
+              if event['RequestType'] == 'Delete':
+                  responseData = {}
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  return
+
+              StringLength=int(event['ResourceProperties']['StringLength'])
+
+              if StringLength <= 0:
+                  responseData = {}
+                  cfnresponse.send(event, context, cfnresponse.FAILED)
+              else:
+                  responseData = {}
+                  chars=string.ascii_letters # change this to use other kinds of characters
+
+                  responseData['RandomString'] = ''.join(random.choice(chars) for _ in range(StringLength))
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+              return
+
+  RandomPass:
+    Type: Custom::RandomPass
+    Properties:
+      ServiceToken: !GetAtt RandomStrFunction.Arn
+      StringLength: 16
+
+
+Outputs:
+
+  ShibbolethIdPId:
+    Value: !Ref ShibbolethIdP
+    Description: Shibboleth IdP instance
+
+  ShibbolethIdPEIP:
+    Value: !Ref ShibbolethIdPEIP
+    Description: Shibboleth IdP Elastic IP
+
+  RandomPassword:
+    Value: !GetAtt RandomPass.RandomString
+    Description: Random Password
+
+  LdapPassword:
+    Value:  ILov3F3d3ration!1
+    Description: Password to use for LDAP commands

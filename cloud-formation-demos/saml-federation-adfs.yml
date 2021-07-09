@@ -1,0 +1,453 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Re:Invent 2016, Federation Workshop, AD FS Infrastructure Template - NOT FOR PRODUCTION USE'
+
+Parameters:
+
+  VPC:
+    Description: VPC to launch instances into, must contain a public subnet
+    Type: AWS::EC2::VPC::Id
+
+  PublicSubnetId: 
+    Description: Public subnet for instances, must exist within the selected VPC
+    Type: AWS::EC2::Subnet::Id
+
+  AdminPassword:
+    Description: A complex password for the Administrator user account
+    NoEcho: TRUE
+    Type: String
+
+  DomainDNSName:
+    Default: example.com
+    Description: DNS Domain for the AD Domain (example.com)
+    Type: String
+  
+  DomainNetBiosName:
+    Default: EXAMPLE
+    Description: Netbios name for the domain (EXAMPLE)
+    Type: String
+  
+  InstanceType:
+    AllowedValues:
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+    Default: t3.medium
+    Description: Amazon EC2 instance type
+    Type: String
+  
+  KeyName:
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Default: keypair-name
+    Description: Name of an existing EC2 KeyPair
+    Type: AWS::EC2::KeyPair::KeyName
+
+  RestoreModePassword:
+    Description: A complex password for the Restore mode user account
+    NoEcho: TRUE
+    Type: String
+
+  SourceCidr:
+    AllowedPattern: ^([0-9]+\.){3}[0-9]+\/[0-9]+$
+    Default: 0.0.0.0/0
+    Description: The CIDR notation for the IP range that access should be restricted to.
+    MaxLength: 18
+    MinLength: 9
+    Type: String
+  
+  VPCCIDR:
+    AllowedPattern: '[a-zA-Z0-9]+\..+'
+    Default: 172.31.0.0/16
+    Description: CIDR Block for the selected VPC (noted in parenthesis following VPC-id)
+    Type: String
+
+
+Resources:
+  
+  ADFS:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionalAMIs, !Ref 'AWS::Region', Win2012R2Base]
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+      - Ref: DomainControllerSecurityGroup
+      - Ref: DomainMemberSecurityGroup
+      SubnetId: !Ref PublicSubnetId
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-ADFS
+      UserData:
+        Fn::Base64: !Sub |
+          <script>cfn-init.exe --stack ${AWS::StackId} --resource ADFS --region ${AWS::Region}</script>            
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            4-signal-success:
+              command:
+                Fn::Join:
+                - ''
+                - - cfn-signal.exe -e 0 "
+                  - Fn::Base64:
+                      Ref: ADFSWaitHandle
+                  - '"'
+            a-set-execution-policy:
+              command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
+              waitAfterCompletion: '0'
+            b-reset-local-admin:
+              command:
+                Fn::Join:
+                - ''
+                - - powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1
+                    -password '
+                  - Ref: AdminPassword
+                  - ''''
+              waitAfterCompletion: '0'
+            c-rename-computer:
+              command: powershell.exe -Command Rename-Computer -NewName adfsserver
+                -Restart
+              waitAfterCompletion: forever
+          files:
+            C:\cfn\RunCommand.bat:
+              content: '%~1
+
+                IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )'
+            c:\cfn\cfn-hup.conf:
+              content:
+                Fn::Join:
+                - ''
+                - - '[main]
+
+                    '
+                  - stack=
+                  - Ref: AWS::StackId
+                  - '
+
+                    '
+                  - region=
+                  - Ref: AWS::Region
+            c:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content:
+                Fn::Join:
+                - ''
+                - - '[cfn-auto-reloader-hook]
+
+                    '
+                  - 'triggers=post.update
+
+                    '
+                  - 'path=Resources.ADFS.Metadata.AWS::CloudFormation::Init
+
+                    '
+                  - action=cfn-init.exe
+                  - '       --stack '
+                  - Ref: AWS::StackId
+                  - '       --resource ADFS'
+                  - '       --region '
+                  - Ref: AWS::Region
+            c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
+              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
+            c:\idp1cert.pfx:
+              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/idp1cert.pfx
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - c:\cfn\cfn-hup.conf
+                - c:\cfn\hooks.d\cfn-auto-reloader.conf
+  
+  ADFSEIP:
+    DependsOn: ADFS
+    Properties:
+      Domain: vpc
+      InstanceId:
+        Ref: ADFS
+    Type: AWS::EC2::EIP
+
+  ADFSWaitCondition:
+    Properties:
+      Count: '1'
+      Handle:
+        Ref: ADFSWaitHandle
+      Timeout: '1800'
+    Type: AWS::CloudFormation::WaitCondition
+
+  ADFSWaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+
+  DCEIP1:
+    DependsOn: DomainController
+    Properties:
+      Domain: vpc
+      InstanceId:
+        Ref: DomainController
+    Type: AWS::EC2::EIP
+
+
+  DomainController:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionalAMIs, !Ref 'AWS::Region', Win2012R2Base]
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+      - Ref: DomainControllerSecurityGroup
+      SubnetId: !Ref PublicSubnetId
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-DC
+      UserData:
+        Fn::Base64: !Sub |
+          <script>cfn-init.exe --resource DomainController --stack ${AWS::StackId} --region ${AWS::Region}</script>            
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            1-run-dcpromo:
+              command:
+                Fn::Join:
+                - ''
+                - - 'C:\cfn\RunCommand.bat "dcpromo /unattend  /ReplicaOrNewDomain:Domain  /NewDomain:Forest  /NewDomainDNSName:'
+                  - Ref: DomainDNSName
+                  - '  /ForestLevel:4 /DomainNetbiosName:'
+                  - Ref: DomainNetBiosName
+                  - ' /DomainLevel:4  /InstallDNS:Yes  /ConfirmGc:Yes  /CreateDNSDelegation:No  /DatabasePath:"C:\Windows\NTDS"  /LogPath:"C:\Windows\NTDS"  /SYSVOLPath:"C:\Windows\SYSVOL"
+                    /SafeModeAdminPassword='
+                  - Ref: RestoreModePassword
+                  - ' /RebootOnCompletion:Yes"'
+              waitAfterCompletion: forever
+            4-signal-success:
+              command:
+                Fn::Join:
+                - ''
+                - - cfn-signal.exe -e 0 "
+                  - Fn::Base64:
+                      Ref: DomainControllerWaitHandle
+                  - '"'
+            a-set-execution-policy:
+              command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
+              waitAfterCompletion: '0'
+            b-reset-local-admin:
+              command:
+                Fn::Join:
+                - ''
+                - - powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1
+                    -password '
+                  - Ref: AdminPassword
+                  - ''''
+              waitAfterCompletion: '0'
+            c-insert-random-pass:
+              command:
+                Fn::Join:
+                - ''
+                - - 'powershell.exe "(Get-Content c:\cfn\scripts\addusers.ps1).replace(\"RANDOMPASSHERE\",\"'
+                  - !GetAtt RandomPass.RandomString
+                  - '\") | Set-Content c:\cfn\scripts\addusers.ps1"'
+              waitAfterCompletion: '0'
+            d-add-users:
+              command: pwershell.exe -command  C:\cfn\scripts\addusers.ps1
+              waitAfterCompletion: '0'
+            e-rename-computer:
+              command: powershell.exe -Command Rename-Computer -NewName DC1 -Restart
+              waitAfterCompletion: forever
+          files:
+            C:\cfn\RunCommand.bat:
+              content: '%~1
+
+                IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )'
+            c:\cfn\cfn-hup.conf:
+              content:
+                Fn::Join:
+                - ''
+                - - '[main]
+
+                    '
+                  - stack=
+                  - Ref: AWS::StackId
+                  - '
+
+                    '
+                  - region=
+                  - Ref: AWS::Region
+            c:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content:
+                Fn::Join:
+                - ''
+                - - '[cfn-auto-reloader-hook]
+
+                    '
+                  - 'triggers=post.update
+
+                    '
+                  - 'path=Resources.DomainController.Metadata.AWS::CloudFormation::Init
+
+                    '
+                  - action=cfn-init.exe
+                  - '       --stack '
+                  - Ref: AWS::StackId
+                  - '       --resource DomainController'
+                  - '       --region '
+                  - Ref: AWS::Region
+            c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
+              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
+            c:\cfn\scripts\addusers.ps1:
+              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/addusers.ps1
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - c:\cfn\cfn-hup.conf
+                - c:\cfn\hooks.d\cfn-auto-reloader.conf
+
+
+  DomainControllerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Domain Controller
+      SecurityGroupIngress:
+      - CidrIp: !Ref SourceCidr
+        FromPort: 3389
+        IpProtocol: tcp
+        ToPort: 3389
+      - CidrIp: !Ref VPCCIDR
+        FromPort: -1
+        IpProtocol: -1
+        ToPort: -1
+      - CidrIp: !Ref SourceCidr
+        FromPort: -1
+        IpProtocol: icmp
+        ToPort: -1
+      VpcId:
+        Ref: VPC
+    
+  DomainControllerWaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    Properties:
+      Count: 1
+      Handle:
+        Ref: DomainControllerWaitHandle
+      Timeout: 1800
+
+  DomainControllerWaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+  
+  DomainMemberSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Domain Members
+      SecurityGroupIngress:
+      - CidrIp: !Ref SourceCidr
+        FromPort: 80
+        IpProtocol: tcp
+        ToPort: 80
+      - CidrIp: !Ref SourceCidr
+        FromPort: 443
+        IpProtocol: tcp
+        ToPort: 443
+      VpcId:
+        Ref: VPC
+
+  RoleForRandomStrFunctionLambda:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-RandomStrFunctionLambda
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: '/'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  RandomStrFunction:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Description: Generate a random string of characters
+      FunctionName: !Sub ${AWS::StackName}-RandomString
+      Handler: index.handler
+      MemorySize: 128
+      Role: !GetAtt RoleForRandomStrFunctionLambda.Arn
+      Runtime: python3.6
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          import string
+          import random
+          def handler(event, context):
+            if event['RequestType'] == 'Delete':
+              responseData = {}      
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              return
+            
+            StringLength=int(event['ResourceProperties']['StringLength'])
+            
+            if StringLength <= 0:
+              responseData = {}
+              cfnresponse.send(event, context, cfnresponse.FAILED)
+            else:
+              responseData = {}
+              chars=string.ascii_letters # change this to use other kinds of characters
+              retval = ''.join(random.choice(chars) for _ in range(StringLength))
+              retval += '1'
+              responseData['RandomString'] = retval
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+            
+            return
+
+  RandomPass:
+    Type: Custom::RandomPass
+    Properties:
+      ServiceToken: !GetAtt RandomStrFunction.Arn
+      StringLength: 16
+
+Mappings:
+  RegionalAMIs:
+    ap-northeast-1:
+      Win2012R2Base: ami-00203503bf62d6c70
+    us-east-1:
+      Win2012R2Base: ami-0382724d79a997027
+    us-west-2:
+      Win2012R2Base: ami-02cd0387b1ed07f2e
+
+Outputs:
+  ADFS:
+    Description: ADFS
+    Value: !Ref ADFS
+
+  ADFSPrivateIP:
+    Description: Private IP of the ADFS Server
+    Value: !GetAtt ADFS.PrivateIp
+
+  ADFSPublicIP:
+    Description: PublicIP of the ADFS Server
+    Value: !GetAtt ADFS.PublicIp
+
+  DomainController:
+    Description: DomainController
+    Value: !Ref DomainController
+
+  DomainControllerPrivateIP:
+    Description: Private IP of the Domain Controller
+    Value: !GetAtt DomainController.PrivateIp
+
+  DomainControllerPublicIP:
+    Description: Public IP of the Domain Controller
+    Value: !GetAtt DomainController.PublicIp
+
+  RandomPassword:
+    Description: Random Password
+    Value: !GetAtt RandomPass.RandomString
