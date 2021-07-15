@@ -1,0 +1,567 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description:  Automatically creates Technical Essentials Lab 6.
+
+Parameters:
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedValues:
+    - 10.0.0.0/16
+  
+  InitialsPlusRandomNumber:
+    Type: String
+    Default: kk-123
+    Description: Enter your initials, a dash, and a random number.  This will be used to name an S3 bucket.
+
+  AmazonLinux2AMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
+
+  PhotoZipUrl:
+    Type: String 
+    Default:  https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/sample-photos.zip
+    Description:  Location of Images to download.  You don't need to change this value
+
+  LabImplementation:
+    Type: String
+    AllowedValues: 
+    - 3. Build a VPC and run a web server within 
+    - 4. Add S3 Bucket for images
+    - 5. Add DynamoDB
+    - 6. ELB with Autoscaling
+    Default: 6. ELB with Autoscaling
+    Description: Which of the labs from AWS Tech Essentials do you want to implement?
+
+Metadata:
+  # Controlling the order of the parameters on the CloudFormation page;
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Lab Details
+      Parameters:
+      - LabImplementation
+      - InitialsPlusRandomNumber
+    - Label:
+        default: You probably don't need to change these...
+      Parameters:
+      - PhotoZipUrl
+      - AmazonLinux2AMI
+      - VPCCIDR
+
+Conditions:
+  CreateLab6:                  !Equals [ !Ref LabImplementation, "6. ELB with Autoscaling" ]
+  CreateLab5OrGreater:   !Or [ !Equals [ !Ref LabImplementation, "5. Add DynamoDB" ], !Condition CreateLab6 ]
+  CreateLab4OrGreater:   !Or [ !Equals [ !Ref LabImplementation, "4. Add S3 Bucket for images" ], !Condition CreateLab5OrGreater ]
+
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    DependsOn: CloudwatchLogsGroup  # Force log group to be created first and deleted last
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      Tags:
+      - Key: Name
+        Value: Lab VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: Public Subnet A
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ] 
+      Tags:
+      - Key: Name
+        Value: Public Subnet B
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: Private Subnet A
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: Private Subnet B
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn:
+    - AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public Route Table
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+    - AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private Route Table
+
+  PrivateRoute1:            # Private route table can access web via NAT (created below)
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      # Route traffic through the NAT Gateway:
+      NatGatewayId: !Ref NATGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags: 
+      - Key: Name
+        Value: !Sub "NAT-${AWS::StackName}"
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Web-Security-Group
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+
+  WebInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinux2AMI
+      InstanceType: t2.micro
+      IamInstanceProfile:  !Ref InstanceProfile     # Allows EC2 Instance to talk with S3, DynamoDB
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true
+        SubnetId: !Ref PublicSubnet1
+        GroupSet:
+        - !Ref WebSecurityGroup
+      Tags:
+      - Key: Name
+        Value: Web Application
+      UserData: 
+        Fn::Base64:  |
+          #!/bin/bash -ex
+          # Update yum
+          yum -y update
+          # Add node's source repo
+          curl -sL https://rpm.nodesource.com/setup_15.x | bash -
+          #Install nodejs
+          yum -y install nodejs
+          #Install Amazon Linux extras
+          amazon-linux-extras install epel
+          #Install stress tool (for load balancing testing)
+          yum -y install stress
+          # Create a dedicated directory for the application
+          mkdir -p /var/app
+          # Get the app from S3
+          wget https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/app.zip
+          # Unzip it into a specific folder
+          unzip app.zip -d /var/app/
+          cd /var/app/
+          # Configure default AWS Region
+          export DEFAULT_AWS_REGION=`curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|grep region|awk -F\" '{print $4}'`
+          # Enable admin tools for stress testing
+          export SHOW_ADMIN_TOOLS=1
+          # Install dependencies
+          npm install
+          # Start your app
+          npm start
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateLab4OrGreater
+    Properties: 
+      BucketName: !Sub employee-photo-bucket-${InitialsPlusRandomNumber}
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateLab4OrGreater
+    Properties: 
+      Bucket: !Ref S3Bucket
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - s3:*
+          Resource: 
+          - !Sub ${S3Bucket.Arn}/*
+          - !Sub ${S3Bucket.Arn}
+          Principal:
+            AWS:  !GetAtt Ec2Role.Arn
+
+  DynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    Condition: CreateLab5OrGreater
+    Properties:
+      TableName: Employees   # Unfortunately, the table name is hard-coded in the NodeJS application.
+      AttributeDefinitions:
+      - AttributeName:    id 
+        AttributeType: S
+      KeySchema:
+      - AttributeName: id
+        KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Condition: CreateLab6
+    Properties: 
+      LaunchTemplateName: lab-app-launch-template   # Hard-coded in lab
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinux2AMI     # We lookup AMI from parameter store
+        InstanceType: t3.micro              # hard-coded
+        IamInstanceProfile: 
+          Name:  !Ref InstanceProfile     # Allows EC2 Instance to talk with S3, DynamoDB
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true     # No public IP needed - all access via load balancer
+          Groups: 
+          - !Ref LoadBalancerSecurityGroup          
+        UserData: 
+          Fn::Base64: !Sub |
+            #!/bin/bash -ex
+            # Update yum
+            yum -y update
+            # Add node's source repo
+            curl -sL https://rpm.nodesource.com/setup_15.x | bash -
+            #Install nodejs
+            yum -y install nodejs
+            #Install Amazon Linux extras
+            amazon-linux-extras install epel
+            #Install stress tool (for load balancing testing)
+            yum -y install stress
+            # Create a dedicated directory for the application
+            mkdir -p /var/app
+            # Get the app from S3
+            wget https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/app.zip
+            # Unzip it into a specific folder
+            unzip app.zip -d /var/app/
+            cd /var/app/
+            # Configure S3 bucket details
+            export PHOTOS_BUCKET=${S3Bucket}
+            # Configure default AWS Region
+            export DEFAULT_AWS_REGION=`curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|grep region|awk -F\" '{print $4}'`
+            # Enable admin tools for stress testing
+            export SHOW_ADMIN_TOOLS=1
+            # Install dependencies
+            npm install
+            # Start your app
+            npm start
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: CreateLab6
+    Properties:
+      VPCZoneIdentifier:
+      - !Ref PublicSubnet1
+      - !Ref PublicSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
+      MinSize: 1       
+      MaxSize: 4
+      DesiredCapacity: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:  [ !Ref ALBTargetGroup ]
+      Tags:
+      - Key: Name
+        Value: Web Application within ASG
+        PropagateAtLaunch: true
+
+  TargetScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: CreateLab6
+    Properties: 
+      PolicyType: TargetTrackingScaling
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
+      # MetricAggregationType: Average
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: ASGAverageCPUUtilization 
+        TargetValue: 60
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateLab6
+    Properties:
+      GroupDescription: Load balancer security group for employee directory app
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: load-balancer-sg
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateLab6
+    Properties:
+      Name: ALB
+      Scheme: internet-facing
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups: 
+        - !Ref WebSecurityGroup  # Plug in the security group.
+
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateLab6
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateLab6
+    Properties:
+      Name: lab-app-target-group
+      VpcId: 
+        !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 40
+      HealthCheckTimeoutSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+
+  # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance.
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref Ec2Role]
+
+  # Allow EC2 instance to make calls to S3 and DynamoDB.
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:  EmployeeDirectoryAppRole  # Hard-coded in the lab, but doesn't need to be in real-life
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: 
+            - ec2.amazonaws.com
+            - lambda.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess      
+      # Note that any other policies required for the instance to do its job would be defined here as well.  
+
+  # This function will setup the content in our S3 bucket
+  CustomResourceS3ContentLambda:
+    Type: AWS::Lambda::Function
+    Condition: CreateLab4OrGreater
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CustomResource
+      Description: Handles miscellaneous tasks associated with labs.
+      Role: !GetAtt Ec2Role.Arn
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          import boto3
+          from zipfile import ZipFile 
+          import string
+          import os
+          import mimetypes
+          import urllib.request
+
+          print('Loading function')
+          s3 = boto3.client('s3')
+
+          # Entry point:
+          def lambda_handler(event, context):
+            print("Received event: " + json.dumps(event, indent=2))
+            responseData = {}
+
+            # Get the CloudFormation request type
+            requestType = event['RequestType']
+            rp = event['ResourceProperties']
+            s3Bucket = rp['S3Bucket']
+            PhotoZipUrl = rp['PhotoZipUrl']
+
+            if requestType == 'Create' or requestType == 'Update':
+                print ('Downloading ' + PhotoZipUrl )
+                zip_file_name = "" # "/tmp/web.zip"
+                unzip_location =  "/tmp"
+                try:
+                    zip_file_name, headers = urllib.request.urlretrieve(PhotoZipUrl)          
+
+                except Exception as e:
+                    msg = 'Error downloading from {}. Exception is {}.'.format(PhotoZipUrl,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+                print ('Unzipping ' + zip_file_name )
+                try:
+                    with ZipFile(zip_file_name, 'r') as zip: 
+                        zip.extractall(unzip_location) 
+                except Exception as e:
+                    msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+                print ('Uploading ' + unzip_location + " to " + s3Bucket )
+                try:
+                    for root,dirs,files in os.walk(unzip_location):
+                        for file in files:
+                            mime_type = mimetypes.guess_type(file)[0]
+                            if mime_type is None:
+                              mime_type = "binary/octet-stream"
+                            prefix = root.replace(unzip_location,"",1)
+                            prefix = prefix.replace("/polly-notes-web-bucket-root/","")
+                            prefix = prefix.replace("/polly-notes-web-bucket-root","")
+                            if len(prefix) > 0:
+                                prefix = prefix + '/'
+                            print("uploading from {} to {}".format(os.path.join(root,file),prefix+file))
+                            s3.upload_file(os.path.join(root,file),s3Bucket,prefix + file,ExtraArgs={'ContentType': mime_type})
+
+                except Exception as e:
+                    msg = 'Error uploading  content into bucket {}. Exception is {}.'.format(s3Bucket,repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+            if requestType == 'Delete':
+              print ('Clean out bucket to enable delete... ' )
+              boto3.resource('s3').Bucket(s3Bucket).objects.all().delete()
+             
+
+            # Unless something blew up, we should wander into this code:
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+      MemorySize: 128     
+      Timeout: 15         # Uploads and downloads take a bit of time.
+      Runtime: python3.8
+      Handler: index.lambda_handler
+
+  CustomResourceS3Content:
+    Type: Custom::helper
+    Condition: CreateLab4OrGreater
+    Properties:
+      ServiceToken: !GetAtt CustomResourceS3ContentLambda.Arn
+      S3Bucket: !Ref S3Bucket
+      PhotoZipUrl: !Ref PhotoZipUrl
+
+  # Explicitly creating LogGroups allows us to clean up these on stack delete.
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreateLab4OrGreater
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CustomResourceS3ContentLambda}
+      RetentionInDays: 3
+
+
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  Ec2InstanceIPAddress:
+    Description: IP Address of web server for labs 2, 3, 4, and 5
+    Value: !Sub http://${WebInstance.PublicIp}
+
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !If [CreateLab6, !Sub "http://${ALB.DNSName}", ""]
