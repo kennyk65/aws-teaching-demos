@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Re:Invent 2016, Federation Workshop, AD FS Infrastructure Template - NOT FOR PRODUCTION USE'
+#  TODO: INVESTIGATE "JOIN DOMAIN DIRECTORY" IN EC2 WIZARD.
+#  TODO: SWITCH TO CREATION POLICY
 
 Parameters:
 
@@ -13,8 +15,9 @@ Parameters:
 
   AdminPassword:
     Description: A complex password for the Administrator user account
-    NoEcho: TRUE
+    #NoEcho: TRUE
     Type: String
+    Default: Password#1
     AllowedPattern: (?=^.{4,}$)(?=.*\d)(?=.*[!@#$%^&*]+)(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$
     ConstraintDescription: "The Directory Services Restore Mode password does not meet the password complexity requirements of the password policy. Strong passwords require a combination of uppercase and lowercase letters, numbers, and symbols. Supply a stronger password."    
 
@@ -47,8 +50,9 @@ Parameters:
 
   RestoreModePassword:
     Description: A complex password for the Restore mode user account
-    NoEcho: TRUE
+    #NoEcho: TRUE
     Type: String
+    Default: Password#1
     AllowedPattern: (?=^.{4,}$)(?=.*\d)(?=.*[!@#$%^&*]+)(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$
     ConstraintDescription: "The Directory Services Restore Mode password does not meet the password complexity requirements of the password policy. Strong passwords require a combination of uppercase and lowercase letters, numbers, and symbols. Supply a stronger password."    
 
@@ -66,140 +70,34 @@ Parameters:
     Description: CIDR Block for the selected VPC (noted in parenthesis following VPC-id)
     Type: String
 
+  WindowsAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-windows-latest/Windows_Server-2012-R2_RTM-English-64Bit-Base
+    #Default: /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base    
+    Description: You probably won't need to change this value.  This is looking up the latest Windows AMI using the Parameter Store...
+
 
 Resources:
   
-  ADFS:
-    Type: AWS::EC2::Instance
+  # TODO: YAMLIZE THE ASSUMEROLEPOLICYDOCUMENT
+  RoleReadOnly:  
+    Type: AWS::IAM::Role
     Properties:
-      ImageId: !FindInMap [RegionalAMIs, !Ref 'AWS::Region', Win2012R2Base]
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
-      SecurityGroupIds:
-      - Ref: DomainControllerSecurityGroup
-      - Ref: DomainMemberSecurityGroup
-      SubnetId: !Ref PublicSubnetId
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-ADFS
-      UserData:
-        Fn::Base64: !Sub |
-          <script>cfn-init.exe --stack ${AWS::StackId} --resource ADFS --region ${AWS::Region}</script>            
-    Metadata:
-      AWS::CloudFormation::Init:
-        config:
-          commands:
-            4-signal-success:
-              command:
-                Fn::Join:
-                - ''
-                - - cfn-signal.exe -e 0 "
-                  - Fn::Base64:
-                      Ref: ADFSWaitHandle
-                  - '"'
-            a-set-execution-policy:
-              command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
-              waitAfterCompletion: '0'
-            b-reset-local-admin:
-              command:
-                Fn::Join:
-                - ''
-                - - powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1
-                    -password '
-                  - Ref: AdminPassword
-                  - ''''
-              waitAfterCompletion: '0'
-            c-rename-computer:
-              command: powershell.exe -Command Rename-Computer -NewName adfsserver
-                -Restart
-              waitAfterCompletion: forever
-          files:
-            C:\cfn\RunCommand.bat:
-              content: '%~1
-
-                IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )'
-            c:\cfn\cfn-hup.conf:
-              content:
-                Fn::Join:
-                - ''
-                - - '[main]
-
-                    '
-                  - stack=
-                  - Ref: AWS::StackId
-                  - '
-
-                    '
-                  - region=
-                  - Ref: AWS::Region
-            c:\cfn\hooks.d\cfn-auto-reloader.conf:
-              content:
-                Fn::Join:
-                - ''
-                - - '[cfn-auto-reloader-hook]
-
-                    '
-                  - 'triggers=post.update
-
-                    '
-                  - 'path=Resources.ADFS.Metadata.AWS::CloudFormation::Init
-
-                    '
-                  - action=cfn-init.exe
-                  - '       --stack '
-                  - Ref: AWS::StackId
-                  - '       --resource ADFS'
-                  - '       --region '
-                  - Ref: AWS::Region
-            c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
-              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
-            c:\idp1cert.pfx:
-              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/idp1cert.pfx
-          services:
-            windows:
-              cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                - c:\cfn\cfn-hup.conf
-                - c:\cfn\hooks.d\cfn-auto-reloader.conf
-  
-  ADFSEIP:
-    DependsOn: ADFS
-    Properties:
-      Domain: vpc
-      InstanceId:
-        Ref: ADFS
-    Type: AWS::EC2::EIP
-
-  ADFSWaitCondition:
-    Properties:
-      Count: '1'
-      Handle:
-        Ref: ADFSWaitHandle
-      Timeout: '1800'
-    Type: AWS::CloudFormation::WaitCondition
-
-  ADFSWaitHandle:
-    Type: AWS::CloudFormation::WaitConditionHandle
-
-  DCEIP1:
-    DependsOn: DomainController
-    Properties:
-      Domain: vpc
-      InstanceId:
-        Ref: DomainController
-    Type: AWS::EC2::EIP
+      Path: "/"
+      RoleName: FederationWorkshop-ReadOnly
+      AssumeRolePolicyDocument: !Sub "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"arn:aws:iam::${AWS::AccountId}:saml-provider/idp1\"},\"Action\":\"sts:AssumeRoleWithSAML\",\"Condition\":{\"StringEquals\":{\"SAML:aud\":\"https://signin.aws.amazon.com/saml\"}}}]}"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - arn:aws:iam::aws:policy/ReadOnlyAccess
 
 
   DomainController:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !FindInMap [RegionalAMIs, !Ref 'AWS::Region', Win2012R2Base]
+      ImageId: !Ref WindowsAMI
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyName
-      SecurityGroupIds:
-      - Ref: DomainControllerSecurityGroup
+      SecurityGroupIds: [ !Ref DomainControllerSecurityGroup ]
       SubnetId: !Ref PublicSubnetId
       Tags:
       - Key: Name
@@ -212,94 +110,39 @@ Resources:
         config:
           commands:
             1-run-dcpromo:
-              command:
-                Fn::Join:
-                - ''
-                - - 'C:\cfn\RunCommand.bat "dcpromo /unattend  /ReplicaOrNewDomain:Domain  /NewDomain:Forest  /NewDomainDNSName:'
-                  - Ref: DomainDNSName
-                  - '  /ForestLevel:4 /DomainNetbiosName:'
-                  - Ref: DomainNetBiosName
-                  - ' /DomainLevel:4  /InstallDNS:Yes  /ConfirmGc:Yes  /CreateDNSDelegation:No  /DatabasePath:"C:\Windows\NTDS"  /LogPath:"C:\Windows\NTDS"  /SYSVOLPath:"C:\Windows\SYSVOL"
-                    /SafeModeAdminPassword='
-                  - Ref: RestoreModePassword
-                  - ' /RebootOnCompletion:Yes"'
+              command: !Sub C:\cfn\RunCommand.bat "dcpromo /unattend  /ReplicaOrNewDomain:Domain  /NewDomain:Forest  /NewDomainDNSName:${DomainDNSName} /ForestLevel:4 /DomainNetbiosName:${DomainNetBiosName} /DomainLevel:4  /InstallDNS:Yes  /ConfirmGc:Yes  /CreateDNSDelegation:No  /DatabasePath:"C:\Windows\NTDS"  /LogPath:"C:\Windows\NTDS"  /SYSVOLPath:"C:\Windows\SYSVOL" /SafeModeAdminPassword=${RestoreModePassword} /RebootOnCompletion:Yes"
               waitAfterCompletion: forever
             4-signal-success:
-              command:
-                Fn::Join:
-                - ''
-                - - cfn-signal.exe -e 0 "
-                  - Fn::Base64:
-                      Ref: DomainControllerWaitHandle
-                  - '"'
+              command: !Sub cfn-signal.exe --resource DomainController --stack ${AWS::StackName} --region ${AWS::Region}
             a-set-execution-policy:
               command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
               waitAfterCompletion: '0'
             b-reset-local-admin:
-              command:
-                Fn::Join:
-                - ''
-                - - powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1
-                    -password '
-                  - Ref: AdminPassword
-                  - ''''
+              command: !Sub powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
               waitAfterCompletion: '0'
-            c-insert-random-pass:
-              command:
-                Fn::Join:
-                - ''
-                - - 'powershell.exe "(Get-Content c:\cfn\scripts\addusers.ps1).replace(\"RANDOMPASSHERE\",\"'
-                  - !GetAtt RandomPass.RandomString
-                  - '\") | Set-Content c:\cfn\scripts\addusers.ps1"'
+            c-setup-users:
+              command: !Sub powershell.exe -command C:\cfn\scripts\domaincontroller.ps1 ${AdminPassword} ${AWS::AccountId} 
               waitAfterCompletion: '0'
-            d-add-users:
-              command: powershell.exe -command  C:\cfn\scripts\addusers.ps1
-              waitAfterCompletion: '0'
-            e-rename-computer:
-              command: powershell.exe -Command Rename-Computer -NewName DC1 -Restart
-              waitAfterCompletion: forever
           files:
             C:\cfn\RunCommand.bat:
-              content: '%~1
-
-                IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )'
+              content: |
+                %~1
+                IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )
             c:\cfn\cfn-hup.conf:
-              content:
-                Fn::Join:
-                - ''
-                - - '[main]
-
-                    '
-                  - stack=
-                  - Ref: AWS::StackId
-                  - '
-
-                    '
-                  - region=
-                  - Ref: AWS::Region
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
             c:\cfn\hooks.d\cfn-auto-reloader.conf:
-              content:
-                Fn::Join:
-                - ''
-                - - '[cfn-auto-reloader-hook]
-
-                    '
-                  - 'triggers=post.update
-
-                    '
-                  - 'path=Resources.DomainController.Metadata.AWS::CloudFormation::Init
-
-                    '
-                  - action=cfn-init.exe
-                  - '       --stack '
-                  - Ref: AWS::StackId
-                  - '       --resource DomainController'
-                  - '       --region '
-                  - Ref: AWS::Region
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.DomainController.Metadata.AWS::CloudFormation::Init
+                action=cfn-init.exe --stack ${AWS::StackId} --resource DomainController --region ${AWS::Region}
             c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
               source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
-            c:\cfn\scripts\addusers.ps1:
-              source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/addusers.ps1
+            c:\cfn\scripts\domaincontrollersetup.ps1:
+              source: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/domaincontrollersetup.ps1
           services:
             windows:
               cfn-hup:
@@ -308,12 +151,188 @@ Resources:
                 files:
                 - c:\cfn\cfn-hup.conf
                 - c:\cfn\hooks.d\cfn-auto-reloader.conf
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+        
 
+
+#           <powershell>
+#           # Download stuff we need:
+#           mkdir c:\cfn
+#           mkdir c:\cfn\scripts
+#           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/RunCommand.bat"  -OutFile "C:\cfn\RunCommand.bat"
+#           Invoke-WebRequest -Uri "http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1"  -OutFile "c:\cfn\scripts\Reset-LocalAdminPassword.ps1"
+#           # REPLACED BY ADDSDeployment module for Windows PowerShell.
+#           #C:\cfn\RunCommand.bat "dcpromo /unattend  /ReplicaOrNewDomain:Domain  /NewDomain:Forest  /NewDomainDNSName:${DomainDNSName} /ForestLevel:4 /DomainNetbiosName:${DomainNetBiosName} /DomainLevel:4  /InstallDNS:Yes  /ConfirmGc:Yes  /CreateDNSDelegation:No  /DatabasePath:'C:\Windows\NTDS'  /LogPath:'C:\Windows\NTDS'  /SYSVOLPath:'C:\Windows\SYSVOL' /SafeModeAdminPassword=${RestoreModePassword} /RebootOnCompletion:Yes"
+#           Install-windowsfeature -name AD-Domain-Services -IncludeManagementTools
+          
+#  dcpromo /unattend  
+#  /ReplicaOrNewDomain:Domain  
+#  /NewDomain:Forest  
+#  /ForestLevel:4 
+#  /DomainLevel:4  
+#  /ConfirmGc:Yes  
+#  /SYSVOLPath:'C:\Windows\SYSVOL' 
+ 
+# Install-ADDSDomain -SkipPreChecks -NewDomainName ${DomainDNSName} -SafeModeAdministratorPassword ${RestoreModePassword} 
+# -DatabasePath 'C:\Windows\NTDS'        -InstallDns       -LogPath 'C:\Windows\NTDS'       -NewDomainNetbiosName ${DomainNetBiosName}       
+# -NoRebootOnCompletion
+
+#        -ParentDomainName <String>
+      
+#        [-NoDnsOnNetwork]
+#        [-DomainMode <DomainMode>]
+#        [-DomainType <DomainType>]
+#        [-NoGlobalCatalog]
+#        [-ReplicationSourceDC <String>]
+#        [-SiteName <String>]
+#        [-SkipAutoConfigureDns]
+#        [-SysvolPath <String>]
+#        [-Force]
+#        [-WhatIf]
+#        [-Confirm]
+#        [<CommonParameters>]
+
+
+#           Set-ExecutionPolicy RemoteSigned -Force
+#           # Change password:
+#           C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
+#           $Password = "${RandomPass.RandomString}" | ConvertTo-SecureString -AsPlainText -Force
+#           New-ADUser -Name "alice" -AccountPassword $Password -SamAccountName alice -DisplayName "alice" -EmailAddress alice@example.com -Enabled $TRUE -GivenName alice -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName alice
+#           New-ADUser -Name "bob" -AccountPassword $Password -SamAccountName bob -DisplayName "bob" -EmailAddress bob@example.com -Enabled $TRUE -GivenName bob -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName bob
+#           New-ADUser -Name "adfssvc" -AccountPassword $Password -SamAccountName adfssvc -DisplayName "adfssvc" -EmailAddress adfssvc@example.com -Enabled $TRUE -GivenName adfssvc -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName adfssvc
+#           NEW-ADGroup -name "AWS-${AWS::AccountId}-ReadOnly" -groupscope Global
+#           NEW-ADGroup -name "AWS-${AWS::AccountId}-PowerUser" -groupscope Global
+#           Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members bob
+#           Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members alice
+#           Add-ADGroupMember -Identity AWS-${AWS::AccountId}-PowerUser -Members alice
+#           Rename-Computer -NewName DC1 -Restart
+
+
+
+      # AWS::CloudFormation::Init:
+      #   config:
+      #     commands:
+      #       1-run-dcpromo:
+      #         command:
+      #           Fn::Join:
+      #           - ''
+      #           - - 'C:\cfn\RunCommand.bat "dcpromo /unattend  /ReplicaOrNewDomain:Domain  /NewDomain:Forest  /NewDomainDNSName:'
+      #             - Ref: DomainDNSName
+      #             - '  /ForestLevel:4 /DomainNetbiosName:'
+      #             - Ref: DomainNetBiosName
+      #             - ' /DomainLevel:4  /InstallDNS:Yes  /ConfirmGc:Yes  /CreateDNSDelegation:No  /DatabasePath:"C:\Windows\NTDS"  /LogPath:"C:\Windows\NTDS"  /SYSVOLPath:"C:\Windows\SYSVOL"
+      #               /SafeModeAdminPassword='
+      #             - Ref: RestoreModePassword
+      #             - ' /RebootOnCompletion:Yes"'
+      #         waitAfterCompletion: forever
+      #       4-signal-success:
+      #         command:
+      #           Fn::Join:
+      #           - ''
+      #           - - cfn-signal.exe -e 0 "
+      #             - Fn::Base64:
+      #                 Ref: DomainControllerWaitHandle
+      #             - '"'
+      #       a-set-execution-policy:
+      #         command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
+      #         waitAfterCompletion: '0'
+      #       b-reset-local-admin:
+      #         command:
+      #           Fn::Join:
+      #           - ''
+      #           - - powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1
+      #               -password '
+      #             - Ref: AdminPassword
+      #             - ''''
+      #         waitAfterCompletion: '0'
+      #       c-insert-random-pass:
+      #         command:
+      #           Fn::Join:
+      #           - ''
+      #           - - 'powershell.exe "(Get-Content c:\cfn\scripts\addusers.ps1).replace(\"RANDOMPASSHERE\",\"'
+      #             - !GetAtt RandomPass.RandomString
+      #             - '\") | Set-Content c:\cfn\scripts\addusers.ps1"'
+      #         waitAfterCompletion: '0'
+      #       d-add-users:
+      #         command: powershell.exe -command  C:\cfn\scripts\addusers.ps1
+      #         waitAfterCompletion: '0'
+      #       e-add-group1:
+      #         command: !Sub powershell.exe -command NEW-ADGroup -name "AWS-${AWS::AccountId}-ReadOnly" -groupscope Global
+      #         waitAfterCompletion: '0'
+      #       f-add-group2:
+      #         command: !Sub powershell.exe -command NEW-ADGroup -name "AWS-${AWS::AccountId}-PowerUser" -groupscope Global
+      #         waitAfterCompletion: '0'
+      #       g-add-user:
+      #         command: !Sub powershell.exe -command Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members bob
+      #         waitAfterCompletion: '0'
+      #       h-add-user:
+      #         command: !Sub powershell.exe -command Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members alice
+      #         waitAfterCompletion: '0'
+      #       i-add-user:
+      #         command: !Sub powershell.exe -command Add-ADGroupMember -Identity AWS-${AWS::AccountId}-PowerUser -Members alice
+      #         waitAfterCompletion: '0'
+      #       j-rename-computer:
+      #         command: powershell.exe -Command Rename-Computer -NewName DC1 -Restart
+      #         waitAfterCompletion: forever
+      #     files:
+      #       C:\cfn\RunCommand.bat:
+      #         content: '%~1
+
+      #           IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )'
+      #       c:\cfn\cfn-hup.conf:
+      #         content:
+      #           Fn::Join:
+      #           - ''
+      #           - - '[main]
+
+      #               '
+      #             - stack=
+      #             - Ref: AWS::StackId
+      #             - '
+
+      #               '
+      #             - region=
+      #             - Ref: AWS::Region
+      #       c:\cfn\hooks.d\cfn-auto-reloader.conf:
+      #         content:
+      #           Fn::Join:
+      #           - ''
+      #           - - '[cfn-auto-reloader-hook]
+
+      #               '
+      #             - 'triggers=post.update
+
+      #               '
+      #             - 'path=Resources.DomainController.Metadata.AWS::CloudFormation::Init
+
+      #               '
+      #             - action=cfn-init.exe
+      #             - '       --stack '
+      #             - Ref: AWS::StackId
+      #             - '       --resource DomainController'
+      #             - '       --region '
+      #             - Ref: AWS::Region
+      #       c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
+      #         source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
+      #       c:\cfn\scripts\addusers.ps1:
+      #         source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/addusers.ps1
+      #     services:
+      #       windows:
+      #         cfn-hup:
+      #           enabled: 'true'
+      #           ensureRunning: 'true'
+      #           files:
+      #           - c:\cfn\cfn-hup.conf
+      #           - c:\cfn\hooks.d\cfn-auto-reloader.conf
 
   DomainControllerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Domain Controller
+      VpcId: !Ref VPC
       SecurityGroupIngress:
       - CidrIp: !Ref SourceCidr
         FromPort: 3389
@@ -327,24 +346,23 @@ Resources:
         FromPort: -1
         IpProtocol: icmp
         ToPort: -1
-      VpcId:
-        Ref: VPC
     
-  DomainControllerWaitCondition:
-    Type: AWS::CloudFormation::WaitCondition
-    Properties:
-      Count: 1
-      Handle:
-        Ref: DomainControllerWaitHandle
-      Timeout: 1800
+  # DomainControllerWaitCondition:
+  #   Type: AWS::CloudFormation::WaitCondition
+  #   Properties:
+  #     Count: 1
+  #     Handle:
+  #       Ref: DomainControllerWaitHandle
+  #     Timeout: 1800
 
-  DomainControllerWaitHandle:
-    Type: AWS::CloudFormation::WaitConditionHandle
+  # DomainControllerWaitHandle:
+  #   Type: AWS::CloudFormation::WaitConditionHandle
   
   DomainMemberSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Domain Members
+      VpcId: !Ref VPC
       SecurityGroupIngress:
       - CidrIp: !Ref SourceCidr
         FromPort: 80
@@ -354,8 +372,146 @@ Resources:
         FromPort: 443
         IpProtocol: tcp
         ToPort: 443
-      VpcId:
-        Ref: VPC
+
+
+  ADFS:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref WindowsAMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+      - Ref: DomainControllerSecurityGroup
+      - Ref: DomainMemberSecurityGroup
+      SubnetId: !Ref PublicSubnetId
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-ADFS
+      UserData:
+        Fn::Base64: !Sub |
+          <powershell>
+          # Download stuff we need:
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/RunCommand.bat"  -OutFile "C:\cfn\RunCommand.bat"
+          Invoke-WebRequest -Uri "http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1"  -OutFile "c:\cfn\scripts\Reset-LocalAdminPassword.ps1"
+          Invoke-WebRequest -Uri "http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/idp1cert.pfx"  -OutFile "c:\idp1cert.pfx"
+          Set-ExecutionPolicy RemoteSigned -Force
+          # Change password:
+          C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
+          # DNS server should be the domain controller:
+          Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ${DomainController.PrivateIp}
+          Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
+          # Install ADFS
+          Install-windowsfeature adfs-federation –IncludeManagementTools
+          # Install certificate:
+          $secure = ConvertTo-SecureString "Pass@123" -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath C:\idp1cert.pfx -CertStoreLocation Cert:\LocalMachine\My -Password $secure
+          # TODO: THIS NEXT COMMAND IS SUPPOSED TO END WITH -Restart
+          Rename-Computer -NewName adfsserver
+          # TODO: FIGURE OUT THE RESTART, IF THIS WILL EXECUTE OK, ETC.  CAN WE COMBINE RENAME WITH DOMAIN JOIN
+          add-computer –domainname ${DomainDNSName}  -restart
+          # Configure ADFS:
+          # TODO: i'M GUESSING THE CERT
+          # TODO: I'M GUESSING THAT FEDERATIONSERVICENAME = SERVICEACCOUNT = idp1.example.com
+          # TODO: I'M GUESSING THAT GROUPSERVICEACCOUNTIDENTIFIER = FEDERATIONSERVICEDISPLAYNAME = adfssvc
+          Install-AdfsFarm -CertificateThumbprint $cert.Thumbprint -FederationServiceName idp1.example.com -GroupServiceAccountIdentifier EXAMPLE\adfssvc$
+          </powershell>
+
+# <script>cfn-init.exe --stack ${AWS::StackId} --resource ADFS --region ${AWS::Region} </script>  
+
+#     Metadata:
+#       AWS::CloudFormation::Init:
+#         config:
+#           commands:
+#             4-signal-success:
+#               command: !Sub cfn-signal.exe -e 0 "${ADFSWaitHandle}"
+#             a-set-execution-policy:
+#               command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
+#               waitAfterCompletion: '0'
+#             b-reset-local-admin:
+#               command: !Sub powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
+#               waitAfterCompletion: '0'
+#             c-set-dns-server:
+#               command: !Sub powershell.exe -command Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ${DomainController.PrivateIp}
+#               waitAfterCompletion: '0'
+#             d-rename-computer:
+#               command: powershell.exe -Command Rename-Computer -NewName adfsserver -Restart
+#               waitAfterCompletion: forever
+#             # TODO: FIGURE OUT THE RESTART, IF THIS WILL EXECUTE OK, ETC.  CAN WE COMBINE RENAME WITH DOMAIN JOIN
+#             e-join-domain:
+#               command: !Sub powershell.exe -command add-computer –domainname ${DomainDNSName}  -restart
+#               waitAfterCompletion: forever
+#             f-fix-some-messages:
+#               command: !Sub powershell.exe -command Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
+#               waitAfterCompletion: '0'
+#             g-install-adfs:
+#               command: !Sub powershell.exe -command Install-windowsfeature adfs-federation –IncludeManagementTools
+#               waitAfterCompletion: '0'
+
+#           # MUST INSTALL CERTIFICATE SOMEHOW IN THE 'LOCAL COMPUTER PERSONAL CERTIFICATE STORE'
+#           $secure = ConvertTo-SecureString "Pass@123" -AsPlainText -Force
+#           $cert = Import-PfxCertificate -FilePath C:\idp1cert.pfx -CertStoreLocation Cert:\LocalMachine\My -Password $secure
+#           # TODO: i'M GUESSING THE CERT
+#           # TODO: I'M GUESSING THAT FEDERATIONSERVICENAME = SERVICEACCOUNT = idp1.example.com
+#           # TODO: I'M GUESSING THAT GROUPSERVICEACCOUNTIDENTIFIER = FEDERATIONSERVICEDISPLAYNAME = adfssvc
+#           Install-AdfsFarm -CertificateThumbprint $cert.Thumbprint -FederationServiceName idp1.example.com -GroupServic
+# eAccountIdentifier EXAMPLE\adfssvc$
+
+#           files:
+#             C:\cfn\RunCommand.bat:
+#               content: |
+#                 %~1
+#                 IF %ERRORLEVEL% GTR 10 ( exit /b 1 ) else ( exit /b 0 )
+#             c:\cfn\cfn-hup.conf:
+#               content: !Sub |
+#                 [main]
+#                 stack=${AWS::StackId}
+#                 region=${AWS::Region}
+#             c:\cfn\hooks.d\cfn-auto-reloader.conf:
+#               content: !Sub |
+#                 [cfn-auto-reloader-hook]
+#                 triggers=post.update
+#                 path=Resources.ADFS.Metadata.AWS::CloudFormation::Init
+#                 action=cfn-init.exe --stack ${AWS::StackId} --resource ADFS --region ${AWS::Region}
+#             c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
+#               source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
+#             c:\idp1cert.pfx:
+#               source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/idp1cert.pfx
+#           services:
+#             windows:
+#               cfn-hup:
+#                 enabled: 'true'
+#                 ensureRunning: 'true'
+#                 files:
+#                 - c:\cfn\cfn-hup.conf
+#                 - c:\cfn\hooks.d\cfn-auto-reloader.conf
+  
+  ADFSEIP:
+    DependsOn: ADFS
+    Properties:
+      Domain: vpc
+      InstanceId:
+        Ref: ADFS
+    Type: AWS::EC2::EIP
+
+  # ADFSWaitCondition:
+  #   Properties:
+  #     Count: '1'
+  #     Handle:
+  #       Ref: ADFSWaitHandle
+  #     Timeout: '1800'
+  #   Type: AWS::CloudFormation::WaitCondition
+
+  # ADFSWaitHandle:
+  #   Type: AWS::CloudFormation::WaitConditionHandle
+
+  DCEIP1:
+    DependsOn: DomainController
+    Properties:
+      Domain: vpc
+      InstanceId:
+        Ref: DomainController
+    Type: AWS::EC2::EIP
+
 
   RoleForRandomStrFunctionLambda:
     Type: AWS::IAM::Role
@@ -417,6 +573,7 @@ Resources:
     Properties:
       ServiceToken: !GetAtt RandomStrFunction.Arn
       StringLength: 16
+
 
 Mappings:
   RegionalAMIs:
