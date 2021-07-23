@@ -50,7 +50,8 @@ Resources:
             - 02_config-amazon-cloudwatch-agent
             - 03_restart_amazon-cloudwatch-agent
         # Cfn-hup setting, it is to monitor the change of metadata.
-        # When there is change in the contents of json file in the metadata section, cfn-hup will call cfn-init to restart the AmazonCloudWatchAgent.
+        # When there is change in the contents of json file in the metadata section, 
+        # cfn-hup will call cfn-init to restart the AmazonCloudWatchAgent.
         00_setupCfnHup:
           files:
              "c:\\cfn\\cfn-hup.conf":
