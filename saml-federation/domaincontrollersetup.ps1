@@ -19,7 +19,3 @@ Add-ADGroupMember -Identity AWS-$Account-ReadOnly -Members bob
 Add-ADGroupMember -Identity AWS-$Account-ReadOnly -Members alice
 
 Add-ADGroupMember -Identity AWS-$Account-PowerUser -Members alice
-<<<<<<< HEAD
-=======
-
->>>>>>> a552d3407e7476e219150ef455ee6665652e1be4

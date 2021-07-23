@@ -1,0 +1,24 @@
+
+
+# Install SSM Agent.  The docs say it is already installed.
+#Invoke-WebRequest `https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe ` -OutFile $env:USERPROFILE\Desktop\SSMAgent_latest.exe
+#Start-Process `-FilePath $env:USERPROFILE\Desktop\SSMAgent_latest.exe ` -ArgumentList "/S"
+#rm -Force $env:USERPROFILE\Desktop\SSMAgent_latest.exe
+
+# Install CloudWatch Agent
+Invoke-WebRequest -Uri https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi -OutFile C:\amazon-cloudwatch-agent.msi
+ Test-Path -Path C:\amazon-cloudwatch-agent.msi
+ msiexec /i C:\amazon-cloudwatch-agent.msi /quiet
+ # MUST CREATE CONFIG FILE FIRST
+ & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -s -c file:configuration-file-path
+& "C:\'Program Files'\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1 -a fetch-config -m ec2 -c ssm:${ssmkey} -s"
+             
+
+               mkdir C:\Downloads\Amazon\AmazonCloudWatchAgent
+              powershell -Command "(New-Object Net.WebClient).DownloadFile('https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi','C:\Downloads\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.msi')"
+              C:\Downloads\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.msi
+              powershell -Command "C:\'Program Files'\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1 -a fetch-config -m ec2 -c ssm:${ssmkey} -s"
+              cfn-init.exe -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets default
+              cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+               </script>
+            - { ssmkey: !Ref SSMKey }

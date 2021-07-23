@@ -99,6 +99,8 @@ Resources:
       KeyName: !Ref KeyName
       SecurityGroupIds: [ !Ref DomainControllerSecurityGroup ]
       SubnetId: !Ref PublicSubnetId
+      InstanceProfile: 
+        Name:  !Ref InstanceProfile     # Allows EC2 Instance to talk with SSM, CloudWatch
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-DC
@@ -121,7 +123,7 @@ Resources:
               command: !Sub powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
               waitAfterCompletion: '0'
             c-setup-users:
-              command: !Sub powershell.exe -command C:\cfn\scripts\domaincontroller.ps1 ${AdminPassword} ${AWS::AccountId} 
+              command: !Sub powershell.exe -command C:\cfn\scripts\domaincontroller.ps1  
               waitAfterCompletion: '0'
           files:
             C:\cfn\RunCommand.bat:
@@ -142,12 +144,22 @@ Resources:
             c:\cfn\scripts\Reset-LocalAdminPassword.ps1:
               source: http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1
             c:\cfn\scripts\domaincontrollersetup.ps1:
-              source: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/domaincontrollersetup.ps1
+#              source: https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/domaincontrollersetup.ps1
+              content: !Sub |
+                $Password = "${RandomPass.RandomString}" | ConvertTo-SecureString -AsPlainText -Force
+                New-ADUser -Name "alice" -AccountPassword $Password -SamAccountName alice -DisplayName "alice" -EmailAddress alice@example.com -Enabled $TRUE -GivenName alice -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName alice
+                New-ADUser -Name "bob" -AccountPassword $Password -SamAccountName bob -DisplayName "bob" -EmailAddress bob@example.com -Enabled $TRUE -GivenName bob -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName bob
+                New-ADUser -Name "adfssvc" -AccountPassword $Password -SamAccountName adfssvc -DisplayName "adfssvc" -EmailAddress adfssvc@example.com -Enabled $TRUE -GivenName adfssvc -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName adfssvc
+                NEW-ADGroup -name "AWS-${AWS::AccountId}-ReadOnly" -groupscope Global
+                NEW-ADGroup -name "AWS-${AWS::AccountId}-PowerUser" -groupscope Global
+                Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members bob
+                Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members alice
+                Add-ADGroupMember -Identity AWS-${AWS::AccountId}-PowerUser -Members alice
           services:
             windows:
               cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
+                enabled: true
+                ensureRunning: true
                 files:
                 - c:\cfn\cfn-hup.conf
                 - c:\cfn\hooks.d\cfn-auto-reloader.conf
@@ -511,6 +523,28 @@ Resources:
       InstanceId:
         Ref: DomainController
     Type: AWS::EC2::EIP
+
+  # IAM permissions to EC2 instance:.
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref Ec2Role]
+
+  # Allow EC2 instance to make calls to SSM, CloudWatch.
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
 
 
   RoleForRandomStrFunctionLambda:

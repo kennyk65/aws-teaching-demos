@@ -1,0 +1,35 @@
+
+echo 'creating folder for scripts...'
+mkdir c:\cfn
+mkdir c:\cfn\scripts
+echo 'teaching Windows what TLS is...'
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+echo 'downloading scripts...'
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/kennyk65/aws-teaching-demos/master/cloud-formation-demos/RunCommand.bat"  -OutFile "C:\cfn\RunCommand.bat"
+Invoke-WebRequest -Uri "http://federationworkshopreinvent2016.s3-website-us-east-1.amazonaws.com/bootstrapping/Reset-LocalAdminPassword.ps1"  -OutFile "c:\cfn\scripts\Reset-LocalAdminPassword.ps1"
+echo 'installing Active Directory...'
+dcpromo /unattend  /ReplicaOrNewDomain:Domain  /NewDomain:Forest  /NewDomainDNSName:example.com /ForestLevel:4 /DomainNetbiosName:EXAMPLE /DomainLevel:4  /InstallDNS:Yes  /ConfirmGc:Yes  /CreateDNSDelegation:No  /DatabasePath:"C:\Windows\NTDS"  /LogPath:"C:\Windows\NTDS"  /SYSVOLPath:"C:\Windows\SYSVOL" /SafeModeAdminPassword=Password#1 /RebootOnCompletion:No
+
+#/RebootOnCompletion:Yes
+
+Set-ExecutionPolicy RemoteSigned -Force
+
+C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password 'Password#1'
+
+$Password = "Password#1" | ConvertTo-SecureString -AsPlainText -Force
+New-ADUser -Name "alice" -AccountPassword $Password -SamAccountName alice -DisplayName "alice" -EmailAddress alice@example.com -Enabled $TRUE -GivenName alice -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName alice
+New-ADUser -Name "bob" -AccountPassword $Password -SamAccountName bob -DisplayName "bob" -EmailAddress bob@example.com -Enabled $TRUE -GivenName bob -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName bob
+New-ADUser -Name "adfssvc" -AccountPassword $Password -SamAccountName adfssvc -DisplayName "adfssvc" -EmailAddress adfssvc@example.com -Enabled $TRUE -GivenName adfssvc -PassThru -PasswordNeverExpires $TRUE -UserPrincipalName adfssvc
+NEW-ADGroup -name "AWS-011673140073-ReadOnly" -groupscope Global
+NEW-ADGroup -name "AWS-011673140073-PowerUser" -groupscope Global
+Add-ADGroupMember -Identity AWS-011673140073-ReadOnly -Members bob
+Add-ADGroupMember -Identity AWS-011673140073-ReadOnly -Members alice
+Add-ADGroupMember -Identity AWS-011673140073-PowerUser -Members alice
+
+cfn-signal.exe --resource DomainController --stack ${AWS::StackName} --region ${AWS::Region}
+
+Rename-Computer -NewName DC1 -Restart
+
+
+
