@@ -9,35 +9,31 @@ Parameters:
     Type: String
     Default: cloudwatch-agent-demo
 
-  AmazonLinuxAMI:
+  WindowsAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
+    Default: /aws/service/ami-windows-latest/Windows_Server-2012-R2_RTM-English-64Bit-Base
+    #Default: /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base    
+    Description: You probably won't need to change this value.  This is looking up the latest Windows AMI using the Parameter Store...
 
 Resources:
 
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI     # Obtain the AMI from the SSM Parameter
+      ImageId: !Ref WindowsAMI     # Obtain the AMI from the SSM Parameter
       InstanceType: t3.micro
       IamInstanceProfile: !Ref InstanceProfile
       SecurityGroups:
         - !Ref InstanceSecurityGroup
       UserData:
-        # This script below is to install AmazonCloudWatchAgent, restart AmazonCloudWatchAgent and tell the result to cloudformation.
         Fn::Base64: !Sub |
-           #!/bin/bash
-           # install systems manager:
-           cd /tmp
-           yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-           # Install and start nginx so we have something to monitor
-           amazon-linux-extras install nginx1.12
-           nginx
-           start amazon-ssm-agent
-           rpm -Uvh https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
-           /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets default
-           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+          <script>
+          mkdir C:\Downloads\Amazon\AmazonCloudWatchAgent
+          powershell -Command "(New-Object Net.WebClient).DownloadFile('https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi','C:\Downloads\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.msi')"
+          C:\Downloads\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.msi
+          cfn-init.exe -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets default
+          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+          </script>
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -46,7 +42,8 @@ Resources:
       AWS::CloudFormation::Init:
         configSets:
           default:
-            - 01_setupCfnHup
+            - 00_setupCfnHup
+            - 01_CfnHup_service
             - 02_config-amazon-cloudwatch-agent
             - 03_restart_amazon-cloudwatch-agent
           UpdateEnvironment:
@@ -54,51 +51,63 @@ Resources:
             - 03_restart_amazon-cloudwatch-agent
         # Cfn-hup setting, it is to monitor the change of metadata.
         # When there is change in the contents of json file in the metadata section, cfn-hup will call cfn-init to restart the AmazonCloudWatchAgent.
-        01_setupCfnHup:
+        00_setupCfnHup:
           files:
-             '/etc/cfn/cfn-hup.conf':
+             "c:\\cfn\\cfn-hup.conf":
                content: !Sub |
                  [main]
                  stack=${AWS::StackId}
                  region=${AWS::Region}
                  interval=1
-               mode: '000400'
-               owner: root
-               group: root
-             '/etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf':
+             "c:\\cfn\\hooks.d\\amazon-cloudwatch-agent-auto-reloader.conf":
                content: !Sub |
                  [cfn-auto-reloader-hook]
                  triggers=post.update
                  path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
-                 action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets UpdateEnvironment
-                 runas=root
-               mode: '000400'
-               owner: root
-               group: root
-             "/lib/systemd/system/cfn-hup.service":
-                content: !Sub |
-                  [Unit]
-                  Description=cfn-hup daemon
-                  [Service]
-                  Type=simple
-                  ExecStart=/opt/aws/bin/cfn-hup
-                  Restart=always
-                  [Install]
-                  WantedBy=multi-user.target
-          commands:
-            01enable_cfn_hup:
-              command: !Sub |
-                systemctl enable cfn-hup.service
-            02start_cfn_hup:
-              command: !Sub |
-                systemctl start cfn-hup.service
-
+                 action=cfn-init.exe -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets UpdateEnvironment
+        01_CfnHup_service:
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - "c:\\cfn\\cfn-hup.conf"
+                  - "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
         # Definition of json configuration of AmazonCloudWatchAgent, you can change the configuration below.
         02_config-amazon-cloudwatch-agent:
           files:
-            '/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json':
+            "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent.json":
               content: !Sub |
                 {
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "C:\\cfn\\log\\cfn-hup.log",
+                            "log_group_name": "${LogGroupName}",
+                            "log_stream_name": "{instance_id}-cfn-hup"
+                          },
+                          {
+                            "file_path": "C:\\cfn\\log\\cfn-init.log",
+                            "log_group_name": "${LogGroupName}",
+                            "log_stream_name": "{instance_id}-cfn-init"
+                          },
+                          {
+                            "file_path": "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Log\\UserdataExecution.log",
+                            "log_group_name": "${LogGroupName}",
+                            "log_stream_name": "{instance_id}-ec2launchlog"
+                          },
+                          {
+                            "file_path": "C:\\Program Files\\Amazon\\Ec2ConfigService\\Logs\\Ec2ConfigLog.txt",
+                            "log_group_name": "${LogGroupName}",
+                            "log_stream_name": "{instance_id}-ec2configlog"
+                          }
+                        ]
+                      }
+                    }
+                  },
                   "metrics": {
                     "append_dimensions": {
                       "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
@@ -107,54 +116,31 @@ Resources:
                       "InstanceType": "${!aws:InstanceType}"
                     },
                     "metrics_collected": {
-                      "mem": {
+                      "Memory": {
                         "measurement": [
-                          "mem_used_percent"
-                        ]
+                          "% Committed Bytes In Use"
+                        ],
+                        "metrics_collection_interval": 60
                       },
-                      "swap": {
+                      "Paging File": {
                         "measurement": [
-                          "swap_used_percent"
+                          "% Usage"
+                        ],
+                        "metrics_collection_interval": 60,
+                        "resources": [
+                          "*"
                         ]
                       }
                     }
-                  },
-                  "logs": {
-                    "logs_collected": {
-                      "files": {
-                        "collect_list": [
-                          {
-                            "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
-                            "log_group_name": "${LogGroupName}",
-                            "log_stream_name": "demo-amazon-cloudwatch-agent.log",
-                            "timezone": "UTC"
-                          },
-                          {
-                            "file_path": "/var/log/nginx/error.log",
-                            "log_group_name": "${LogGroupName}",
-                            "log_stream_name": "nginx-error.log",
-                            "timezone": "UTC"
-                          },
-                          {
-                            "file_path": "/var/log/nginx/access.log",
-                            "log_group_name": "${LogGroupName}",
-                            "log_stream_name": "nginx-access.log",
-                            "timezone": "UTC"
-                          }
-                        ]
-                      }
-                    },
-                    "log_stream_name": "default-stream",
-                    "force_flush_interval" : 15
-                  }                  
+                  }
                 }
         # Invoke amazon-cloudwatch-agent-ctl to restart the AmazonCloudWatchAgent.
         03_restart_amazon-cloudwatch-agent:
           commands:
             01_stop_service:
-              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
+              command: powershell -Command "C:\\'Program Files'\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1 -a stop"
             02_start_service:
-              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+              command: powershell -Command "C:\\'Program Files'\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1 -a fetch-config -m ec2 -c file:C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent.json -s"
 
   
   # Anything will do.  Can't have an EC2 instance without a SG
