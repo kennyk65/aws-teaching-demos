@@ -84,7 +84,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       Path: "/"
-      RoleName: FederationWorkshop-ReadOnly
+      RoleName: !Sub ${AWS::StackName}-FederationWorkshop-ReadOnly
       AssumeRolePolicyDocument: !Sub "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"arn:aws:iam::${AWS::AccountId}:saml-provider/idp1\"},\"Action\":\"sts:AssumeRoleWithSAML\",\"Condition\":{\"StringEquals\":{\"SAML:aud\":\"https://signin.aws.amazon.com/saml\"}}}]}"
       MaxSessionDuration: 3600
       ManagedPolicyArns: 
@@ -121,9 +121,9 @@ Resources:
             3-set-execution-policy:
               command: powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force
               waitAfterCompletion: '0'
-            4-reset-local-admin:
-              command: !Sub powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
-              waitAfterCompletion: '0'
+            # 4-reset-local-admin:
+            #   command: !Sub powershell.exe -command C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
+            #   waitAfterCompletion: '0'
             5-setup-users:
               command: !Sub powershell.exe -command C:\cfn\scripts\domainControllerSetup.ps1  
               waitAfterCompletion: '0'
@@ -162,6 +162,8 @@ Resources:
                 }                
             c:\cfn\scripts\domainControllerSetup.ps1:
               content: !Sub |
+                # Change password:
+                C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}'
                 # Wait until the AD service starts back up:
                 Start-Sleep -Seconds 30
                 # Make a secure string to hold the password and create users, groups, and assign membership
@@ -174,6 +176,8 @@ Resources:
                 Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members bob
                 Add-ADGroupMember -Identity AWS-${AWS::AccountId}-ReadOnly -Members alice
                 Add-ADGroupMember -Identity AWS-${AWS::AccountId}-PowerUser -Members alice
+                # Unsure about this.  Instructions have you do this on ADFS server but always get an error
+                Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
             c:\cfn\scripts\setupCloudWatchAgent.ps1:
               content: !Sub |
                 mkdir C:\Downloads\Amazon\AmazonCloudWatchAgent
@@ -304,16 +308,17 @@ Resources:
                 C:\cfn\scripts\Reset-LocalAdminPassword.ps1 -password '${AdminPassword}' 
                 # DNS server should be the domain controller:
                 Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ${DomainController.PrivateIp}
-                # TODO: THIS COMMAND FAILS WHEN RUN VIA SCRIPT, BUT IS FINE WHEN RUN OVER RDP CONNECTION.  ERROR IS A positional parameter cannot be found that accepts argument 'example.com'.  It puts a question mark in front of domain name.
-                add-computer -NewName "adfsserver" –DomainName "${DomainDNSName}" -restart
+                $secureString = "${AdminPassword}" | ConvertTo-SecureString -AsPlainText -Force
+                $credentialObject = New-Object System.Management.Automation.PSCredential -ArgumentList "Administrator", $secureString
+                # TODO: THIS COMMAND sometimes fails, can't rename because the domain servier is busy.
+                Add-Computer "${DomainDNSName}" -Credential $credentialObject -NewName "adfsserver" -restart
             c:\cfn\scripts\setupAdfsPart2.ps1:
               content: !Sub |
-                # TODO:  HOW TO RUN THIS UNDER EXAMPLE\ADMINISTRATOR USER????
-                # TODO:  The request is not supported.
-                Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
                 # Install ADFS
                 # TODO:  ERROR IS A positional parameter cannot be found that accepts -?IncludeManagementTools
-                Install-windowsfeature adfs-federation 
+                $secureString = "${AdminPassword}" | ConvertTo-SecureString -AsPlainText -Force
+                $credentialObject = New-Object System.Management.Automation.PSCredential -ArgumentList "Administrator", $secureString
+                Install-windowsfeature adfs-federation -Credential $credentialObject
                 # Install certificate:
                 $secure = ConvertTo-SecureString "Pass@123" -AsPlainText -Force
                 $cert = Import-PfxCertificate -FilePath C:\idp1cert.pfx -CertStoreLocation Cert:\LocalMachine\My -Password $secure
@@ -321,7 +326,13 @@ Resources:
                 # TODO: i'M GUESSING THE CERT
                 # TODO: I'M GUESSING THAT FEDERATIONSERVICENAME = SERVICEACCOUNT = idp1.example.com
                 # TODO: I'M GUESSING THAT GROUPSERVICEACCOUNTIDENTIFIER = FEDERATIONSERVICEDISPLAYNAME = adfssvc
-                Install-AdfsFarm -CertificateThumbprint $cert.Thumbprint -FederationServiceName idp1.example.com -GroupServiceAccountIdentifier EXAMPLE\adfssvc$
+                $credentialObject = New-Object System.Management.Automation.PSCredential -ArgumentList "Example\Administrator", $secureString
+                Install-AdfsFarm -CertificateThumbprint $cert.Thumbprint -FederationServiceName idp1.example.com -GroupServiceAccountIdentifier EXAMPLE\adfssvc$ -Credential $credentialObject
+                # TODO:  This seems to be ok when run from command prompt, double check:
+                Add-AdfsRelyingPartyTrust -Name "AWS" -Identifier "AWS" -WsFedEndpoint "https://signin.aws.amazon.com/static/saml-metadata.xml"
+                # TODO:  TOTALLY FIGURE OUT HOW TO CREATE CLAIMS AND SUCH.  THIS IS AN EXAMPLE FROM THE DOCUMENTATION:
+                $RuleSet = New-AdfsClaimRuleSet -ClaimRule 'c:[] => issue(claim = c);'
+                Set-AdfsRelyingPartyTrust -TargetName "Fabrikam" -IssuanceTransformRules $RuleSet.ClaimRulesString
             C:\cfn\RunCommand.bat:
               content: |
                 %~1
@@ -414,9 +425,10 @@ Resources:
             3-setup-part-2:
               command: powershell -Command C:\cfn\scripts\setupAdfsPart2.ps1  
               waitAfterCompletion: '0'
-            5-signal-success:
-              command: cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ADFS --region ${AWS::Region}
-  
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
 
   ADFSEIP:
     DependsOn: ADFS
@@ -458,10 +470,9 @@ Resources:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
       - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
 
-
-
   RoleForRandomStrFunctionLambda:
     Type: AWS::IAM::Role
+    DependsOn:  CloudwatchLogsGroupLambda  # Force the Lambda's LogGroup to be created early and deleted late
     Properties:
       RoleName: !Sub ${AWS::StackName}-RandomStrFunctionLambda
       AssumeRolePolicyDocument:
@@ -517,7 +528,6 @@ Resources:
 
   RandomPass:
     Type: Custom::RandomPass
-    DependsOn:  CloudwatchLogsGroupLambda  # Force the Lambda's LogGroup to be created early and deleted late
     Properties:
       ServiceToken: !GetAtt RandomStrFunction.Arn
       StringLength: 16
@@ -532,7 +542,7 @@ Resources:
   CloudwatchLogsGroupLambda:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/lambda/${RandomStrFunction}
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-RandomString
       RetentionInDays: 3
 
 Mappings:
