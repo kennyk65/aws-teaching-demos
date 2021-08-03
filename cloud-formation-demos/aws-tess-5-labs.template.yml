@@ -59,7 +59,6 @@ Conditions:
 Resources:
   VPC:
     Type: AWS::EC2::VPC
-    DependsOn: CloudwatchLogsGroup  # Force log group to be created first and deleted last
     Properties:
       CidrBlock: !Ref VPCCIDR
       Tags:
@@ -541,6 +540,7 @@ Resources:
 
   CustomResourceS3Content:
     Type: Custom::helper
+    DependsOn: CloudwatchLogsGroup  # Force log group to be created first and deleted last
     Condition: CreateLab4OrGreater
     Properties:
       ServiceToken: !GetAtt CustomResourceS3ContentLambda.Arn
