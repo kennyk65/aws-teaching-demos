@@ -12,7 +12,7 @@ Parameters:
   NotificationPhoneNumber:
     Description:  Cell Phone / SMS Number to be contacted at.  
     Type:  String
-    Default:  "+14072569737"
+    Default:  "+14070000000"
 
 
 Resources:
