@@ -76,6 +76,90 @@ Resources:
           ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
 
 
+
+
+
+
+  # This role is used by the Lambda / custom resource for cleanup:
+  CleanupCustomResourceLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-CleanupCustomResourceLambdaRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-CleanupCustomResourceLambdaPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            - s3:Get*
+            - s3:Put*
+            - s3:List*
+            - s3:Delete*
+            Resource: "*"
+
+
+  # This function cleans out the bucket on stack delete.
+  CleanupCustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CleanupCustomResource
+      Role: !GetAtt CleanupCustomResourceLambdaRole.Arn
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import cfnresponse
+          s3 = boto3.client('s3')
+          def lambda_handler(event, context):
+            responseData = {}
+            bucket = event['ResourceProperties']['Bucket']          
+
+            if event['RequestType'] == 'Create':
+              try:
+                file_name = "/tmp/index.html"
+                data = "Hello World"
+                with open(file_name,'w') as f:
+                  f.write(data)
+              except Exception as e:
+                msg = 'Error writing index file.  Exception is {}.'.format(e)
+                print(msg)
+                responseData['Reason'] = msg
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+              try:
+                s3.upload_file(file_name,bucket,"index.html")
+              except Exception as e:
+                  msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(bucket,repr(e))
+                  print(msg)
+                  responseData['Reason'] = msg
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+            if event['RequestType'] == 'Delete':
+              print ('Clean out bucket to enable delete... ' )
+              boto3.resource('s3').Bucket(bucket).objects.all().delete()
+
+            # Unless something failed, we will execute this line:
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+      MemorySize: 128     
+      Timeout: 15         
+      Runtime: python3.7
+      Handler: index.lambda_handler
+
+  CleanupCustomResource:
+    Type: Custom::cleanup
+    Properties:
+      ServiceToken: !GetAtt CleanupCustomResourceLambda.Arn
+      Bucket: !Ref S3
+
+
 Outputs:
   TheURL:
     Value: !Sub https://${CloudFront.DomainName}

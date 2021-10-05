@@ -10,10 +10,6 @@ Parameters:
     Type:  String
     Default:  lab5-kk
 
-  InputWebCode:
-    Description:  URL of the source web code to be downloaded and adjusted
-    Type: String
-    Default:  https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-4.zip
 
 Resources:
 
