@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Automatically creates AWS Arch 7 lab 4.
+# You must have lab 2 (VPC and such) and 3 (DB, LB) created first, and provide their stack names here.
+
+Parameters:
+
+  Lab2Stack:
+    Type:  String
+    Description:  The name of the stack from Lab 2.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
+    Default: lab2
+
+  Lab3Stack:
+    Type:  String
+    Description:  The name of the stack from Lab 3.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
+    Default: lab3
+
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
+
+Resources:
+
+  InventoryALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Inventory ALB Security Group
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${Lab2Stack}:VPC
+      Tags:
+        - Key: Name
+          Value: InventoryALBSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0    
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-Lab-template
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinuxAMI           # We lookup AMI in the region map
+        InstanceType: t3.micro                        # Any instance type will do
+        IamInstanceProfile: 
+          Name: !Ref EC2InstanceProfile
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref InventoryALBSecurityGroup ]   # Plug in the security group.
+        UserData:      
+          Fn::Base64: !Sub 
+          - |
+            #!/bin/bash
+            yum -y update
+            # Install and enable AWS Systems Manager Agent
+            cd /tmp
+            yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+            systemctl enable amazon-ssm-agent
+            systemctl start amazon-ssm-agent
+            # Install Apache Web Server and PHP
+            yum install -y httpd mysql
+            amazon-linux-extras install -y php7.2
+            # Download Inventory App Lab files
+            wget https://us-west-2-tcprod.s3.us-west-2.amazonaws.com/courses/ILT-TF-200-ARCHIT/v7.0.0/lab-4-HA/scripts/inventory-app.zip
+            unzip inventory-app.zip -d /var/www/html/
+            # Download and install the AWS SDK for PHP
+            wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
+            unzip -q aws.zip -d /var/www/html
+            # Load Amazon Aurora DB connection details from AWS CloudFormation
+            un="admin"
+            pw="admin123"
+            ep="${DBEndpoint}"
+            db="labdatabase"
+            #mysql -u $un -p$pw -h $ep $db < /var/www/html/sql/inventory.sql
+            # Populate PHP app settings with DB info
+            sed -i "s/DBENDPOINT/$ep/g" /var/www/html/get-parameters.php
+            sed -i "s/DBNAME/$db/g" /var/www/html/get-parameters.php
+            sed -i "s/DBUSERNAME/$un/g" /var/www/html/get-parameters.php
+            sed -i "s/DBPASSWORD/$pw/g" /var/www/html/get-parameters.php
+            # Turn on web server
+            systemctl start httpd.service
+            systemctl enable httpd.service
+          - DBEndpoint: 
+              Fn::ImportValue:
+                !Sub ${Lab3Stack}:DBEndpoint
+
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-Inventory-ASG   
+      VPCZoneIdentifier: 
+      - Fn::ImportValue:  !Sub ${Lab2Stack}:PrivateSubnet      
+      - Fn::ImportValue:  !Sub ${Lab2Stack}:PrivateSubnet2      
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
+      MinSize: 2
+      MaxSize: 2
+      DesiredCapacity: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 200
+      TargetGroupARNs:
+      - Fn::ImportValue:  !Sub ${Lab3Stack}:ALBTargetGroup      
+      Tags:
+      - Key: Name
+        Value: InventoryApp
+        PropagateAtLaunch: true
+
+
+  # Attach EC2Role's permissions to each ECS Instance.
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref InstanceRole]
+
+
+  # EC2 instance will need to talk to SSM to read parameters:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-EC2-SSM-Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore

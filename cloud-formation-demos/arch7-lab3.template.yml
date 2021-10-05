@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Automatically creates AWS Arch 7 lab 3.
+# You must have lab 2 (VPC and such) created first, and provide its stack name here.
+# This lab is a bit nuts: You create a database, but never connect to or use it.
+# TODO: Convert to Aurora by adding a DB cluster.
+
+Parameters:
+
+  Lab2Stack:
+    Type:  String
+    Description:  The name of the stack from Lab 2.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
+    Default: lab2
+
+
+Resources:
+
+  LabALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB Security Group
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${Lab2Stack}:VPC
+      Tags:
+        - Key: Name
+          Value: LabALBSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0    # TODO: Tighten this up later
+
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Lab DB Security Group
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${Lab2Stack}:VPC
+      Tags:
+        - Key: Name
+          Value: LabDBSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        CidrIp: 0.0.0.0/0    # TODO: Tighten this up later
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Lab DB Subnet Group
+      SubnetIds:
+      - Fn::ImportValue: !Sub ${Lab2Stack}:PrivateSubnet
+      - Fn::ImportValue: !Sub ${Lab2Stack}:PrivateSubnet2
+
+  labdbinstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: labdatabase
+      # DBClusterIdentifier: aurora
+      AllocatedStorage: 5
+      DBInstanceClass: db.t3.small
+      Engine: mysql  # aurora-mysql
+      MasterUsername: admin
+      MasterUserPassword: admin123
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: MySQL Lab DB Instance
+
+
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-LabAppALB
+      Scheme: internet-facing
+      Subnets: 
+      - Fn::ImportValue:  !Sub ${Lab2Stack}:PublicSubnet      
+      - Fn::ImportValue:  !Sub ${Lab2Stack}:PublicSubnet2      
+      SecurityGroups: [!Ref LabALBSecurityGroup ]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-ALBTargetGroup
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${Lab2Stack}:VPC      
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetType: instance
+      Targets:
+      - Id: 
+          Fn::ImportValue:
+            !Sub ${Lab2Stack}:PublicInstance
+
+
+Outputs:
+  DBEndpoint:
+    Description: Endpoint of RDS DB
+    Value: !GetAtt labdbinstance.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}:DBEndpoint
+
+  ALBTargetGroup:
+    Description: ALB Target Group
+    Value: !Ref ALBTargetGroup
+    Export:
+      Name: !Sub ${AWS::StackName}:ALBTargetGroup
+
+  RDSDBName:
+    Description: RDS Database Name
+    Value: labdatabase
+
+  RDSMasterUser:
+    Description: Username
+    Value: admin
+
+  RDSPassword:
+    Description: password
+    Value: admin123
+
+  ELBEndpoint:
+    Description: The URL for our Elastic Load Balancer.
+    Value: !Sub http://${ALB.DNSName}
+
+    

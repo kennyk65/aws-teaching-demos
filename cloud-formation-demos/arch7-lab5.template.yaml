@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+# Re-creates lab 5 from AWS Architecting
+
+Parameters:
+
+  S3BucketPrefix:
+    Description:  The prefix of the S3 buckets.  "input" and "output" will be added to this  
+    Type:  String
+    Default:  lab5-kk
+
+  InputWebCode:
+    Description:  URL of the source web code to be downloaded and adjusted
+    Type: String
+    Default:  https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-4.zip
+
+Resources:
+
+  ThumbnailQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-thumbnail-queue
+
+  MobileQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-mobile-queue
+
+  WebQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-web-queue
+
+
+  ImageResizeTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AWS::StackName}_resize-image-topic
+      Subscription:
+      - Endpoint: !GetAtt ThumbnailQueue.Arn
+        Protocol: sqs
+      - Endpoint: !GetAtt MobileQueue.Arn
+        Protocol: sqs
+      - Endpoint: !GetAtt WebQueue.Arn
+        Protocol: sqs
+
+  ImageResizeTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties: 
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+        # - Effect: Allow
+        #   Principal: 
+        #     AWS: '*'
+        #   Action:
+        #   - sns:Get*
+        #   - sns:Set*
+        #   - sns:Add*
+        #   - sns:Remove*
+        #   - sns:Delete*
+        #   - sns:Subscribe*
+        #   - sns:List*
+        #   - sns:Publish*
+        #   - sns:Receive*
+        #   Resource: !Ref ImageResizeTopic
+        #   Condition:
+        #     StringEquals:
+        #       AWS:SourceAccount: !Ref AWS::AccountId
+        - Effect: Allow
+          Principal: 
+            Service: s3.amazonaws.com
+          Action: 
+          - sns:Publish
+          Resource:  !Ref ImageResizeTopic
+          Condition:
+            StringEquals:
+              AWS:SourceAccount: !Ref AWS::AccountId
+      Topics: 
+      - !Ref ImageResizeTopic
+
+
+  # Allow SNS to send messages to the subscribed SQS queues:
+  SQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal: 
+            Service: sns.amazonaws.com
+          Action:
+          - sqs:SendMessage
+          Resource: '*'
+      Queues:
+      - !Ref ThumbnailQueue
+      - !Ref MobileQueue
+      - !Ref WebQueue
+
+
+  # S3 buckets.  
+  LabBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub ${S3BucketPrefix}-lab-bucket
+      NotificationConfiguration:
+        TopicConfigurations:
+        - Topic: !Ref ImageResizeTopic
+          Filter: 
+            S3Key: 
+              Rules: 
+              - Name: prefix
+                Value:  ingest/
+              - Name: suffix
+                Value:  .jpg
+          Event: s3:ObjectCreated:*
+
+
+  LambdaThumbnail:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-CreateThumbnail
+      Handler: CreateThumbnail.handler
+      Role: !GetAtt LambdaResizeRole.Arn
+      Runtime: python3.7
+      CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
+      Timeout: 5         
+      Events:
+        MySQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ThumbnailQueue.Arn
+            BatchSize: 10
+
+  LambdaMobile:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-CreateMobile
+      Handler: CreateMobileImage.handler
+      Role: !GetAtt LambdaResizeRole.Arn
+      Runtime: python3.7
+      CodeUri: s3://kk-courses/aws-arch/CreateMobileImage.zip
+      Timeout: 10         
+      Events:
+        MySQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt MobileQueue.Arn
+            BatchSize: 10
+
+  LambdaWeb:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-CreateWeb
+      Handler: CreateWebImage.handler
+      Role: !GetAtt LambdaResizeRole.Arn
+      Runtime: python3.7
+      CodeUri: s3://kk-courses/aws-arch/CreateWebImage.zip
+      Timeout: 15         
+      Events:
+        MySQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt WebQueue.Arn
+            BatchSize: 10
+
+  # This role is shared by the resize functions:
+  LambdaResizeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-LambdaResizeRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+      Policies:
+      - PolicyName: !Sub ${AWS::StackName}-ResizePolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            - s3:Get*
+            - s3:Put*
+            - s3:Delete*
+            - sqs:DeleteMessage*
+            - sqs:ReceiveMessage*
+            - sqs:GetQueueAttributes*
+            Resource: "*"
+
+
+  # This function cleans out the bucket on stack delete.
+  CleanupCustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CleanupCustomResource
+      Role: !GetAtt LambdaResizeRole.Arn
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import cfnresponse
+          s3 = boto3.client('s3')
+          def lambda_handler(event, context):
+            if event['RequestType'] == 'Delete':
+              print ('Clean out bucket to enable delete... ' )
+              bucket = event['ResourceProperties']['bucket']          
+              boto3.resource('s3').Bucket(bucket).objects.all().delete()
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+      MemorySize: 128     
+      Timeout: 15         
+      Runtime: python3.7
+      Handler: index.lambda_handler
+
+  CleanupCustomResource:
+    Type: Custom::cleanup
+    Properties:
+      ServiceToken: !GetAtt CleanupCustomResourceLambda.Arn
+      DestinationBucket: !Ref LabBucket
