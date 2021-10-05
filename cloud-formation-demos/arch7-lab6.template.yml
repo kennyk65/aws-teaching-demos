@@ -135,7 +135,7 @@ Resources:
                 cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
 
               try:
-                s3.upload_file(file_name,bucket,"index.html")
+                s3.upload_file(file_name,bucket,"index.html",ExtraArgs={'ContentType': "text/html"})
               except Exception as e:
                   msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(bucket,repr(e))
                   print(msg)
