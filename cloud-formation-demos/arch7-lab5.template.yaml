@@ -51,23 +51,6 @@ Resources:
       PolicyDocument: 
         Version: 2012-10-17
         Statement:
-        # - Effect: Allow
-        #   Principal: 
-        #     AWS: '*'
-        #   Action:
-        #   - sns:Get*
-        #   - sns:Set*
-        #   - sns:Add*
-        #   - sns:Remove*
-        #   - sns:Delete*
-        #   - sns:Subscribe*
-        #   - sns:List*
-        #   - sns:Publish*
-        #   - sns:Receive*
-        #   Resource: !Ref ImageResizeTopic
-        #   Condition:
-        #     StringEquals:
-        #       AWS:SourceAccount: !Ref AWS::AccountId
         - Effect: Allow
           Principal: 
             Service: s3.amazonaws.com
@@ -187,6 +170,7 @@ Resources:
             Action:
             - logs:*
             - s3:Get*
+            - s3:List*
             - s3:Put*
             - s3:Delete*
             - sqs:DeleteMessage*
@@ -209,7 +193,7 @@ Resources:
           def lambda_handler(event, context):
             if event['RequestType'] == 'Delete':
               print ('Clean out bucket to enable delete... ' )
-              bucket = event['ResourceProperties']['bucket']          
+              bucket = event['ResourceProperties']['Bucket']          
               boto3.resource('s3').Bucket(bucket).objects.all().delete()
             cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
       MemorySize: 128     
@@ -221,4 +205,4 @@ Resources:
     Type: Custom::cleanup
     Properties:
       ServiceToken: !GetAtt CleanupCustomResourceLambda.Arn
-      DestinationBucket: !Ref LabBucket
+      Bucket: !Ref LabBucket

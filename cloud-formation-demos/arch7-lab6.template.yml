@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Re-creates lab 6 from AWS Architecting 7
+
+Parameters:
+
+  WebsiteSuffix:
+    Description: Suffix to be placed on the website bucket.
+    Type: String
+    Default: demonstration
+
+Resources:
+
+  # Bucket for website:
+  S3:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub website-${WebsiteSuffix}
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true   # default
+        BlockPublicPolicy: true       # default
+      WebsiteConfiguration:
+        ErrorDocument: error.html
+        IndexDocument: index.html
+
+
+  # Contents of the bucket are publicly gettable:
+  # TODO: Make CloudFront the only allowed principal.
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3
+      PolicyDocument: 
+        Statement: 
+          - Effect: Allow                              #  Allow...
+            Action:                                       # ...to perform GetObject on...
+              - s3:GetObject*
+            Resource: !Sub "arn:aws:s3:::${S3}/*"               #  ...any object in this S3 bucket.
+            Principal:
+              AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOAI}   #  ...only to the CloudFront OAI
+
+  CloudFrontOAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties: 
+      CloudFrontOriginAccessIdentityConfig: 
+        Comment: RequiredForSomeReason
+
+  CloudFront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig: 
+        Comment: Pointing at S3 Bucket
+        Enabled: true
+        PriceClass: PriceClass_100    # Cheapest
+        DefaultRootObject: index.html
+
+        Origins:
+        - Id: S3Bucket
+          DomainName: !GetAtt S3.DomainName   # Might need to be "WebsiteURL"
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${CloudFrontOAI}
+
+        # CacheBehavior:
+        # - PathPattern: web/*.html
+        #   TargetOriginId: S3Bucket
+        #   DefaultTTL: 0
+        #   ForwardedValues:
+        #     QueryString: true
+        #   ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
+
+        DefaultCacheBehavior:                 # Probably don't need this.
+          TargetOriginId: S3Bucket
+          DefaultTTL: 0
+          ForwardedValues:
+            QueryString: true
+          ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
+
+
+Outputs:
+  TheURL:
+    Value: !Sub https://${CloudFront.DomainName}
+
