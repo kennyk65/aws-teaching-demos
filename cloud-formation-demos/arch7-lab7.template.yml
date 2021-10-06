@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Automatically creates AWS Arch 7 lab 7.
+# TODO: Convert to Aurora by adding a DB cluster.
+
+Parameters:
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedValues:
+      - 10.0.0.0/16
+
+  PublicSubnet1Param:
+    Description: Public Subnet 1
+    Type: String
+    Default: 10.0.0.0/24
+    AllowedValues:
+      - 10.0.0.0/24
+
+  PublicSubnet2Param:
+    Description: Public Subnet 2
+    Type: String
+    Default: 10.0.1.0/24
+    AllowedValues:
+      - 10.0.1.0/24
+
+  AppSubnet1Param:
+    Description: App Subnet 1
+    Type: String
+    Default: 10.0.2.0/24
+    AllowedValues:
+      - 10.0.2.0/24
+
+  AppSubnet2Param:
+    Description: App Subnet 2
+    Type: String
+    Default: 10.0.3.0/24
+    AllowedValues:
+      - 10.0.3.0/24
+
+  DatabaseSubnet1Param:
+    Description: Private Subnet 1
+    Type: String
+    Default: 10.0.4.0/24
+    AllowedValues:
+      - 10.0.4.0/24
+
+  DatabaseSubnet2Param:
+    Description: Private Subnet 2
+    Type: String
+    Default: 10.0.5.0/24
+    AllowedValues:
+      - 10.0.5.0/24
+
+Resources:
+###########
+# VPC and Network Structure
+###########
+  LabVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      Tags:
+        - Key: Name
+          Value: LabVPC
+
+  LabInternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref LabInternetGateway
+
+#NATs
+  NATGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPAddress1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: NATGateway1
+
+  ElasticIPAddress1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPAddress2.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: NATGateway2
+
+  ElasticIPAddress2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+#Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref PublicSubnet1Param
+      MapPublicIpOnLaunch: True
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list 
+      Tags:
+      - Key: Name
+        Value: PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref PublicSubnet2Param
+      MapPublicIpOnLaunch: True
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list 
+      Tags:
+      - Key: Name
+        Value: PublicSubnet2
+
+  AppSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref AppSubnet1Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list 
+      Tags:
+      - Key: Name
+        Value: AppSubnet1
+
+  AppSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref AppSubnet2Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list 
+      Tags:
+      - Key: Name
+        Value: AppSubnet2
+
+  DatabaseSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref DatabaseSubnet1Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list 
+      Tags:
+      - Key: Name
+        Value: DatabaseSubnet1
+
+  DatabaseSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref DatabaseSubnet2Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list 
+      Tags:
+      - Key: Name
+        Value: DatabaseSubnet2
+
+  ElasticacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: ElasticacheSubnetGroup
+      Description: This Elasticache subnet group selects the same subnets as is used for the Aurora DB in task 2
+      SubnetIds:
+      - !Ref AppSubnet1
+      - !Ref AppSubnet2
+      Tags:
+      - Key: Name
+        Value: ElasticacheSubnetGroup
+
+#Routing
+#Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: PublicRouteTable
+
+  PrivateRouteTableAZ1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: PrivateRouteTableAZ1
+
+  PrivateRouteTableAZ2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: PrivateRouteTableAZ2
+#Routes
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref LabInternetGateway
+
+  PrivateRouteAZ1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway1
+
+  PrivateRouteAZ2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway2
+#Subnet Associations
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  AppSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnet1
+      RouteTableId: !Ref PrivateRouteTableAZ1
+
+  AppSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnet2
+      RouteTableId: !Ref PrivateRouteTableAZ2
+
+  DatabaseSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DatabaseSubnet1
+      RouteTableId: !Ref PrivateRouteTableAZ1
+
+  DatabaseSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DatabaseSubnet2
+      RouteTableId: !Ref PrivateRouteTableAZ2
+
+###########
+# Security Groups
+###########
+  AppInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group allowing HTTP traffic for lab instances
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: AppInstanceSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group allowing RDS instances to have internet traffic
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: RDSSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        CidrIp: 0.0.0.0/0
+
+  ElastiCacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group allowing ElastiCache to have internet traffic
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: ElastiCacheSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 11211
+        ToPort: 11211
+        CidrIp: 0.0.0.0/0
+
+
+  EFSMountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group allowing traffic between EFS Mount Targets and Amazon EC2 instances
+      VpcId: !Ref LabVPC
+      Tags:
+      - Key: Name
+        Value: EFSMountTargetSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        SourceSecurityGroupId: !Ref AppInstanceSecurityGroup
+        FromPort: 80
+        ToPort: 80
+      - IpProtocol: TCP
+        FromPort: 2049
+        ToPort: 2049
+        CidrIp: 0.0.0.0/0
+
+
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Lab DB Subnet Group
+      SubnetIds:
+      - !Ref DatabaseSubnet1
+      - !Ref DatabaseSubnet2
+
+  labdbinstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: WPDatabase
+      # DBClusterIdentifier: aurora
+      AllocatedStorage: 5
+      DBInstanceClass: db.t3.small
+      Engine: mysql  # aurora-mysql
+      MasterUsername: admin
+      MasterUserPassword: admin123
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: MySQL Lab DB Instance
+
+
+
+Outputs:
+
+  Region:
+    Description: Lab Region
+    Value: !Ref AWS::Region
+    
+  DatabaseSubnet1CIDR:
+    Description: CIDR block for the DB Subnet in AZ a
+    Value: !Ref DatabaseSubnet1Param
+
+  DatabaseSubnet2CIDR:
+    Description: CIDR block for the DB Subnet in AZ b
+    Value: !Ref DatabaseSubnet2Param
+
+  DatabaseSubnet1ID:
+    Description: The Subnet ID for the DB Subnet in AZ a
+    Value: !Ref DatabaseSubnet1
+    Export:
+      Name: DatabaseSubnet1ID
+
+  DatabaseSubnet2ID:
+    Description: The Subnet ID for the DB Subnet in AZ b
+    Value: !Ref DatabaseSubnet2
+    Export:
+      Name: DatabaseSubnet2ID
+
+  AppInstanceSecurityGroupID:
+    Description: The Security Group ID for the Lab Instance Security Group
+    Value: !Ref AppInstanceSecurityGroup
+    Export:
+      Name: AppInstanceSecurityGroupID
+
+  EFSMountTargetSecurityGroupID:
+    Description: The Security Group ID for the Lab EFS Mount Target
+    Value: !Ref EFSMountTargetSecurityGroup
+    Export:
+      Name: EFSMountTargetSecurityGroupID
+
+  ElastiCacheSecurityGroupID:
+    Description: The Security Group ID for the Lab ElastiCache
+    Value: !Ref ElastiCacheSecurityGroup
+    Export:
+      Name: ElastiCacheSecurityGroupID
+
+  RDSSecurityGroupID:
+    Description: The Security Group ID for the Lab RDS cluster
+    Value: !Ref RDSSecurityGroup
+    Export:
+      Name: RDSSecurityGroupID
+
+  VPCID:
+    Description: The VPC ID for the lab
+    Value: !Ref LabVPC
+    Export:
+      Name: VPCID
