@@ -359,6 +359,36 @@ Resources:
         - Key: Name
           Value: MySQL Lab DB Instance
 
+  TheCache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties: 
+      AZMode: single-az
+      Engine: memcached
+      CacheNodeType: cache.t3.micro
+      CacheSecurityGroupNames: 
+      ClusterName: MemcachedCluster
+      VpcSecurityGroupIds: 
+      - !Ref ElastiCacheSecurityGroup
+      # CacheParameterGroupName: String
+      # CacheSubnetGroupName: String
+      # EngineVersion: String
+      # LogDeliveryConfigurations: 
+      #   - LogDeliveryConfigurationRequest
+      # NotificationTopicArn: String
+      # NumCacheNodes: 2
+      # Port: Integer
+      # PreferredAvailabilityZone: String
+      # PreferredAvailabilityZones: 
+      #   - String
+      # PreferredMaintenanceWindow: String
+      # SnapshotArns: 
+      #   - String
+      # SnapshotName: String
+      # SnapshotRetentionLimit: Integer
+      # SnapshotWindow: String
+      # Tags: 
+      #   - Tag
+
 
 
 Outputs:
@@ -416,3 +446,6 @@ Outputs:
     Value: !Ref LabVPC
     Export:
       Name: VPCID
+
+
+
