@@ -101,10 +101,15 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateThumbnail
-      Handler: CreateThumbnail.handler
       Role: !GetAtt LambdaResizeRole.Arn
       Runtime: python3.7
+      Handler: CreateThumbnail.handler
       CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
+      Environment:
+        Variables:
+          IMAGE_WIDTH: 128
+          IMAGE_HEIGHT: 128
+          IMAGE_TYPE: thumbnail
       Timeout: 5         
       Events:
         MySQSEvent:
@@ -117,10 +122,15 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateMobile
-      Handler: CreateMobileImage.handler
       Role: !GetAtt LambdaResizeRole.Arn
       Runtime: python3.7
-      CodeUri: s3://kk-courses/aws-arch/CreateMobileImage.zip
+      Handler: CreateThumbnail.handler
+      CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
+      Environment:
+        Variables:
+          IMAGE_WIDTH: 640
+          IMAGE_HEIGHT: 320
+          IMAGE_TYPE: mobile
       Timeout: 10         
       Events:
         MySQSEvent:
@@ -133,10 +143,15 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateWeb
-      Handler: CreateWebImage.handler
       Role: !GetAtt LambdaResizeRole.Arn
       Runtime: python3.7
-      CodeUri: s3://kk-courses/aws-arch/CreateWebImage.zip
+      Handler: CreateThumbnail.handler
+      CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
+      Environment:
+        Variables:
+          IMAGE_WIDTH: 1920
+          IMAGE_HEIGHT: 1080
+          IMAGE_TYPE: web
       Timeout: 15         
       Events:
         MySQSEvent:
