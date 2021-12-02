@@ -8,7 +8,7 @@
 # This event isn't published unless there is a CloudTrail established which detects this kind of data activity.
 # The Trail can't exist without a bucket to put its logging in, even if we turn logging off.
 # The bucket must have a policy which allows CloudTrail to log to it.
-
+# TODO: GET RID OF CLOUDTRAIL, WIRE DIRECTLY USING https://aws.amazon.com/blogs/aws/new-use-amazon-s3-event-notifications-with-amazon-eventbridge
 
 Parameters:
 
