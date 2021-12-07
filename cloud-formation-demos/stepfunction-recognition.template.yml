@@ -48,9 +48,6 @@ Resources:
               - rekognition:List*
               - rekognition:Describe*
               - rekognition:Detect*
-              - sns:Get*
-              - sns:List*
-              - sns:Publish
               - s3:Get*
               - s3:List*
             Resource: "*"
@@ -105,9 +102,10 @@ Resources:
         Statement:
           - Effect: Allow
             Action: lambda:InvokeFunction
-            Resource: 
-            - !GetAtt RekFunction.Arn
-            - !GetAtt NotificationFunction.Arn
+            Resource: !GetAtt RekFunction.Arn
+          - Effect: Allow
+            Action: sns:Publish
+            Resource: '*'
       Roles: [ !Ref StateMachineRole ]
 
   #  Bucket into which one can upload images.  If images contain a human, you will be notified.
@@ -190,11 +188,9 @@ Resources:
           import boto3
           def handler(event, context):
               print('Initiating image rekognition')
-              #bucket = event['ourBucket']
-              #key = event['ourKey']
               # Structure of event from CloudWatch Events:
               bucket = event['detail']['requestParameters']['bucketName']
-              key = event['detail']['requestParameters']['key']
+              key    = event['detail']['requestParameters']['key']
               client = boto3.client('rekognition')
               response = client.detect_labels(Image={'S3Object': {'Bucket':bucket, 'Name':key}},
                   MaxLabels=10,
@@ -216,39 +212,6 @@ Resources:
       Role: !GetAtt rekRole.Arn
       Runtime: python3.7
 
-  # This Lambda is called by step functions when a human is found.  
-  # It sends an SNS notification - you can't do this directly from Step Functions.
-  # TODO: REPLACE THIS WITH DIRECT CALL FROM STEP FUNCTIONS, SEE https://docs.aws.amazon.com/step-functions/latest/dg/connect-sns.html
-  NotificationFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub ${AWS::StackName}-NotificationFunction
-      Code:
-        ZipFile: !Sub |
-          from __future__ import print_function
-          import boto3
-          import os
-          def handler(event, context):
-              phoneNumber = os.environ['PHONE_NUMBER']
-              smsMessage = "We found a human!"
-              print('Initiating image rekognition')
-              found = event['found']
-              if found == 'human':
-                  sns_client = boto3.client('sns')
-                  sms = sns_client.publish(
-                      PhoneNumber = phoneNumber, 
-                      Message= smsMessage,
-                  )
-              else:
-                  raise Exception('No human detected')
-              return
-
-      Handler: index.handler
-      Role: !GetAtt rekRole.Arn
-      Runtime: python3.7
-      Environment:
-        Variables:
-          PHONE_NUMBER: !Ref NotificationPhoneNumber
 
   StateMachine:
     Type: AWS::StepFunctions::StateMachine
@@ -266,20 +229,24 @@ Resources:
             "Human Found?":{
               "Type":"Choice",
               "Choices":[
-                {"Variable": "$.found", "StringEquals":"human", "Next":"Process Human"},
-                {"Variable":"$.found", "StringEquals":"other",   "Next":"Other Processing"}
-              ]
+                {"Variable": "$.found", "StringEquals":"human", "Next":"Process Human"}
+              ],
+              "Default": "Other Processing"
             },
             "Process Human":{
               "Type":"Task",
-              "Resource": "${NotificationFunction.Arn}",
-              "Next":"We succeeded! Yay!"
+              "Resource": "arn:aws:states:::aws-sdk:sns:publish",
+              "Parameters": {
+                "Message": "We found a human!!",
+                "PhoneNumber": "${NotificationPhoneNumber}"
+              },              
+              "Next":"Success"
             },
             "Other Processing": {
               "Type":"Pass",
-              "Next":"We succeeded! Yay!"
+              "Next":"Success"
             },
-            "We succeeded! Yay!": {
+            "Success": {
               "Type":"Succeed"
             }
           }
@@ -369,12 +336,6 @@ Resources:
 
   # CloudWatch Logs Groups are created automatically when Lambdas execute, but they are retained forever by default.
   # To control this, make them part of the stack:
-  CloudwatchLogsGroupNotification:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${NotificationFunction}
-      RetentionInDays: 3
-
   CloudwatchLogsGroupCleanup:
     Type: AWS::Logs::LogGroup
     Properties:
