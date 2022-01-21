@@ -47,8 +47,8 @@ Resources:
     Properties: 
       FunctionName: slotpull-api 
       Description: Slot Machine function, fired by API gateway when called from website..
-      MemorySize: 128
-      Timeout: 4
+      MemorySize: 256
+      Timeout: 8
       Role: !GetAtt RoleSlotMachineLambda.Arn
       Runtime: nodejs12.x
       Handler: index.handler

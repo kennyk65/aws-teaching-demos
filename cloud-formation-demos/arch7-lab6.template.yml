@@ -16,12 +16,12 @@ Resources:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: !Sub website-${WebsiteSuffix}
-      PublicAccessBlockConfiguration:
-        RestrictPublicBuckets: true   # default
-        BlockPublicPolicy: true       # default
-      WebsiteConfiguration:
-        ErrorDocument: error.html
-        IndexDocument: index.html
+      # PublicAccessBlockConfiguration:       # Should not need to unblock anything
+      #   RestrictPublicBuckets: true   # default
+      #   BlockPublicPolicy: true       # default
+      # WebsiteConfiguration:           # Website configuration on bucket breaks origin access identity
+      #   ErrorDocument: error.html
+      #   IndexDocument: index.html
 
 
   # Contents of the bucket are publicly gettable:
@@ -43,7 +43,7 @@ Resources:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties: 
       CloudFrontOriginAccessIdentityConfig: 
-        Comment: RequiredForSomeReason
+        Comment: MyOriginAccessIdentity
 
   CloudFront:
     Type: AWS::CloudFront::Distribution
