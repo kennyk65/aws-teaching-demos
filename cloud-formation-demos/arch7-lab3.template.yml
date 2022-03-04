@@ -12,6 +12,10 @@ Parameters:
     Description:  The name of the stack from Lab 2.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
     Default: lab2
 
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
 Resources:
 
@@ -114,10 +118,61 @@ Resources:
       UnhealthyThresholdCount: 2
       TargetType: instance
       Targets:
-      - Id: 
-          Fn::ImportValue:
-            !Sub ${Lab2Stack}:PublicInstance
+      - Id: !Ref AppInstance
 
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMI           # We lookup AMI in the region map
+      InstanceType: t3.micro                        # Any instance type will do
+      IamInstanceProfile: 
+        Fn::ImportValue:
+          !Sub ${Lab2Stack}:EC2InstanceProfile      
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        AssociatePublicIpAddress: true                  # We will need a public IP address
+        SubnetId:  
+          Fn::ImportValue:
+            !Sub ${Lab2Stack}:PublicSubnet
+        GroupSet: 
+        - Fn::ImportValue:
+            !Sub ${Lab2Stack}:PublicSecurityGroup     # Attach the security group
+      Tags:
+      - Key: Name
+        Value: App Instance
+      UserData:      #  What to run:
+        Fn::Base64: |
+          #!/bin/bash
+          yum -y update
+          # Install and enable AWS Systems Manager Agent
+          cd /tmp
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          systemctl enable amazon-ssm-agent
+          systemctl start amazon-ssm-agent
+          # Install Apache Web Server and PHP
+          yum install -y httpd mysql
+          amazon-linux-extras install -y php7.2
+          # Download Lab files
+          wget https://us-west-2-tcprod.s3.us-west-2.amazonaws.com/courses/ILT-TF-200-ARCHIT/v7.1.0/lab-3-RDS/scripts/inventory-app.zip
+          unzip inventory-app.zip -d /var/www/html/
+          # Download and install the AWS SDK for PHP
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
+          unzip aws -d /var/www/html
+          # Load Amazon Aurora DB connection details from AWS CloudFormation
+          un="admin"
+          pw="admin123"
+          ep="${labdbinstance.Endpoint.Address}"
+          db="labdatabase"
+          #mysql -u $un -p$pw -h $ep $db < /var/www/html/sql/inventory.sql
+          # Populate PHP app settings with DB info
+          sed -i "s/DBENDPOINT/$ep/g" /var/www/html/get-parameters.php
+          sed -i "s/DBNAME/$db/g" /var/www/html/get-parameters.php
+          sed -i "s/DBUSERNAME/$un/g" /var/www/html/get-parameters.php
+          sed -i "s/DBPASSWORD/$pw/g" /var/www/html/get-parameters.php
+          # Turn on web server
+          chkconfig httpd on
+          service httpd start
 
 Outputs:
   DBEndpoint:

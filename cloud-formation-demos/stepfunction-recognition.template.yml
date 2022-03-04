@@ -8,7 +8,7 @@
 # This event isn't published unless there is a CloudTrail established which detects this kind of data activity.
 # The Trail can't exist without a bucket to put its logging in, even if we turn logging off.
 # The bucket must have a policy which allows CloudTrail to log to it.
-
+# TODO: GET RID OF CLOUDTRAIL, WIRE DIRECTLY USING https://aws.amazon.com/blogs/aws/new-use-amazon-s3-event-notifications-with-amazon-eventbridge
 
 Parameters:
 
@@ -19,44 +19,8 @@ Parameters:
 
 
 Resources:
-  # This role is shared (!) by the rekognition function and human notification function:
-  rekRole:
-    Type: AWS::IAM::Role
-    DependsOn: CloudwatchLogsGroupCleanup    # We need this logs group to be one of the last things deleted.
-    Properties:
-      RoleName: !Sub ${AWS::StackName}-rekRole
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Action: sts:AssumeRole
-            Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-      ManagedPolicyArns: 
-        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 
-
-  rekognitionPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: !Sub ${AWS::StackName}-rekPolicy
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - rekognition:Get*
-              - rekognition:List*
-              - rekognition:Describe*
-              - rekognition:Detect*
-              - sns:Get*
-              - sns:List*
-              - sns:Publish
-              - s3:Get*
-              - s3:List*
-            Resource: "*"
-      Roles: [!Ref rekRole]
-
-
+  
+  # This role is used by the event trigger to launch the step function
   onS3UploadCallStepFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -81,7 +45,6 @@ Resources:
             Resource: !Ref StateMachine
       Roles: [ !Ref onS3UploadCallStepFunctionRole ]
 
-
   # This role controls what the state machine can do:
   StateMachineRole:
     Type: AWS::IAM::Role
@@ -104,10 +67,11 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Effect: Allow
-            Action: lambda:InvokeFunction
-            Resource: 
-            - !GetAtt RekFunction.Arn
-            - !GetAtt NotificationFunction.Arn
+            Action: 
+            - sns:Publish
+            - s3:Get*
+            - rekognition:Detect*
+            Resource: '*'
       Roles: [ !Ref StateMachineRole ]
 
   #  Bucket into which one can upload images.  If images contain a human, you will be notified.
@@ -152,9 +116,6 @@ Resources:
           Resource: 
           - !Sub ${CloudTrailBucket.Arn} 
           - !Sub ${CloudTrailBucket.Arn}/* 
-          # Condition: 
-          #   StringEquals: 
-          #     s3:x-amz-acl: bucket-owner-full-control
 
 
   # This rule fires every time an object is uploaded into our upload bucket.
@@ -178,109 +139,57 @@ Resources:
         Id: StateMachine
         RoleArn: !GetAtt onS3UploadCallStepFunctionRole.Arn
 
-
-  # This Lambda is called by step functions to do image recognition.  It looks for humans in the picture.
-  RekFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub ${AWS::StackName}-RecognitionFunction
-      Code:
-        ZipFile: !Sub |
-          from __future__ import print_function
-          import boto3
-          def handler(event, context):
-              print('Initiating image rekognition')
-              #bucket = event['ourBucket']
-              #key = event['ourKey']
-              # Structure of event from CloudWatch Events:
-              bucket = event['detail']['requestParameters']['bucketName']
-              key = event['detail']['requestParameters']['key']
-              client = boto3.client('rekognition')
-              response = client.detect_labels(Image={'S3Object': {'Bucket':bucket, 'Name':key}},
-                  MaxLabels=10,
-                  MinConfidence=75)
-              print('Detected the following labels for ' + key)
-              for label in response['Labels']:
-                  print(label['Name'] + ' : ' + str(label['Confidence']))
-                  if label['Name'] == "Human" or label['Name'] == "Person":
-                      found = 'human'
-                      break
-                  else:
-                      found = 'other'
-              discovery = {
-                  "found": found,
-                  }
-              return discovery
-
-      Handler: index.handler
-      Role: !GetAtt rekRole.Arn
-      Runtime: python3.7
-
-  # This Lambda is called by step functions when a human is found.  
-  # It sends an SNS notification - you can't do this directly from Step Functions.
-  # TODO: REPLACE THIS WITH DIRECT CALL FROM STEP FUNCTIONS, SEE https://docs.aws.amazon.com/step-functions/latest/dg/connect-sns.html
-  NotificationFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub ${AWS::StackName}-NotificationFunction
-      Code:
-        ZipFile: !Sub |
-          from __future__ import print_function
-          import boto3
-          import os
-          def handler(event, context):
-              phoneNumber = os.environ['PHONE_NUMBER']
-              smsMessage = "We found a human!"
-              print('Initiating image rekognition')
-              found = event['found']
-              if found == 'human':
-                  sns_client = boto3.client('sns')
-                  sms = sns_client.publish(
-                      PhoneNumber = phoneNumber, 
-                      Message= smsMessage,
-                  )
-              else:
-                  raise Exception('No human detected')
-              return
-
-      Handler: index.handler
-      Role: !GetAtt rekRole.Arn
-      Runtime: python3.7
-      Environment:
-        Variables:
-          PHONE_NUMBER: !Ref NotificationPhoneNumber
-
+  # On upload, use rekognition to detect-labels, see if any labels indicate human, send a text message if so.
+  # Rekognition and SNS are called directly without Lambda functions
+  # The ResultSelector simplifies the output from Rekognition so the Choice can handle it.
   StateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       DefinitionString: !Sub |-
         {
-          "StartAt": "Process Image", 
-          "TimeoutSeconds":300,
+          "StartAt": "Process Image",
+          "TimeoutSeconds": 300,
           "States": {
             "Process Image": {
-              "Type":"Task",
-              "Resource":  "${RekFunction.Arn}",
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:rekognition:detectLabels",
+              "Parameters": {
+                "Image": {
+                  "S3Object": {
+                    "Bucket.$": "$.detail.requestParameters.bucketName",
+                    "Name.$": "$.detail.requestParameters.key"
+                  }
+                },
+                "MaxLabels": 10,
+                "MinConfidence": 75
+              },
+              "ResultSelector": {
+                "human_found.$": "$.Labels[?(@.Name=='Person'||@.Name=='Human')].Name"
+              },
               "Next": "Human Found?"
             },
-            "Human Found?":{
-              "Type":"Choice",
-              "Choices":[
-                {"Variable": "$.found", "StringEquals":"human", "Next":"Process Human"},
-                {"Variable":"$.found", "StringEquals":"other",   "Next":"Other Processing"}
-              ]
+            "Human Found?": {
+              "Type": "Choice",
+              "Choices": [
+                { "Variable": "$.human_found[0]", "IsPresent": true, "Next": "Process Human" }
+              ],
+              "Default": "Other Processing"
             },
-            "Process Human":{
-              "Type":"Task",
-              "Resource": "${NotificationFunction.Arn}",
-              "Next":"We succeeded! Yay!"
+            "Process Human": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:sns:publish",
+              "Parameters": {
+                "Message": "We found a human!!",
+                "PhoneNumber": "${NotificationPhoneNumber}"
+              },
+              "Next": "Success"
             },
             "Other Processing": {
-              "Type":"Pass",
-              "Next":"We succeeded! Yay!"
+              "Type": "Pass",
+              "Next": "Success"
             },
-            "We succeeded! Yay!": {
-              "Type":"Succeed"
+            "Success": {
+              "Type": "Succeed"
             }
           }
         }
@@ -369,22 +278,10 @@ Resources:
 
   # CloudWatch Logs Groups are created automatically when Lambdas execute, but they are retained forever by default.
   # To control this, make them part of the stack:
-  CloudwatchLogsGroupNotification:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${NotificationFunction}
-      RetentionInDays: 3
-
   CloudwatchLogsGroupCleanup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-CleanupFunction
-      RetentionInDays: 3
-
-  CloudwatchLogsGroupRek:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${RekFunction}
       RetentionInDays: 3
 
 Outputs:

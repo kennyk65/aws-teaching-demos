@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Lab 1 Task3 CloudFormation template which adds one additional Amazon EC2 instance to the existing VPC.
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - AmazonLinuxAMIID
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+Resources:
+
+  # Not part of lab 1, created to make running outside of qwiklabs easier:
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  InstanceC:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMIID
+      InstanceType: t2.micro
+      SubnetId: !ImportValue PublicSubnet
+      SecurityGroupIds:
+        - !ImportValue WebServerSecurityGroup
+      UserData: !Base64 |
+        #!/bin/bash -ex
+        sudo yum update -y
+        sudo yum install -y httpd php
+        sudo service httpd start
+        sudo systemctl enable httpd.service
+        cd /var/www/html
+        wget https://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-200-ARCHIT/v7.0.0/lab-1-EC2/scripts/instanceCdata.zip
+        unzip instanceCdata.zip
+      Tags:
+        - Key: Name
+          Value: InstanceC
+Outputs:
+  InstanceCPublicDNS:
+    Description: Public DNS value for InstanceC
+    Value: !GetAtt InstanceC.PublicDnsName

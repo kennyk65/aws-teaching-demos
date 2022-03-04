@@ -133,6 +133,10 @@ Resources:
         FromPort: 80
         ToPort: 80
         CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
 
   PrivateSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -295,4 +299,16 @@ Outputs:
     Value: !Ref PublicInstance
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", PublicInstance ] ]
+
+  PublicSecurityGroup:
+    Description: The security group for web instances.
+    Value: !Ref PublicSecurityGroup
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSecurityGroup ] ]
+
+  EC2InstanceProfile:
+    Description: The Instance profile used for SSM Agent on EC2 instances.
+    Value: !Ref EC2InstanceProfile
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", EC2InstanceProfile ] ]
 
