@@ -6,7 +6,7 @@ Transform: AWS::Serverless-2016-10-31
 # - The Lambda Event mapping type is HttpApi instead of Api.
 # - The Output URLs have to be formed differently.
 # I was unable to use a parameter to distinguish the type of gateway due to errors, 
-# plus the output is significantly different.
+# plus the output is significantly different. 
 
 
 Resources:
