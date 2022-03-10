@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+# Implement Lab 5 of AWS Dev 4
+# Create an API Gateway with Lambdas and DynamoDB
+
+Globals:  # This section defines settings that we don't want to repeat over and over in each Lambda.
+  Function:
+    MemorySize: 128
+    Timeout: 5         # Usually runs in less than one second.
+    Runtime: python3.9
+    Handler: index.lambda_handler
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref DynamoDbTable
+
+Resources:
+
+  TheApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      EndpointConfiguration: REGIONAL
+      DefinitionBody:   # THIS IS ALL OPENAPI:
+        openapi: "3.0.1"
+        info:
+          title: "PollyNotesAPI"
+          version: "2022-03-10T13:57:07Z"
+        servers:
+        - url: "https://j44eg20nn3.execute-api.us-west-2.amazonaws.com/{basePath}"
+          variables:
+            basePath:
+              default: "/prod"
+        paths:
+          /notes:
+            get:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                type: "aws"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListLambda.Arn}/invocations"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                    responseTemplates:
+                      application/json: "#set($inputRoot = $input.path('$'))\r\n[\r\n    #foreach($elem\
+                        \ in $inputRoot)\r\n    {\r\n        \"NoteId\" : \"$elem.NoteId\"\
+                        ,\r\n        \"Note\" : \"$elem.Note\"\r\n    }\r\n    #if($foreach.hasNext),#end\r\
+                        \n    #end\r\n]\r\n"
+                requestTemplates:
+                  application/json: "{\"UserId\":\"student\"}"
+                passthroughBehavior: "when_no_templates"
+                contentHandling: "CONVERT_TO_TEXT"
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/NoteInput"
+                required: true
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                type: "aws"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateUpdateLambda.Arn}/invocations"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                passthroughBehavior: "when_no_templates"
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: "{\"statusCode\": 200}"
+                passthroughBehavior: "when_no_match"
+        components:
+          schemas:
+            Empty:
+              title: "Empty Schema"
+              type: "object"
+            NoteInput:
+              title: "Note"
+              required:
+              - "Note"
+              - "NoteId"
+              - "UserId"
+              type: "object"
+              properties:
+                UserId:
+                  type: "string"
+                NoteId:
+                  type: "integer"
+                Note:
+                  type: "string"
+
+
+  # GET on /notes calls the PollyNotes-ListFunction
+  ListLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub ListFunction-${AWS::StackName}
+      Description: List all notes for a given userId.  Respond to /notes GET
+      Policies: !Ref LambdaFunctionPolicy
+      InlineCode: |
+        # PollyNotes-ListFunction
+        #
+        # This lambda function is integrated with the following API methods:
+        # /notes GET (list operation)
+        #
+        # Its purpose is to get notes from our DynamoDB table
+
+        from __future__ import print_function
+        import boto3
+        import os
+        from boto3.dynamodb.conditions import Key
+
+        dynamoDBResource = boto3.resource('dynamodb')
+
+        def lambda_handler(event, context):
+            # Log debug information
+            print(event)
+            ddbTable = os.environ['TABLE_NAME']
+
+            # Get the database items from the pollynotes table
+            databaseItems = getDatabaseItems(dynamoDBResource, ddbTable, event)
+
+            return databaseItems
+
+        def getDatabaseItems(dynamoDBResource, ddbTable, event):
+            print("getDatabaseItems Function")
+
+            # Create our DynamoDB table resource
+            table = dynamoDBResource.Table(ddbTable)
+
+            # If a userId was passed, query the table for that user's items
+            if "UserId" in event:
+                UserId = event['UserId']
+                records = table.query(KeyConditionExpression=Key("UserId").eq(UserId))
+            else:
+                # if not, scan the table and return all items
+                records = table.scan()
+
+            return records["Items"]
+
+
+  # POST on /notes calls the PollyNotes-CreateUpdateFunction
+  CreateUpdateLambda:
+    Type: AWS::Serverless::Function
+    Properties: 
+      FunctionName: !Sub CreateUpdateFunction-${AWS::StackName}
+      Description: Create or update note for a given userId.  Respond to /notes POST
+      Policies: !Ref LambdaFunctionPolicy
+      InlineCode: |
+        # PollyNotes-CreateUpdateFunction
+        # This function allows us to create and update items in DynamoDB
+        #
+        # This lambda function is integrated with the following API method:
+        # /notes POST (create or update a note)
+
+        from __future__ import print_function
+        import boto3
+        import os
+
+        dynamoDBResource = boto3.resource('dynamodb')
+
+        def lambda_handler(event, context):
+            
+            # Log debug information
+            print(event)
+            
+            # Extracting the user parameters from the event
+            UserId = event["UserId"]
+            NoteId = event['NoteId']
+            Note = event['Note']
+            ddbTable = os.environ['TABLE_NAME']
+            
+            # DynamoDB 'put_item' to add or update a note
+            newNoteId = upsertItem(dynamoDBResource, ddbTable, UserId, NoteId, Note)
+
+            return newNoteId
+
+        def upsertItem(dynamoDBResource, ddbTable, UserId, NoteId, Note):
+            print('upsertItem Function')
+
+            # set the table's name identifier
+            table = dynamoDBResource.Table(ddbTable)
+            
+            # Put the item in the database, this will create a new item if the UserId and NoteId
+            # do not match an existing note. If it does, it will update that note.
+            table.put_item(
+                Item={
+                    'UserId': UserId,
+                    'NoteId': int(NoteId),
+                    'Note': Note
+                }
+            )
+            return NoteId
+
+
+  # Permission to invoke Lambda function from API Gateway:
+  LambdaInvokePermissionList:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ListLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  LambdaInvokePermissionCreateUpdate:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt CreateUpdateLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  # This Policy is attached to the Lambda functions.
+  LambdaFunctionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      ManagedPolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - dynamodb:DeleteItem
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:UpdateItem
+            - dynamodb:DescribeTable
+            - polly:SynthesizeSpeech
+            - s3:PutObject
+            - s3:GetObject
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+
+  DynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub PollyNotes-${AWS::StackName}
+      AttributeDefinitions:
+      - AttributeName: UserId
+        AttributeType: S
+      - AttributeName: NoteId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: UserId
+        KeyType: HASH
+      - AttributeName: NoteId
+        KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+Outputs:
+
+  ApiGatewayProductionStageUrl:
+    Description: The URL to use in your web code to point at the API gateway endpoint.  
+    Value: !Sub https://${TheApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+    
