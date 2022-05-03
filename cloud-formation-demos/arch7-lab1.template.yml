@@ -47,9 +47,9 @@ Resources:
     Properties:
       ImageId: !Ref AmazonLinuxAMIID
       InstanceType: t2.micro
-      SubnetId: !ImportValue PublicSubnet
+      SubnetId: !Ref PublicSubnet
       SecurityGroupIds:
-        - !ImportValue WebServerSecurityGroup
+        - !Ref WebServerSecurityGroup
       UserData: !Base64 |
         #!/bin/bash -ex
         sudo yum update -y

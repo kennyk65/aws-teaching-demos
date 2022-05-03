@@ -328,17 +328,14 @@ Resources:
         - MetricIntervalLowerBound: 20    #  If breach over 90, increase by 2
           ScalingAdjustment: 2
 
-  StepScalingIn: 
+  # Scale in is a simple policy:
+  SimpleScalingIn: 
     Type: AWS::AutoScaling::ScalingPolicy
     Properties: 
-      PolicyType: StepScaling
+      PolicyType: StepScaling  # Default
       AutoScalingGroupName: !Ref AppAutoScalingGroup
       AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
-      MetricAggregationType: Average
-      StepAdjustments: 
-        - MetricIntervalLowerBound: 0     #  If breach is any size, decrease by 1.
-#          MetricIntervalUpperBound: 100
-          ScalingAdjustment: -1
+      ScalingAdjustment: -1
 
   # Fire alarm when average CPU > 70 for one 5 minute period.  Fire scale out policy.
   CPUAlarmHigh:
