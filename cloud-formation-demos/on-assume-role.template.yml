@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  EmailAddress:
+    Description: Eamail address to send approval notifications to
+    Type: String
+    Default: kenkrueger65@gmail.com
+
+Resources:
+  EventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub rule-${AWS::StackName}
+      EventPattern: '{"source":["aws.sts"],"detail-type":["AWS API Call via CloudTrail"],"detail":{"eventSource":["sts.amazonaws.com"],"eventName":["AssumeRole"],"userIdentity":{"type":[{"anything-but":["AWSService"]}]}}}'
+      State: ENABLED
+      Targets:
+      - Arn: !GetAtt LambdaFunction.Arn
+        Id: ArbitraryValue
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Send notifications when an IAM role is assumed
+      TopicName: !Sub topic-${AWS::StackName}
+
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument: !Sub '{"Version":"2012-10-17","Id":"__default_policy_ID","Statement":[{"Sid":"__default_statement_ID","Effect":"Allow","Principal":{"AWS":"*"},"Action":["SNS:GetTopicAttributes","SNS:SetTopicAttributes","SNS:AddPermission","SNS:RemovePermission","SNS:DeleteTopic","SNS:Subscribe","SNS:ListSubscriptionsByTopic","SNS:Publish","SNS:Receive"],"Resource":"${SNSTopic}","Condition":{"StringEquals":{"AWS:SourceOwner":"${AWS::AccountId}"}}},{"Sid":"AWSEvents_${EventsRule}_Id20130867810009","Effect":"Allow","Principal":{"Service":"events.amazonaws.com"},"Action":"sns:Publish","Resource":"${SNSTopic}"}]}'
+      Topics:
+      - !Ref SNSTopic
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref EmailAddress
+      Protocol: email
+      Region: !Ref AWS::Region
+
+  # ConfigDeliveryChannel:
+  #   Type: AWS::Config::DeliveryChannel
+  #   Properties:
+  #     Name: "default"
+  #     S3BucketName: "kk-admin"
+  #     S3KeyPrefix: "config"
+  #     SnsTopicARN: !Ref SNSTopic
+  #     ConfigSnapshotDeliveryProperties:
+  #       DeliveryFrequency: "Twelve_Hours"
+
+  IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub onAssumeRole-${AWS::StackName}
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal: 
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+      Description: Allow Lambda to write to log and send SNS messages
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub onAssumeRole-${AWS::StackName}
+      Description: Send the given eMail a message whenever a role is assumed on this account
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref SNSTopic
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt IAMRole.Arn
+      Runtime: python3.9
+      Timeout: 3
+      Code:
+        ZipFile: !Sub |
+          import json
+          import boto3
+          import os
+
+          def lambda_handler(event, context):
+              #print("Received event: " + json.dumps(event, indent=2))    
+              
+              type = event['detail']['userIdentity']['type']  
+              arn = event['detail']['userIdentity']['arn']
+              roleArn = event['detail']['requestParameters']['roleArn']
+              time = event['time']
+
+              message = "A userIdentity of type {}, {} assumed role {} at {} on this account.".format(type,arn,roleArn,time)
+              print(message)
+
+              # Send a message via SNS:
+              client = boto3.client('sns')
+              
+              topicArn = os.getenv('TOPIC_ARN')
+              response = client.publish(
+                  TopicArn=topicArn,
+                  Message=message,
+                  Subject='AWS Notification - AssumeRole'
+              )
+
+
