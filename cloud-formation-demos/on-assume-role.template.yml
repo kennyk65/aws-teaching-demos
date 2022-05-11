@@ -9,7 +9,7 @@ Parameters:
   EmailAddress:
     Description: Eamail address to send approval notifications to
     Type: String
-    Default: kenkrueger65@gmail.com
+    Default: somebodysemail@gmail.com
 
 Resources:
 
