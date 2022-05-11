@@ -1,5 +1,10 @@
 AWSTemplateFormatVersion: 2010-09-09
 
+# Set up an EventBridge rule which captures all AssumeRole API calls on this account, except for those made by AWS services.  
+# Trigger a Lambda when this happens.  Have it digest the event information and format a readable message.
+# Use SNS to eMail this message to a given eMail address.
+# Note:  RUN ON US-EAST-1 ONLY - This template will execute in any region, but AssumeRole events occur in us-east-1 only.
+
 Parameters:
   EmailAddress:
     Description: Eamail address to send approval notifications to
@@ -7,51 +12,33 @@ Parameters:
     Default: kenkrueger65@gmail.com
 
 Resources:
+
+  # Capture all AssumeRole events except those made by AWS services.  
+  # Trigger the Lambda when this happens:
   EventsRule:
     Type: AWS::Events::Rule
     Properties:
       Name: !Sub rule-${AWS::StackName}
-      EventPattern: '{"source":["aws.sts"],"detail-type":["AWS API Call via CloudTrail"],"detail":{"eventSource":["sts.amazonaws.com"],"eventName":["AssumeRole"],"userIdentity":{"type":[{"anything-but":["AWSService"]}]}}}'
+      # EventPattern: 
+      #   '{"source":["aws.sts"],"detail-type":["AWS API Call via CloudTrail"],"detail":{"eventSource":["sts.amazonaws.com"],"eventName":["AssumeRole"],"userIdentity":{"type":[{"anything-but":["AWSService"]}]}}}'
+      EventPattern: 
+        source: [ "aws.sts" ]
+        detail-type: ["AWS API Call via CloudTrail"]
+        detail:
+          eventSource: ["sts.amazonaws.com"]
+          eventName: ["AssumeRole"]
+          userIdentity:
+            type: [{"anything-but":["AWSService"]}]
       State: ENABLED
       Targets:
       - Arn: !GetAtt LambdaFunction.Arn
         Id: ArbitraryValue
 
-  SNSTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      DisplayName: Send notifications when an IAM role is assumed
-      TopicName: !Sub topic-${AWS::StackName}
-
-  SNSTopicPolicy:
-    Type: AWS::SNS::TopicPolicy
-    Properties:
-      PolicyDocument: !Sub '{"Version":"2012-10-17","Id":"__default_policy_ID","Statement":[{"Sid":"__default_statement_ID","Effect":"Allow","Principal":{"AWS":"*"},"Action":["SNS:GetTopicAttributes","SNS:SetTopicAttributes","SNS:AddPermission","SNS:RemovePermission","SNS:DeleteTopic","SNS:Subscribe","SNS:ListSubscriptionsByTopic","SNS:Publish","SNS:Receive"],"Resource":"${SNSTopic}","Condition":{"StringEquals":{"AWS:SourceOwner":"${AWS::AccountId}"}}},{"Sid":"AWSEvents_${EventsRule}_Id20130867810009","Effect":"Allow","Principal":{"Service":"events.amazonaws.com"},"Action":"sns:Publish","Resource":"${SNSTopic}"}]}'
-      Topics:
-      - !Ref SNSTopic
-
-  SNSSubscription:
-    Type: AWS::SNS::Subscription
-    Properties:
-      TopicArn: !Ref SNSTopic
-      Endpoint: !Ref EmailAddress
-      Protocol: email
-      Region: !Ref AWS::Region
-
-  # ConfigDeliveryChannel:
-  #   Type: AWS::Config::DeliveryChannel
-  #   Properties:
-  #     Name: "default"
-  #     S3BucketName: "kk-admin"
-  #     S3KeyPrefix: "config"
-  #     SnsTopicARN: !Ref SNSTopic
-  #     ConfigSnapshotDeliveryProperties:
-  #       DeliveryFrequency: "Twelve_Hours"
-
+  # Allow Lambda function to write to CloudWatch Logs and send SNS notifications:
   IAMRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub onAssumeRole-${AWS::StackName}
+      RoleName: !Sub LambdaRole-${AWS::StackName}
       AssumeRolePolicyDocument: 
         Version: 2012-10-17
         Statement: 
@@ -65,10 +52,20 @@ Resources:
       - arn:aws:iam::aws:policy/AmazonSNSFullAccess
       Description: Allow Lambda to write to log and send SNS messages
 
+  # Allow EventBridge event to trigger Lambda function:
+  FunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventsRule.Arn
+
+  # Format and eMail a nice message when the event is triggerred:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub onAssumeRole-${AWS::StackName}
+      FunctionName: !Sub function-${AWS::StackName}
       Description: Send the given eMail a message whenever a role is assumed on this account
       Environment:
         Variables:
@@ -105,4 +102,27 @@ Resources:
                   Subject='AWS Notification - AssumeRole'
               )
 
+  # SNS Topic with eMail subscription.  EMail address is an input parameter to this stack.
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Send notifications when an IAM role is assumed
+      TopicName: !Sub topic-${AWS::StackName}
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref EmailAddress
+      Protocol: email
+      Region: !Ref AWS::Region
+
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaFunction}
+      RetentionInDays: 3
 
