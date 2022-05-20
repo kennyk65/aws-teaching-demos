@@ -10,10 +10,10 @@ Resources:
     Properties: 
       FunctionName: MyLambda
       Description: Example Lambda from CloudFormation
-      MemorySize: 128
-      Timeout: 4
+      MemorySize: 256
+      Timeout: 8
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Handler: index.justatest
       Code:
         ZipFile: !Sub |
