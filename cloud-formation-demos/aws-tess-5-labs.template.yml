@@ -127,7 +127,7 @@ Resources:
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn:
-    - AttachGateway
+    - AttachGateway  # InternetGateway must be attached before it is possible to create the route.
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
