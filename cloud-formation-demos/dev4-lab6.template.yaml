@@ -1,0 +1,493 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Developing on AWS - Lab 6 - Pollynotes'
+
+Parameters:
+  S3PathPrefix:
+    Type: String
+    Description: 'The path prefix where lab resources are stored'
+    Default: 'courses/ILT-TF-200-DODEVA/v4.1.0/lab-7-java'
+  S3ResourceBucket:
+    Type: String
+    Description: 'S3 Bucket suffix (e.g. us-west-2-tcprod) of where to pull lab resources from'
+    Default: '-tcprod'
+  tableName:
+    Type: String
+    Default: Notes
+
+Resources:
+  
+  ##initial applicaiton build project
+  websiteProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+          Type: NO_ARTIFACTS
+      Environment:
+          ComputeType: BUILD_GENERAL1_SMALL
+          Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+          Type: LINUX_CONTAINER
+          EnvironmentVariables:
+            - Name: WEB_BUCKET
+              Type: PLAINTEXT
+              Value: !Ref pollyNotesWeb
+            - Name: API_BUCKET
+              Type: PLAINTEXT
+              Value: !Ref pollyNotesAPI
+            - Name: TABLE_NAME
+              Type: PLAINTEXT
+              Value: !Ref tableName
+      ServiceRole: !GetAtt codeBuildServiceRole.Arn
+      Source:
+          Location: !GetAtt apiRepo.CloneUrlHttp
+          Type: CODECOMMIT
+      SecondarySources:
+        - Type: CODECOMMIT
+          Location: !GetAtt webRepo.CloneUrlHttp
+          SourceIdentifier: webRepo
+
+  codeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub codeBuildRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action:
+          - sts:AssumeRole
+          Principal:
+            Service:
+            - codebuild.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/ReadOnlyAccess
+      Policies:
+      - PolicyName: lab-CB-policy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - s3:PutObject
+            Resource:
+            - !GetAtt pollyNotesWeb.Arn
+            - !Sub ${pollyNotesWeb.Arn}/*
+            - !GetAtt pollyNotesAPI.Arn
+            - !Sub ${pollyNotesAPI.Arn}/*
+          - Effect: Allow
+            Action:
+            - codecommit:GitPull
+            Resource:
+            - !GetAtt apiRepo.Arn
+            - !GetAtt webRepo.Arn
+          - Effect: Allow
+            Action:
+            - apigateway:GET
+            - apigateway:PATCH
+            - apigateway:POST
+            - apigateway:PUT
+            - apigateway:DELETE
+            - iam:CreatePolicy
+            - iam:CreatePolicyVersion
+            - iam:CreateServiceLinkedRole
+            - iam:DeletePolicyVersion
+            - iam:DetachRolePolicy
+            - iam:GetRole
+            - iam:GetRolePolicy
+            - iam:GetUser
+            - iam:List*
+            - iam:PassRole
+            - iam:Tag*
+            - lambda:AddPermission
+            - lambda:CreateFunction
+            - lambda:UpdateFunctionConfiguration
+            - lambda:UpdateFunctionCode
+            - lambda:RemovePermission
+            - lambda:DeleteFunction
+            - lambda:TagResource
+            - lambda:*Layer*
+            - dynamodb:CreateTable
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteTable
+            - dynamodb:TagResource
+            - dynamodb:UpdateTable
+            - dynamodb:UntagResource
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+            - cognito-idp:CreateUserPool
+            - cognito-idp:DeleteUser
+            Resource:
+            - '*'
+      - PolicyName: lab-CB-policy-2
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - cloudformation:*ChangeSet
+            - cloudformation:*Stack
+            - cloudformation:ExecuteChangeSet
+            - cognito-idp:CreateUserPoolClient
+            - cognito-idp:UpdateUserPool
+            - cognito-idp:AdminConfirmSignUp
+            - cognito-idp:AdminSetUserPassword
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:DeleteUserPoolClient
+            - cognito-idp:UpdateUserPoolClient
+            - cognito-idp:AdminDeleteUser
+            - cognito-idp:DeleteUserPool
+            - cognito-identity:*IdentityPool*
+            Resource:
+            - arn:aws:cloudformation:*:*:stack/polly-notes-api/*
+            - arn:aws:cloudformation:*:aws:transform/Serverless-2016-10-31
+            - arn:aws:cognito-idp:*:*:userpool/*
+            - arn:aws:cognito-identity:*:*:identitypool/*
+          - Effect: Allow
+            Action: 
+            - iam:CreateRole
+            - iam:DeleteRole
+            Resource:
+            - arn:aws:iam::*:role/polly-notes-api-*
+          - Effect: Allow
+            Action:
+            - iam:PutRolePolicy
+            - iam:AttachRolePolicy
+            - iam:DeleteRolePolicy
+            Resource:
+            - arn:aws:iam::*:policy/dictateFunction*
+            - arn:aws:iam::*:policy/deleteFunctionFunction
+            - arn:aws:iam::*:policy/createUpdateFunction
+            - arn:aws:iam::*:policy/searchFunction
+            - arn:aws:iam::*:policy/listFunction
+            - arn:aws:iam::*:policy/pollyAuthorizedPolicy
+            - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+            - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            - arn:aws:iam::*:role/polly-notes-api-*
+
+  ##S3 Custom resource to kick off the build job
+  appDeployLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub CustomResource-${AWS::StackName}
+      Description: This Lambda function creates starts the codebuild build project, cleans S3 buckets when finished.
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 500      
+      Code:
+        ZipFile: |
+          import boto3, json
+          import cfnresponse
+          
+          def handler(event, context):
+            # print(event)
+            requestType = event["RequestType"]
+            rp          = event['ResourceProperties']
+            projectName = rp['projectName']
+            webBucket   = rp['webBucket']
+            apiBucket   = rp['apiBucket']
+
+            responseData = {}
+            msg = ""
+            try:
+              if requestType == 'Create':
+                boto3.client('codebuild').start_build(projectName=projectName)
+                msg = "Started CodeBuild project " + projectName
+
+              if requestType == 'Delete':
+                print ('Cleaning out S3 buckets to enable delete... ' )
+                boto3.resource('s3').Bucket(webBucket).objects.all().delete()
+                boto3.resource('s3').Bucket(apiBucket).objects.all().delete()
+                msg = "Bucket cleanup complete"
+
+            except Exception as e:
+              msg = f"Exception raised for function: Exception details: {e}"
+              print(msg)
+              responseData['Reason'] = msg
+              cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              
+            # Unless something blew up, we should wander into this code:
+            print(msg)
+            responseData['Reason'] = msg
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
+              
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+            - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub lambdaLogsCreatePolicy-${AWS::StackName}
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - codeBuild:StartBuild
+            - s3:List*
+            - s3:Delete*
+            Resource: 
+            - '*'
+                
+  #Custom bucket maintenance function.
+  invokeLambda:
+    Type: Custom::BucketMaintenance
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt appDeployLambda.Arn
+      projectName: !Ref websiteProject
+      webBucket: !Ref pollyNotesWeb
+      apiBucket: !Ref pollyNotesAPI
+
+  
+  ##Polly Notes Website
+  pollyNotesWeb:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        ErrorDocument: error.html
+        IndexDocument: index.html
+  webBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref pollyNotesWeb
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource: !Sub arn:aws:s3:::${pollyNotesWeb}/*
+          Principal: '*'
+
+  #Polly Notes API
+  pollyNotesAPI:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+            AllowedOrigins:
+              - '*'
+
+  #Code Repositories
+  apiRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryDescription: Polly Notes API SAM application
+      RepositoryName: !Sub api-${AWS::StackName}
+      Code:
+        S3:
+          Bucket: !Sub ${AWS::Region}${S3ResourceBucket}
+          Key: !Sub ${S3PathPrefix}/scripts/api.zip
+  webRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryDescription: Polly Notes website
+      RepositoryName: !Sub web-${AWS::StackName}
+      Code:
+        S3:
+          Bucket: !Sub ${AWS::Region}${S3ResourceBucket}
+          Key: !Sub ${S3PathPrefix}/scripts/web.zip
+
+
+  # SAM roles
+  DynamoDBRead:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DynamoDBReadRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:Scan
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+            - dynamodb:DescribeTable
+            Resource:
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}/index/*
+  
+  DynamoDBWrite:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DynamoDBWriteRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:DeleteItem
+            - dynamodb:PutItem
+            - dynamodb:Scan
+            - dynamodb:Query
+            - dynamodb:UpdateItem
+            - dynamodb:BatchWriteItem
+            - dynamodb:BatchGetItem
+            - dynamodb:DescribeTable
+            - dynamodb:ConditionCheckItem
+            Resource:
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}/index/*
+  
+  DictateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DictateRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+      - PolicyName: dbRead
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:Scan
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+            - dynamodb:DescribeTable
+            Resource:
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}/index/*
+      - PolicyName: s3Read
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            - s3:ListBucket
+            - s3:GetBucketLocation
+            - s3:GetObjectVersion
+            - s3:PutObject
+            - s3:PutObjectAcl
+            - s3:GetLifecycleConfiguration
+            - s3:PutLifecycleConfiguration
+            - s3:DeleteObject
+            Resource:
+            - !GetAtt pollyNotesAPI.Arn
+            - !Sub ${pollyNotesAPI.Arn}/*
+      - PolicyName: polly
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - polly:SynthesizeSpeech
+            Resource: "*"
+  
+  # Logging Role for API Gateway
+  ApiGwAccountConfig:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayLoggingRole.Arn
+      
+  ApiGatewayLoggingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action: sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+      - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+  
+  CognitoAuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: PollyCognitoAuthRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated: cognito-identity.amazonaws.com
+          Action:
+          - sts:AssumeRoleWithWebIdentity
+      Policies:
+      - PolicyName: pollyAuthorizedPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - mobileanalytics:PutEvents
+            - cognito-sync:*
+            - cognito-identity:*
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - execute-api:Invoke
+            Resource: "*"
+
+Outputs:
+  PollyNotesWebsite:
+    Description: URL for polly notes website
+    Value: !GetAtt pollyNotesWeb.WebsiteURL
