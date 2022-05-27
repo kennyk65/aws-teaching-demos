@@ -2,7 +2,8 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # S3 bucket, set for website, fronted by CloudFront
 # You must copy in your own desired content into the bucket.
-# WARNING:  CloudFront distributions take about 20 minutes to create / update.
+# WARNING:  CloudFront distributions take about 5-10 minutes to create / update.  
+# WARNING:  The origin access identifier takes over an hour to work.
 
 Parameters:
 
@@ -17,26 +18,21 @@ Resources:
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", ["website-", !Ref WebsiteSuffix]]
-      # AccessControl: PublicRead     # Do not use AccessControl (old), use BucketPolicy (new)
-      WebsiteConfiguration:
-        ErrorDocument: error.html
-        IndexDocument: index.html
-
+      BucketName: !Sub website-${WebsiteSuffix}
 
   # Contents of the bucket are publicly gettable:
-  # TODO: Make CloudFront the only allowed principal.
   BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties: 
       Bucket: !Ref S3
       PolicyDocument: 
         Statement: 
-          - Effect: Allow                              #  Allow...
-            Principal: "*"                                  #  ...anyone anywhere...
-            Action:                                            # ...to perform GetObject on...
-              - s3:GetObject
-            Resource: !Join [ "", ["arn:aws:s3:::", !Ref S3, "/*" ]]  #  ...any object in this S3 bucket.
+        - Effect: Allow                                                                       #  Allow...
+          Principal:
+            AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${OAI}   #  The CloudFront distribution
+          Action:                                                                             # ...to perform GetObject on...
+            - s3:GetObject
+          Resource: !Join [ "", ["arn:aws:s3:::", !Ref S3, "/*" ]]                            #  ...any object in this S3 bucket.
 
   CloudFront:
     Type: AWS::CloudFront::Distribution
@@ -44,39 +40,114 @@ Resources:
       DistributionConfig: 
         Comment: Pointing at S3 Bucket
         Enabled: true
+        HttpVersion: http2
         PriceClass: PriceClass_100    # Cheapest
         DefaultRootObject: index.html
-
         Origins:
         - Id: S3Bucket
           DomainName: !GetAtt S3.DomainName   # Might need to be "WebsiteURL"
-          CustomOriginConfig:                 # Ironically, you use CustomOriginConfig instead of S3OriginConfig unless you want to fool with OriginAccessIdentities
-            OriginProtocolPolicy: https-only  #  http-only, match-viewer, https-only
-
-        # CacheBehavior:
-        # - PathPattern: web/*.html
-        #   TargetOriginId: S3Bucket
-        #   DefaultTTL: 0
-        #   ForwardedValues:
-        #     QueryString: true
-        #   ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
-
-        DefaultCacheBehavior:                 # Probably don't need this.
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OAI}
+        DefaultCacheBehavior:          
           TargetOriginId: S3Bucket
-          DefaultTTL: 0
+          DefaultTTL: 0   # No caching
           ForwardedValues:
             QueryString: true
-          ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https   # allow-all, redirect-to-https, https-only        
 
-# "removeBucket": {
-#         "Type": "Custom::cli2cloudformation",
-#         "Properties": {
-#           "ServiceToken": "arn:aws:lambda:eu-west-1:123456789000:function:custom-lambda-name",
-#           "CliCommandDelete": "aws s3 rb s3://bucket-name --force",
-#         }
-# }
+  OAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: ThisCanBeAnyValue
+
+  # S3 Custom resource to place an index.html file on the bucket, then clean it off when deleting the stack
+  CustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub CustomResource-${AWS::StackName}
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 500      
+      Code:
+        ZipFile: |
+          import boto3, json
+          import cfnresponse
+          
+          def handler(event, context):
+            # print(event)
+            requestType = event["RequestType"]
+            rp          = event['ResourceProperties']
+            s3Bucket   = rp['s3Bucket']
+
+            responseData = {}
+            msg = ""
+            try:
+              if requestType == 'Create':
+                boto3.client('s3').put_object(Bucket=s3Bucket,Body=b'Sample Web Page',Key='index.html')
+
+              if requestType == 'Delete':
+                print ('Cleaning out S3 buckets to enable delete... ' )
+                boto3.resource('s3').Bucket(s3Bucket).objects.all().delete()
+                msg = "Bucket cleanup complete"
+
+            except Exception as e:
+              msg = f"Exception raised for function: Exception details: {e}"
+              print(msg)
+              responseData['Reason'] = msg
+              cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              
+            # Unless something blew up, we should wander into this code:
+            print(msg)
+            responseData['Reason'] = msg
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
+              
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+            - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub lambdaLogsCreatePolicy-${AWS::StackName}
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:Put*
+            - s3:Delete*
+            Resource: 
+            - '*'
+                
+  # Custom bucket maintenance function.
+  invokeLambda:
+    Type: Custom::BucketMaintenance
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLambda.Arn
+      s3Bucket: !Ref S3
 
 Outputs:
   TheURL:
-    Value: !Join [ "", ["https://", !GetAtt CloudFront.DomainName ]]
+    Description:  WARNING - This website will not be available for up to an hour due to the Origin Access Identity
+    Value: !Sub https://${CloudFront.DomainName}
 
+  OAICannonical:
+    Value: !GetAtt OAI.S3CanonicalUserId
+
+  S3DomainName:
+    Value:  !GetAtt S3.DomainName  
