@@ -86,8 +86,8 @@ Resources:
             responseData = {}
             msg = ""
             try:
-              if requestType == 'Create':
-                boto3.client('s3').put_object(Bucket=s3Bucket,Body=b'Sample Web Page',Key='index.html')
+              if requestType == 'Create' or  requestType == 'Update':
+                boto3.client('s3').put_object(Bucket=s3Bucket,Body='Sample Web Page',Key='index.html',ContentType='text/html')
 
               if requestType == 'Delete':
                 print ('Cleaning out S3 buckets to enable delete... ' )
