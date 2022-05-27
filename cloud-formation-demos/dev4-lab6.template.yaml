@@ -20,6 +20,7 @@ Resources:
   websiteProject:
     Type: AWS::CodeBuild::Project
     Properties:
+      Name: !Sub PollyNotesWebsiteBuild-${AWS::StackName}
       Artifacts:
           Type: NO_ARTIFACTS
       Environment:
