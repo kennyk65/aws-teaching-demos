@@ -128,6 +128,7 @@ Resources:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
+            - s3:ListObjects
             - s3:Put*
             - s3:Delete*
             Resource: 
