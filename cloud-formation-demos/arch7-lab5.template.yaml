@@ -87,6 +87,7 @@ Resources:
       NotificationConfiguration:
         TopicConfigurations:
         - Topic: !Ref ImageResizeTopic
+          Event: s3:ObjectCreated:*
           Filter: 
             S3Key: 
               Rules: 
@@ -94,7 +95,33 @@ Resources:
                 Value:  ingest/
               - Name: suffix
                 Value:  .jpg
+        - Topic: !Ref ImageResizeTopic
           Event: s3:ObjectCreated:*
+          Filter: 
+            S3Key: 
+              Rules: 
+              - Name: prefix
+                Value:  ingest/
+              - Name: suffix
+                Value:  .JPG
+        - Topic: !Ref ImageResizeTopic
+          Event: s3:ObjectCreated:*
+          Filter: 
+            S3Key: 
+              Rules: 
+              - Name: prefix
+                Value:  ingest/
+              - Name: suffix
+                Value:  .JPEG
+        - Topic: !Ref ImageResizeTopic
+          Event: s3:ObjectCreated:*
+          Filter: 
+            S3Key: 
+              Rules: 
+              - Name: prefix
+                Value:  ingest/
+              - Name: suffix
+                Value:  .jpeg
 
 
   LambdaThumbnail:
