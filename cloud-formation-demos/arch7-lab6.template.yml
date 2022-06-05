@@ -16,13 +16,6 @@ Resources:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: !Sub website-${WebsiteSuffix}
-      # PublicAccessBlockConfiguration:       # Should not need to unblock anything
-      #   RestrictPublicBuckets: true   # default
-      #   BlockPublicPolicy: true       # default
-      # WebsiteConfiguration:           # Website configuration on bucket breaks origin access identity
-      #   ErrorDocument: error.html
-      #   IndexDocument: index.html
-
 
   # Contents of the bucket are publicly gettable:
   # TODO: Make CloudFront the only allowed principal.
@@ -32,18 +25,18 @@ Resources:
       Bucket: !Ref S3
       PolicyDocument: 
         Statement: 
-          - Effect: Allow                              #  Allow...
-            Action:                                       # ...to perform GetObject on...
-              - s3:GetObject*
-            Resource: !Sub "arn:aws:s3:::${S3}/*"               #  ...any object in this S3 bucket.
-            Principal:
-              AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOAI}   #  ...only to the CloudFront OAI
+        - Effect: Allow                                                                       #  Allow ...
+          Principal:
+            AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${OAI}   # ... the CloudFront distribution ...
+          Action:                                                                             # ... to call GetObject ...
+          - s3:GetObject
+          Resource: !Sub arn:aws:s3:::${S3}/*                                                 # ... on any object in this S3 bucket.
 
-  CloudFrontOAI:
+  OAI:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties: 
       CloudFrontOriginAccessIdentityConfig: 
-        Comment: MyOriginAccessIdentity
+        Comment: MyOriginAccessIdentity     # This can be any string value
 
   CloudFront:
     Type: AWS::CloudFront::Distribution
@@ -52,33 +45,21 @@ Resources:
         Comment: Pointing at S3 Bucket
         Enabled: true
         PriceClass: PriceClass_100    # Cheapest
+        HttpVersion: http2
         DefaultRootObject: index.html
-
         Origins:
         - Id: S3Bucket
-          DomainName: !GetAtt S3.DomainName   # Might need to be "WebsiteURL"
+          DomainName: !GetAtt S3.RegionalDomainName   # Must be region specific to avoid redirect behavior when buckets are new
           S3OriginConfig:
-            OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${CloudFrontOAI}
-
-        # CacheBehavior:
-        # - PathPattern: web/*.html
-        #   TargetOriginId: S3Bucket
-        #   DefaultTTL: 0
-        #   ForwardedValues:
-        #     QueryString: true
-        #   ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
-
-        DefaultCacheBehavior:                 # Probably don't need this.
+            OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OAI}
+        DefaultCacheBehavior:
           TargetOriginId: S3Bucket
-          DefaultTTL: 0
+          DefaultTTL: 0   # No caching
           ForwardedValues:
             QueryString: true
-          ViewerProtocolPolicy: https-only   # allow-all, redirect-to-https, https-only        
-
-
-
-
-
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https   # allow-all, redirect-to-https, https-only 
 
   # This role is used by the Lambda / custom resource for cleanup:
   CleanupCustomResourceLambdaRole:
@@ -99,68 +80,65 @@ Resources:
           Statement:
           - Effect: Allow
             Action:
-            - logs:*
-            - s3:Get*
-            - s3:Put*
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
             - s3:List*
+            - s3:Put*
             - s3:Delete*
             Resource: "*"
 
-
-  # This function cleans out the bucket on stack delete.
-  CleanupCustomResourceLambda:
+  # This function creates a sample web page on create and cleans out the bucket on stack delete.
+  CustomResourceLambda:
     Type: AWS::Lambda::Function
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-CleanupCustomResource
       Role: !GetAtt CleanupCustomResourceLambdaRole.Arn
-      Code:
-        ZipFile: !Sub |
-          import boto3
-          import cfnresponse
-          s3 = boto3.client('s3')
-          def lambda_handler(event, context):
-            responseData = {}
-            bucket = event['ResourceProperties']['Bucket']          
-
-            if event['RequestType'] == 'Create':
-              try:
-                file_name = "/tmp/index.html"
-                data = "Hello World"
-                with open(file_name,'w') as f:
-                  f.write(data)
-              except Exception as e:
-                msg = 'Error writing index file.  Exception is {}.'.format(e)
-                print(msg)
-                responseData['Reason'] = msg
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-
-              try:
-                s3.upload_file(file_name,bucket,"index.html",ExtraArgs={'ContentType': "text/html"})
-              except Exception as e:
-                  msg = 'Error uploading web content into bucket {}. Check region.  Exception is {}.'.format(bucket,repr(e))
-                  print(msg)
-                  responseData['Reason'] = msg
-                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-
-            if event['RequestType'] == 'Delete':
-              print ('Clean out bucket to enable delete... ' )
-              boto3.resource('s3').Bucket(bucket).objects.all().delete()
-
-            # Unless something failed, we will execute this line:
-            cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
       MemorySize: 128     
       Timeout: 15         
       Runtime: python3.7
-      Handler: index.lambda_handler
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          import boto3, json
+          import cfnresponse
+          
+          def handler(event, context):
+            # print(event)
+            requestType = event["RequestType"]
+            rp          = event['ResourceProperties']
+            s3Bucket   = rp['s3Bucket']
+
+            responseData = {}
+            msg = ""
+            try:
+              if requestType == 'Create' or  requestType == 'Update':
+                boto3.client('s3').put_object(Bucket=s3Bucket,Body='Hello World',Key='index.html',ContentType='text/html')
+
+              if requestType == 'Delete':
+                print ('Cleaning out S3 buckets to enable delete... ' )
+                boto3.resource('s3').Bucket(s3Bucket).objects.all().delete()
+                msg = "Bucket cleanup complete"
+
+            except Exception as e:
+              msg = f"Exception raised for function: Exception details: {e}"
+              print(msg)
+              responseData['Reason'] = msg
+              cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              
+            # Unless something blew up, we should wander into this code:
+            print(msg)
+            responseData['Reason'] = msg
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
 
   CleanupCustomResource:
     Type: Custom::cleanup
     Properties:
-      ServiceToken: !GetAtt CleanupCustomResourceLambda.Arn
-      Bucket: !Ref S3
+      ServiceToken: !GetAtt CustomResourceLambda.Arn
+      s3Bucket: !Ref S3
 
 
 Outputs:
   TheURL:
+    Description:  WARNING - There may be a delay until this URL is available
     Value: !Sub https://${CloudFront.DomainName}
-
