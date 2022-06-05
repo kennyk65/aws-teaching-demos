@@ -28,11 +28,11 @@ Resources:
       PolicyDocument: 
         Statement: 
         - Effect: Allow                                                                       #  Allow...
+          Action:                                                                             # ...to perform GetObject on...
+          - s3:GetObject
+          Resource: !Sub arn:aws:s3:::${S3}/*                                                 #  ...any object in this S3 bucket.
           Principal:
             AWS: !Sub arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${OAI}   #  The CloudFront distribution
-          Action:                                                                             # ...to perform GetObject on...
-            - s3:GetObject
-          Resource: !Join [ "", ["arn:aws:s3:::", !Ref S3, "/*" ]]                            #  ...any object in this S3 bucket.
 
   CloudFront:
     Type: AWS::CloudFront::Distribution
@@ -45,10 +45,10 @@ Resources:
         DefaultRootObject: index.html
         Origins:
         - Id: S3Bucket
-          DomainName: !GetAtt S3.DomainName   # Might need to be "WebsiteURL"
+          DomainName: !GetAtt S3.RegionalDomainName   # Must be region specific to avoid redirect behavior when buckets are new
           S3OriginConfig:
             OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OAI}
-        DefaultCacheBehavior:          
+        DefaultCacheBehavior:
           TargetOriginId: S3Bucket
           DefaultTTL: 0   # No caching
           ForwardedValues:
@@ -71,7 +71,7 @@ Resources:
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.7
-      Timeout: 500      
+      Timeout: 15
       Code:
         ZipFile: |
           import boto3, json
@@ -87,7 +87,7 @@ Resources:
             msg = ""
             try:
               if requestType == 'Create' or  requestType == 'Update':
-                boto3.client('s3').put_object(Bucket=s3Bucket,Body='Sample Web Page',Key='index.html',ContentType='text/html')
+                boto3.client('s3').put_object(Bucket=s3Bucket,Body='Hello World',Key='index.html',ContentType='text/html')
 
               if requestType == 'Delete':
                 print ('Cleaning out S3 buckets to enable delete... ' )
@@ -108,6 +108,7 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub ${AWS::StackName}-LambdaRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -128,7 +129,7 @@ Resources:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
-            - s3:ListObjects
+            - s3:List*
             - s3:Put*
             - s3:Delete*
             Resource: 
@@ -144,7 +145,7 @@ Resources:
 
 Outputs:
   TheURL:
-    Description:  WARNING - This website will not be available for up to an hour due to the Origin Access Identity
+    Description:  WARNING - There may be a delay until this URL is available
     Value: !Sub https://${CloudFront.DomainName}
 
   OAICannonical:
