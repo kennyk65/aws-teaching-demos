@@ -295,7 +295,7 @@ Resources:
     Properties: 
       ConfigRuleName: !Ref TheConfigRule
       TargetId: AWS-PublishSNSNotification
-      TargetType: SSM_DOCUMENT
+      TargetType: SSM_DOCUMENT    # Required, and only value allowed
       Automatic: true
       MaximumAutomaticAttempts: 5
       RetryAttemptSeconds: 60
@@ -316,13 +316,15 @@ Resources:
             Value: RESOURCE_ID
 
 
+  # This remediation rule calls the existing AWS-DisablePublicAccessForSecurityGroup
+  # 
   RemediationFixSG:
     Type: AWS::Config::RemediationConfiguration
     Condition:  CreateConfigRuleRemediationFixSGCondition
     Properties: 
       ConfigRuleName: !Ref TheConfigRule
       TargetId: AWS-DisablePublicAccessForSecurityGroup
-      TargetType: SSM_DOCUMENT
+      TargetType: SSM_DOCUMENT    # Required, and only value allowed
       Automatic: true
       MaximumAutomaticAttempts: 5
       RetryAttemptSeconds: 60
