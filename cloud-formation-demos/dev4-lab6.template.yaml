@@ -2,14 +2,14 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: 'Developing on AWS - Lab 6 - Pollynotes'
 
 Parameters:
-  S3PathPrefix:
+  S3Bucket:
     Type: String
-    Description: 'The path prefix where lab resources are stored'
-    Default: 'courses/ILT-TF-200-DODEVA/v4.1.0/lab-7-java'
-  S3ResourceBucket:
+    Description: The S3 Bucket containing the api.zip and web.zip.  
+    Default: kk-courses
+  S3ObjectPrefix:
     Type: String
-    Description: 'S3 Bucket suffix (e.g. us-west-2-tcprod) of where to pull lab resources from'
-    Default: '-tcprod'
+    Description: The S3 object prefix for api.zip and web.zip.  
+    Default: aws-dev-4/demo_code/
   tableName:
     Type: String
     Default: Notes
@@ -289,7 +289,13 @@ Resources:
             AllowedOrigins:
               - '*'
 
-  #Code Repositories
+
+  #  The code originally comes from:
+  #   http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-200-DODEVA/v4.1.0/lab-7-java/scripts/api.zip
+  #   http://us-west-2-tcprod.s3.amazonaws.com/courses/ILT-TF-200-DODEVA/v4.1.0/lab-7-java/scripts/web.zip
+  #  I've switched to S3 contents that I can control.
+
+  # Code Repositories
   apiRepo:
     Type: AWS::CodeCommit::Repository
     Properties:
@@ -297,8 +303,8 @@ Resources:
       RepositoryName: !Sub api-${AWS::StackName}
       Code:
         S3:
-          Bucket: !Sub ${AWS::Region}${S3ResourceBucket}
-          Key: !Sub ${S3PathPrefix}/scripts/api.zip
+          Bucket: !Ref S3Bucket
+          Key: !Sub ${S3ObjectPrefix}api.zip
   webRepo:
     Type: AWS::CodeCommit::Repository
     Properties:
@@ -306,8 +312,8 @@ Resources:
       RepositoryName: !Sub web-${AWS::StackName}
       Code:
         S3:
-          Bucket: !Sub ${AWS::Region}${S3ResourceBucket}
-          Key: !Sub ${S3PathPrefix}/scripts/web.zip
+          Bucket: !Ref S3Bucket
+          Key: !Sub ${S3ObjectPrefix}web.zip
 
 
   # SAM roles
