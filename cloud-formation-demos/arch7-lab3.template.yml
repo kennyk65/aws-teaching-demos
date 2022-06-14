@@ -154,7 +154,7 @@ Resources:
           yum install -y httpd mysql
           amazon-linux-extras install -y php7.2
           # Download Lab files
-          wget https://us-west-2-tcprod.s3.us-west-2.amazonaws.com/courses/ILT-TF-200-ARCHIT/v7.1.0/lab-3-RDS/scripts/inventory-app.zip
+          wget https://us-west-2-tcprod.s3.us-west-2.amazonaws.com/courses/ILT-TF-200-ARCHIT/v7.0.0/lab-4-HA/scripts/inventory-app.zip
           unzip inventory-app.zip -d /var/www/html/
           # Download and install the AWS SDK for PHP
           wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
