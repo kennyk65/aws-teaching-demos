@@ -1,12 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
-# TODO: FINISH.  populate DDB TABLE WITH SOME DATA, cleanup
-# {
-#   "UserId": "newbie",
-#   "NoteId": "2",
-#   "VoiceId": "Joey"
-# }
+# You can use this as Lambda test data:
+# { "UserId": "newbie",  "NoteId": "2",  "VoiceId": "Joey" }
 
 Parameters:
   AppBucketName:
