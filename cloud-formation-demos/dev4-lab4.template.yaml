@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+# TODO: FINISH.  populate DDB TABLE WITH SOME DATA, cleanup
+# {
+#   "UserId": "newbie",
+#   "NoteId": "2",
+#   "VoiceId": "Joey"
+# }
+
+Parameters:
+  AppBucketName:
+    Type: String
+    Description: "REQUIRED: Unique S3 bucket name to use for the app."
+
+Resources:
+
+  AppBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref AppBucketName
+
+  DynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub Notes-${AWS::StackName}   
+      AttributeDefinitions:
+      - AttributeName: UserId
+        AttributeType: S
+      - AttributeName: NoteId
+        AttributeType: N
+      KeySchema:
+      - AttributeName: UserId
+        KeyType: HASH
+      - AttributeName: NoteId
+        KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  dictateLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.9
+      MemorySize: 128
+      Timeout: 60
+      Policies:
+      - S3ReadPolicy:
+          BucketName: !Ref AppBucketName
+      - S3WritePolicy:
+          BucketName: !Ref AppBucketName
+      - DynamoDBReadPolicy:
+          TableName: !Ref DynamoDbTable  
+      - AmazonPollyFullAccess
+      Environment:
+        Variables:
+          MP3_BUCKET_NAME: !Ref AppBucket  
+          TABLE_NAME: !Ref DynamoDbTable
+      Handler: index.lambda_handler
+      InlineCode: |
+        from __future__ import print_function
+        import boto3
+        import os
+        from contextlib import closing
+
+        dynamoDBResource = boto3.resource('dynamodb')
+        pollyClient = boto3.client('polly') 
+        s3Client = boto3.client('s3')
+
+        def lambda_handler(event, context):
+            
+            # Log debug information
+            print(event)
+            
+            # Extract the user parameters from the event and environment
+            UserId = event["UserId"]
+            NoteId = event["NoteId"]
+            VoiceId = event['VoiceId']
+            mp3Bucket = os.environ['MP3_BUCKET_NAME']
+            ddbTable = os.environ['TABLE_NAME']
+            
+            # Get the note text from the database
+            text = getNote(dynamoDBResource, ddbTable, UserId, NoteId)
+            
+            # Save a MP3 file locally with the output from polly
+            filePath = createMP3File(pollyClient, text, VoiceId, NoteId)
+
+            # Host the file on S3 that is accessed by a pre-signed url
+            signedURL = hostFileOnS3(s3Client, filePath, mp3Bucket, UserId, NoteId)
+            
+            return signedURL
+
+        def getNote(dynamoDBResource, ddbTable, UserId, NoteId):
+            print("getNote Function")
+
+            table = dynamoDBResource.Table(ddbTable)
+            records = table.get_item(
+                Key={
+                    'UserId': UserId,
+                    'NoteId': int(NoteId)
+                }
+            )
+          # TODO 1: Get the note text from the pollynotes DynamoDB table that matches the UserId and NoteId
+            return records['Item']['Note']  
+            # End TODO 1
+
+        def createMP3File(pollyClient, text, VoiceId, NoteId):
+            print("createMP3File Function")
+            # TODO 2: Use polly to convert the note text to speech using the VoiceId
+            # and save the file as an MP3 in the /tmp folder
+            pollyResponse = pollyClient.synthesize_speech(
+              OutputFormat='mp3',
+              Text = text,
+              VoiceId = VoiceId
+            )
+          # End TODO 2
+            if "AudioStream" in pollyResponse:
+                postId = str(NoteId)
+                with closing(pollyResponse["AudioStream"]) as stream:
+                    filePath = os.path.join("/tmp/", postId)
+                    with open(filePath, "wb") as file:
+                        file.write(stream.read())
+
+            return filePath
+
+        def hostFileOnS3(s3Client, filePath, mp3Bucket, UserId, NoteId):
+            print("hostFileOnS3 Function")
+            # TODO 3: Upload the mp3 file to S3 mp3Bucket and generate a pre-signed URL to access the MP3 object
+            s3Client.upload_file(filePath, mp3Bucket, UserId+'/'+NoteId+'.mp3')
+            # End TODO 3
+
+            # Remove the file from the temp location to avoid potential data leaks
+            os.remove(filePath)
+
+            # Generate a pre-signed URL to access the MP3 object
+            url = s3Client.generate_presigned_url(
+                ClientMethod='get_object',
+                Params={
+                    'Bucket': mp3Bucket,
+                    'Key': UserId+'/'+NoteId+'.mp3'
+                }
+            )
+
+            return url
+
+  # Custom resource to populate some test data and cleanout bucket when done.
+  customResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub CustomResource-${AWS::StackName}
+      Description: This Lambda function populates some DDB data and cleans out S3 on delete.
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 500      
+      Code:
+        ZipFile: |
+          import boto3, json
+          import cfnresponse
+          
+          def handler(event, context):
+            requestType = event["RequestType"]
+            rp          = event['ResourceProperties']
+            tableName   = rp['tableName']
+            s3Bucket    = rp['s3Bucket']
+            
+            responseData = {}
+            msg = ""
+            try:
+              if requestType == 'Create':
+                table = boto3.resource('dynamodb').Table(tableName)
+                records = table.put_item(Item={'UserId': 'newbie', 'NoteId': 2, 'Note': 'this is my note' } )
+
+              if requestType == 'Delete':
+                print ('Cleaning out S3 buckets to enable delete... ' )
+                boto3.resource('s3').Bucket(s3Bucket).objects.all().delete()
+                msg = "Bucket cleanup complete"
+
+            except Exception as e:
+              msg = f"Exception raised for function: Exception details: {e}"
+              print(msg)
+              responseData['Reason'] = msg
+              cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              
+            # Unless something blew up, we should wander into this code:
+            print(msg)
+            responseData['Reason'] = msg
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
+              
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+            - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub lambdaLogsCreatePolicy-${AWS::StackName}
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - dynamodb:PutItem
+            - s3:List*
+            - s3:Delete*
+            Resource: 
+            - '*'
+                
+  #Custom bucket maintenance function.
+  invokeLambda:
+    Type: Custom::BucketMaintenance
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt customResourceLambda.Arn
+      tableName: !Ref DynamoDbTable
+      s3Bucket: !Ref AppBucket
