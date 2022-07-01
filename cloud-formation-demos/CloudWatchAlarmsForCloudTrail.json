@@ -228,7 +228,7 @@
           "Type": "AWS::Logs::MetricFilter",
           "Properties": {
               "LogGroupName": { "Ref" : "LogGroupName" },
-              "FilterPattern": "{ ($.eventName = ConsoleLogin) && ($.errorMessage = \"Failed authentication\") }",
+              "FilterPattern": "{ ($.eventName = ConsoleLogin) && ($.responseElements.ConsoleLogin = \"Failure\") }",
               "MetricTransformations": [
                   {
                       "MetricNamespace": "CloudTrailMetrics",
