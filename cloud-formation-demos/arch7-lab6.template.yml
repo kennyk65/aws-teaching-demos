@@ -18,7 +18,6 @@ Resources:
       BucketName: !Sub website-${WebsiteSuffix}
 
   # Contents of the bucket are publicly gettable:
-  # TODO: Make CloudFront the only allowed principal.
   BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties: 
@@ -54,7 +53,7 @@ Resources:
             OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OAI}
         DefaultCacheBehavior:
           TargetOriginId: S3Bucket
-          DefaultTTL: 0   # No caching
+          DefaultTTL: 30   # No caching
           ForwardedValues:
             QueryString: true
             Cookies:
