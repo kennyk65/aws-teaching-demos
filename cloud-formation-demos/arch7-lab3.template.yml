@@ -141,8 +141,9 @@ Resources:
       Tags:
       - Key: Name
         Value: App Instance
-      UserData:      #  What to run:
-        Fn::Base64: |
+      UserData:      
+        Fn::Base64: !Sub 
+        - |
           #!/bin/bash
           yum -y update
           # Install and enable AWS Systems Manager Agent
@@ -153,16 +154,16 @@ Resources:
           # Install Apache Web Server and PHP
           yum install -y httpd mysql
           amazon-linux-extras install -y php7.2
-          # Download Lab files
+          # Download Inventory App Lab files
           wget https://us-west-2-tcprod.s3.us-west-2.amazonaws.com/courses/ILT-TF-200-ARCHIT/v7.0.0/lab-4-HA/scripts/inventory-app.zip
           unzip inventory-app.zip -d /var/www/html/
           # Download and install the AWS SDK for PHP
           wget https://github.com/aws/aws-sdk-php/releases/download/3.62.3/aws.zip
-          unzip aws -d /var/www/html
+          unzip -q aws.zip -d /var/www/html
           # Load Amazon Aurora DB connection details from AWS CloudFormation
           un="admin"
           pw="admin123"
-          ep="${labdbinstance.Endpoint.Address}"
+          ep="${DBEndpoint}"
           db="labdatabase"
           #mysql -u $un -p$pw -h $ep $db < /var/www/html/sql/inventory.sql
           # Populate PHP app settings with DB info
@@ -171,8 +172,9 @@ Resources:
           sed -i "s/DBUSERNAME/$un/g" /var/www/html/get-parameters.php
           sed -i "s/DBPASSWORD/$pw/g" /var/www/html/get-parameters.php
           # Turn on web server
-          chkconfig httpd on
-          service httpd start
+          systemctl start httpd.service
+          systemctl enable httpd.service
+        - DBEndpoint: !GetAtt labdbinstance.Endpoint.Address
 
 Outputs:
   DBEndpoint:
