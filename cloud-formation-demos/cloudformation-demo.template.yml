@@ -278,7 +278,7 @@ Resources:
           Fn::Base64: !Sub |
             #!/bin/bash 
             yum -y update
-            amazon-linux-extras install java-openjdk11 -y
+            yum install -y wget java
             wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
             mv *.jar app.jar
             /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
@@ -329,7 +329,7 @@ Resources:
           ScalingAdjustment: 2
 
   # Scale in is a simple policy:
-  SimpleScalingIn: 
+  StepScalingIn: 
     Type: AWS::AutoScaling::ScalingPolicy
     Properties: 
       PolicyType: StepScaling  # Default
@@ -410,25 +410,25 @@ Mappings:
   #  This is the Amazon Linux 2 AMI:
   AmazonLinuxAMI:
     us-east-1:
-      AMI: ami-0b69ea66ff7391e80    # N Virginia
+      AMI: ami-090fa75af13c156b4    # N Virginia
     us-east-2:
-      AMI: ami-00c03f7f7f2ec15c3    # Ohio      
+      AMI: ami-051dfed8f67f095f5    # Ohio      
     us-west-1:
-      AMI: ami-0245d318c6788de52    # N California
+      AMI: ami-0e4d9ed95865f3b40    # N California
     us-west-2:
-      AMI: ami-04b762b4289fba92b    # Oregon
+      AMI: ami-0cea098ed2ac54925    # Oregon
     eu-west-1:
-      AMI: ami-0ce71448843cb18a1    # Ireland
+      AMI: ami-089950bc622d39ed8    # Ireland
     eu-central-1:
-      AMI: ami-0f5dbc86dd9cbf7a8    # Frankfurt
+      AMI: ami-0c956e207f9d113d5    # Frankfurt
     sa-east-1:
-      AMI: ami-0ad7b0031d41ed4b9    # Sao Paulo
+      AMI: ami-0a9e90bd830396d02    # Sao Paulo
     ap-southeast-1:
-      AMI: ami-01da99628f381e50a    # Singaport
+      AMI: ami-0ff89c4ce7de192ea    # Singapore
     ap-southeast-2:
-      AMI: ami-00e17d1165b9dd3ec    # Sydney
+      AMI: ami-0c641f2290e9cd048    # Sydney
     ap-northeast-1:
-      AMI: ami-08847abae18baa040    # Tokyo
+      AMI: ami-0ecb2a61303230c9d    # Tokyo
 
 
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
