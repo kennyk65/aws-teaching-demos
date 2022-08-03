@@ -329,10 +329,10 @@ Resources:
           ScalingAdjustment: 2
 
   # Scale in is a simple policy:
-  StepScalingIn: 
+  SimpleScalingIn: 
     Type: AWS::AutoScaling::ScalingPolicy
     Properties: 
-      PolicyType: StepScaling  # Default
+      PolicyType: SimpleScaling
       AutoScalingGroupName: !Ref AppAutoScalingGroup
       AdjustmentType: ChangeInCapacity    #  Or ExactCapacity, PercentChangeInCapacity
       ScalingAdjustment: -1
@@ -361,7 +361,7 @@ Resources:
     Properties:
       AlarmDescription: Fire alarm when ASG's average CPU < 10 for two 5 minute period.s  Fire scale in policy.
       AlarmActions: 
-        - !Ref StepScalingIn
+        - !Ref SimpleScalingIn
       Statistic: Average
       Namespace: AWS/EC2
       MetricName: CPUUtilization
