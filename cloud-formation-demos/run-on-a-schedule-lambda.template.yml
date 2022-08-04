@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: 'AWS::Serverless-2016-10-31'
 
 # This stack demonstrates how to launch a Lambda on a schedule, such as once per day or once a week.
-# You can use any schedule in the execution rate, containers typically start within seconds.
+# You can use any schedule in the execution rate.  Lambdas typically start within seconds.
 # For demonstration purposes, the work performed by the Lambda is just sending a sample message to the designated phone number.  Change this to do whatever real work you want.
 
 Metadata:
