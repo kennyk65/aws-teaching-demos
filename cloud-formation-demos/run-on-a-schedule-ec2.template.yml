@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: 'AWS::Serverless-2016-10-31'
-Description: A starter AWS Lambda function.
+Description: Run an EC2 Instance on a schedule.
 
 # This stack demonstrates how to launch an EC2 instance on a schedule, such as once per day or once a week.
 # The use-case is offline work that requires more than 15 minutes to run - too long for a Lambda.
