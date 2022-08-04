@@ -25,136 +25,55 @@ Resources:
       SecurityGroups:
         - !Ref InstanceSecurityGroup
       UserData:
-        # This script below is to install AmazonCloudWatchAgent, restart AmazonCloudWatchAgent and tell the result to cloudformation.
+        # This script below is to install AmazonCloudWatchAgent
         Fn::Base64: !Sub |
-           #!/bin/bash
-           # install systems manager:
-           cd /tmp
-           yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-           # Install and start nginx so we have something to monitor
-           amazon-linux-extras install nginx1.12
-           nginx
-           start amazon-ssm-agent
-           rpm -Uvh https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
-           /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets default
-           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+          #!/bin/bash
+          yum -y update
+          yum install -y wget java
+          # Install and run the difficult-to-use cloudwatch agent
+          yum install -y amazon-cloudwatch-agent
+          cd ~
+          cat <<EOF > amazon-cloudwatch-agent.json
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+                      "log_group_name": "${LogGroupName}",
+                      "log_stream_name": "demo-amazon-cloudwatch-agent.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/app/spring-cloud-aws-environment-demo.log",
+                      "log_group_name": "${LogGroupName}",
+                      "log_stream_name": "spring-cloud-aws-environment-demo.log",
+                      "timezone": "UTC"
+                    }
+                  ]
+                }
+              },
+              "log_stream_name": "default-stream",
+              "force_flush_interval" : 15
+            }                  
+          }
+          EOF
+          chmod o=r amazon-cloudwatch-agent.json
+          sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+          # Install spring boot app
+          mkdir /app
+          cd /app
+          wget -q https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          mv *.jar app.jar
+          /opt/aws/bin/cfn-signal -e $? --resource EC2Instance --stack ${AWS::StackId} --region ${AWS::Region}
+          sudo java -jar app.jar --server.port=80 --logging.file.name=spring-cloud-aws-environment-demo.log
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: "PT15M"
-    Metadata:
-      AWS::CloudFormation::Init:
-        configSets:
-          default:
-            - 01_setupCfnHup
-            - 02_config-amazon-cloudwatch-agent
-            - 03_restart_amazon-cloudwatch-agent
-          UpdateEnvironment:
-            - 02_config-amazon-cloudwatch-agent
-            - 03_restart_amazon-cloudwatch-agent
-        # Cfn-hup setting, it is to monitor the change of metadata.
-        # When there is change in the contents of json file in the metadata section, cfn-hup will call cfn-init to restart the AmazonCloudWatchAgent.
-        01_setupCfnHup:
-          files:
-             '/etc/cfn/cfn-hup.conf':
-               content: !Sub |
-                 [main]
-                 stack=${AWS::StackId}
-                 region=${AWS::Region}
-                 interval=1
-               mode: '000400'
-               owner: root
-               group: root
-             '/etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf':
-               content: !Sub |
-                 [cfn-auto-reloader-hook]
-                 triggers=post.update
-                 path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
-                 action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets UpdateEnvironment
-                 runas=root
-               mode: '000400'
-               owner: root
-               group: root
-             "/lib/systemd/system/cfn-hup.service":
-                content: !Sub |
-                  [Unit]
-                  Description=cfn-hup daemon
-                  [Service]
-                  Type=simple
-                  ExecStart=/opt/aws/bin/cfn-hup
-                  Restart=always
-                  [Install]
-                  WantedBy=multi-user.target
-          commands:
-            01enable_cfn_hup:
-              command: !Sub |
-                systemctl enable cfn-hup.service
-            02start_cfn_hup:
-              command: !Sub |
-                systemctl start cfn-hup.service
+        Timeout: "PT5M"
 
-        # Definition of json configuration of AmazonCloudWatchAgent, you can change the configuration below.
-        02_config-amazon-cloudwatch-agent:
-          files:
-            '/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json':
-              content: !Sub |
-                {
-                  "metrics": {
-                    "append_dimensions": {
-                      "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
-                      "ImageId": "${!aws:ImageId}",
-                      "InstanceId": "${!aws:InstanceId}",
-                      "InstanceType": "${!aws:InstanceType}"
-                    },
-                    "metrics_collected": {
-                      "mem": {
-                        "measurement": [
-                          "mem_used_percent"
-                        ]
-                      },
-                      "swap": {
-                        "measurement": [
-                          "swap_used_percent"
-                        ]
-                      }
-                    }
-                  },
-                  "logs": {
-                    "logs_collected": {
-                      "files": {
-                        "collect_list": [
-                          {
-                            "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
-                            "log_group_name": "${LogGroupName}",
-                            "log_stream_name": "demo-amazon-cloudwatch-agent.log",
-                            "timezone": "UTC"
-                          },
-                          {
-                            "file_path": "/var/log/nginx/error.log",
-                            "log_group_name": "${LogGroupName}",
-                            "log_stream_name": "nginx-error.log",
-                            "timezone": "UTC"
-                          },
-                          {
-                            "file_path": "/var/log/nginx/access.log",
-                            "log_group_name": "${LogGroupName}",
-                            "log_stream_name": "nginx-access.log",
-                            "timezone": "UTC"
-                          }
-                        ]
-                      }
-                    },
-                    "log_stream_name": "default-stream",
-                    "force_flush_interval" : 15
-                  }                  
-                }
-        # Invoke amazon-cloudwatch-agent-ctl to restart the AmazonCloudWatchAgent.
-        03_restart_amazon-cloudwatch-agent:
-          commands:
-            01_stop_service:
-              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
-            02_start_service:
-              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
 
   
   # Anything will do.  Can't have an EC2 instance without a SG
