@@ -225,13 +225,13 @@ Resources:
       UserData:      #  This code Installs the "blue" version of our code:
         Fn::Base64: !Sub |
           #!/bin/bash
-          yum update -y
-          yum install java-1.8.0 -y
-          yum remove java-1.7.0-openjdk -y    
+          yum -y update
+          yum install wget java-11-amazon-corretto -y
           java -version     
-          wget https://${S3Bucket}.s3.amazonaws.com/${WARFile}
+          wget -q https://${S3Bucket}.s3.amazonaws.com/${WARFile}
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
           sudo java -jar ${WARFile} --server.port=80        
+
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn: 
@@ -246,11 +246,10 @@ Resources:
       DesiredCapacity: 4
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
-      LoadBalancerNames: 
-      - Ref: AppLoadBalancer
+      TargetGroupARNs:  [ !Ref ALBTargetGroup ]
       Tags:
       - Key: Name
-        Value: WebServer
+        Value: !Sub WebServer-${WARFile}
         PropagateAtLaunch: 'true'
     CreationPolicy:
       ResourceSignal:
@@ -264,31 +263,45 @@ Resources:
         WaitOnResourceSignals: true           # It takes a few minutes to download and install, so don't shift traffic until ready.
         PauseTime: PT5M                       # We'll wait up to 5 minutes for new instances to get ready.
         
-  # LoadBalancer (classic) is actually quite simple, and ASG handles registering instances with it.        
-  AppLoadBalancer:
-    Type: AWS::ElasticLoadBalancing::LoadBalancer
+
+  # An Application Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Listeners:
-      - LoadBalancerPort: '80'
-        InstancePort: '80'
-        Protocol: HTTP
-      SecurityGroups:
-      - Ref: WebServerSecurityGroup
+      Name: ALB
+      Scheme: internet-facing
       Subnets:
       - Ref: PublicSubnet1
       - Ref: PublicSubnet2
-      HealthCheck:
-        Target: HTTP:80/
-        HealthyThreshold: '3'
-        UnhealthyThreshold: '5'
-        Interval: '10'
-        Timeout: '5'
-        
+      SecurityGroups: [!Ref WebServerSecurityGroup ]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # TargetGroup
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: Inventory-App
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:
-  AppAutoScalingGroupName:
-    Description: Name of the Auto Scaling group
-    Value: !Ref AppAutoScalingGroup
+
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !Join ['', ["http://", !GetAtt [AppLoadBalancer, DNSName]]]
+    Value: !Sub http://${ALB.DNSName}
