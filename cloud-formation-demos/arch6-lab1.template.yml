@@ -159,7 +159,6 @@ Resources:
       RetentionInDays: 3
 
 Outputs:
-
     
   WebsiteUrl:
     Description:  Link to the website bucket.
