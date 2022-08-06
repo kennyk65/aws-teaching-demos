@@ -111,7 +111,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Join ['', [!Ref 'AWS::StackName', -ecs-demo-app]]  # Used to group multiple versions of a task definition together.
+      Family: !Sub ${AWS::StackName}-ecs-demo-app  # Used to group multiple versions of a task definition together.
       ContainerDefinitions:
 
         # We want to run a little HTTP server named "simple-app".  

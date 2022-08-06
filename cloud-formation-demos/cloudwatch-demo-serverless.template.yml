@@ -54,7 +54,7 @@ Resources:
   RoleBoredomLambda:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-RoleBoredomLambda" ]]
+      RoleName: !Sub ${AWS::StackName}-RoleBoredomLambda
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -68,7 +68,7 @@ Resources:
   PolicyBoredomLambda:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-BoredomLambdaPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-BoredomLambdaPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 

@@ -34,7 +34,7 @@ Resources:
   BeanstalkServiceRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkServiceRole" ]]  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole" ]]  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -71,7 +71,7 @@ Resources:
   BeanstalkAppRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BeanstalkAppRole" ]]  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkAppRole  
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 

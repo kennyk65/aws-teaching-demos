@@ -103,7 +103,7 @@ Resources:
   LambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CsvToDynamoRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CsvToDynamoRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement: 
@@ -117,7 +117,7 @@ Resources:
   LambdaFunctionPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-CsvToDynamoPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-CsvToDynamoPolicy
       PolicyDocument: 
         Version: "2012-10-17"
         Statement: 

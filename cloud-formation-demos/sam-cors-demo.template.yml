@@ -60,7 +60,7 @@ Resources:
   MyLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: !Join ['', [!Ref 'AWS::StackName', '-HelloWorldLambda' ]] 
+      FunctionName: !Sub ${AWS::StackName}-HelloWorldLambda 
       Description: Example Lambda from CloudFormation
       MemorySize: 128
       Timeout: 4
@@ -85,7 +85,7 @@ Resources:
   LambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-BasicLambdaRole" ]]
+      RoleName: !Sub ${AWS::StackName}-BasicLambdaRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -99,7 +99,7 @@ Resources:
   LambdaFunctionPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-LambdaFunctionPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 

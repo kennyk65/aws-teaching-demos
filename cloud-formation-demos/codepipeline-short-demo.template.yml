@@ -133,7 +133,7 @@ Resources:
   S3:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join [ "", [!Ref CodePipelineBucketPrefix, !Ref "AWS::Region", "-", !Ref "AWS::AccountId"]]
+      BucketName: !Sub ${CodePipelineBucketPrefix}${AWS::Region}-${AWS::AccountId}
 
   # The CodeBuild project that will be referenced in the CodePipeline below.
   # Fortunately, its configuration is quite small because it is part of a larger

@@ -130,7 +130,7 @@ Resources:
   RoleSlotMachineLambda:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-SlotMachineLambdaRole" ]]
+      RoleName: !Sub ${AWS::StackName}-SlotMachineLambdaRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -144,7 +144,7 @@ Resources:
   PolicySlotMachineLambda:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-SlotMachineLambdaPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-SlotMachineLambdaPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 

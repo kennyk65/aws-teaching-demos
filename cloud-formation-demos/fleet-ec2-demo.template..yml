@@ -34,7 +34,7 @@ Resources:
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ['', [!Ref 'AWS::StackName', "-EcsSecurityGroup" ]]
+      GroupName: !Sub ${AWS::StackName}-EcsSecurityGroup
       GroupDescription: ECS Security Group
       VpcId: !Ref VpcId
 
@@ -52,7 +52,7 @@ Resources:
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Join ['', [!Ref 'AWS::StackName', "-ECSLogGroup" ]]
+      LogGroupName: !Sub ${AWS::StackName}-ECSLogGroup
       RetentionInDays: 3
 
   EC2Fleet:
