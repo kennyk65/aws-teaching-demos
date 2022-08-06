@@ -12,6 +12,7 @@ Metadata:
           - VPC
           - PublicSubnet
           - AmazonLinuxAMI
+          - LogGroupSuffix
 
 Parameters:
   VPC:
@@ -22,17 +23,22 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Select a public subnet in your selected VPC.  The web server will run here.
 
+  LogGroupSuffix:
+    Description: The suffix of the CloudWatch log group to be logged to (prefix is the stack name).
+    Type: String
+    Default: SystemD-Demo
+
 Mappings:
-  #  This is just the Ubuntu AMI.  These values change every few months:  
+  #  This is the Ubuntu 20.04 AMI as of 8/5/22.  These values change every few months:  
   UbuntuAMI:
     us-east-1: 
-      AMI: ami-04b9e92b5572fa0d1    # Virginia
+      AMI: ami-08d4ac5b634553e16    # Virginia
     us-east-2:
-      AMI: ami-0d5d9d301c853a04a    # Ohio
+      AMI: ami-0960ab670c8bb45f3    # Ohio
     us-west-1:
-      AMI: ami-0dd655843c87b6930    # N California
+      AMI: ami-01154c8b2e9a14885    # N California
     us-west-2:
-      AMI: ami-06d51e91cea0dac8d    # Oregon
+      AMI: ami-0ddf424f81ddb0720    # Oregon
     ap-south-1:
       AMI: ami-xxxxxxxxxxxxxxxxx    # Mumbai
     ap-northeast-2:
@@ -79,6 +85,7 @@ Resources:
     Properties:
       ImageId: !FindInMap [ UbuntuAMI, !Ref "AWS::Region", AMI]  # We lookup AMI in the region map
       InstanceType: t2.micro                      # Any instance type will do
+      IamInstanceProfile: !Ref EC2InstanceProfile # Permissions
       NetworkInterfaces:
       - DeviceIndex: 0
         AssociatePublicIpAddress: true            # We will need a public IP address
@@ -88,22 +95,56 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           # Update the OS and get Java
+          # These lines will work on Ubuntu, will simply fail on other distros:
           apt-get update && sudo apt-get upgrade -y
-          apt-get install openjdk-8-jdk wget python-setuptools -y
-          # Install cloudformation helper scripts (like cfn-signal):
-          # TODO: THIS DOESNT SEEM TO BE WORKING
-          mkdir -p /opt/aws/bin
-          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
-          easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
+          apt-get install openjdk-8-jdk wget -y
+          # These lines will work on Amazon Linux and RHEL, will simply fail on Ubuntu:
+          yum -y update
+          yum install wget java-1.8.0 -y
+
+          # Install and run the cloudwatch agent
+          cd ~
+          wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+          dpkg -i -E ./amazon-cloudwatch-agent.deb     
+          cat <<EOF > amazon-cloudwatch-agent.json
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "CloudWatch-Agent",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/spring-cloud-aws-environment-demo.log",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "Spring-Boot-App",
+                      "timezone": "UTC"
+                    }
+                  ]
+                }
+              },
+              "log_stream_name": "default-stream",
+              "force_flush_interval" : 15
+            }                  
+          }
+          EOF
+          chmod o=r amazon-cloudwatch-agent.json
+          sudo mv *.json /opt/aws/amazon-cloudwatch-agent/etc/
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
           # Download Java/Spring app:
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.war
-          mv spring-cloud-aws-environment-demo-1.war  app.war
-          chmod +x app.war
-          # Move app to var folders:
+          wget -q https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          mv *.jar app.jar
+          chmod +x app.jar
           mkdir /var/app
-          mv app.war /var/app
+          mv app.jar /var/app
+          
           # Run app as service by creating app.service file:
-          cat > app.service <<EOF
+          cat > spring-boot-app.service <<EOF
           [Unit]
           Description=Spring Boot Demo
           
@@ -113,24 +154,62 @@ Resources:
           TimeoutStopSec=10
           Restart=on-failure
           RestartSec=5
-          ExecStart=/usr/bin/java -jar /var/app/app.war --server.port=80
-          
+          ExecStart=/bin/sh -c "/usr/bin/java -jar /var/app/app.jar --server.port=80 >> /var/log/spring-cloud-aws-environment-demo.log"
+          KillMode=control-group
+
           [Install]
           WantedBy=multi-user.target
           EOF
-          mv app.service /etc/systemd/system/
+          mv spring-boot-app.service /etc/systemd/system/
+
           # Run Java Spring app as service:
           systemctl daemon-reload
-          systemctl enable app.service
-          systemctl start app
-          /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
-    CreationPolicy:
-      ResourceSignal:
-        Count: 1
-        Timeout: PT5M
-        
+          systemctl enable spring-boot-app.service
+          systemctl start spring-boot-app
+
+  # Attach EC2Role's permissions to each EC2 Instance.
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref InstanceRole]
+
+  # EC2 instance will need to talk to SSM to read parameters:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-EC2-SSM-Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM  # Permissions for SSM Agent (session manager and such)
+      - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy       # Permissions for CloudWatch Logs Agent
+
+  # Explicit declaration of the LogGroup allows us to control its retention:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain  # Keep the logs around if the stack fails 
+    Properties:
+      LogGroupName: !Sub ${AWS::StackName}-${LogGroupSuffix}
+      RetentionInDays: 3
+
 # Finally, what we should see when we are all done.  IP address of our website:
 Outputs:
   WebServerIpAddress:
     Description: IP Address of the web server
     Value: !Sub http://${WebServer.PublicIp}
+
+  SessionManagerLink:
+    Description: Access instance via web browser
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${WebServer}?region=${AWS::Region}#  
+
+  LogGroup:
+    Description: Console access to CloudWatch Logs
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
