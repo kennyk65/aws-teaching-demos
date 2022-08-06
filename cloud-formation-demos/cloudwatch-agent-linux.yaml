@@ -115,7 +115,7 @@ Resources:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Retain  # Keep the logs around if the stack fails 
     Properties:
-      LogGroupName: !Ref LogGroupName
+      LogGroupName: !Sub ${AWS::StackName}-${LogGroupName}
       RetentionInDays: 3
 
 
@@ -127,7 +127,7 @@ Outputs:
 
   CloudWatchLogsConsole:
     Description:  Link to the CloudWatch Logs console for your log group
-    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${LogGroupName}
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
 
   SessionManagerLink:
     Description: Access instance via web browser
