@@ -203,11 +203,11 @@ Resources:
 Outputs:
   DnsName:
     Description: web server
-    Value: !Join ['', ["http://", !GetAtt  WebServer.PublicDnsName ]]
+    Value: !Sub http://${WebServer.PublicDnsName}
 
   IPAddress:
     Description: IP Address of web server
-    Value: !Join ['', ["http://", !GetAtt  WebServer.PublicIp ]]
+    Value: !Sub http://${WebServer.PublicIp}
 
 
 

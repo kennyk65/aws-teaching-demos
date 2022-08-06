@@ -181,7 +181,7 @@ Resources:
 
 Outputs:
   ProductionURL:
-    Value: !Join ['', ["http://", !GetAtt BlueEnvironment.EndpointURL ]] 
+    Value: !Sub http://${BlueEnvironment.EndpointURL} 
 
   StagingURL:
-    Value: !Join ['', ["http://", !GetAtt GreenEnvironment.EndpointURL ]] 
+    Value: !Sub http://${GreenEnvironment.EndpointURL} 

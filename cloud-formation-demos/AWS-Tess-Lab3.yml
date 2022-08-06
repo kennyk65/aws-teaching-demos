@@ -164,4 +164,4 @@ Resources:
 Outputs:
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !Join ['', ["http://", !GetAtt ALB.DNSName ]]
+    Value: !Sub http://${ALB.DNSName}

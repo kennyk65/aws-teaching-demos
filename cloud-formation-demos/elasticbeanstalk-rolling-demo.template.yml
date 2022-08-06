@@ -178,4 +178,4 @@ Resources:
 
 Outputs:
   ProductionURL:
-    Value: !Join ['', ["http://", !GetAtt EBEnvironment.EndpointURL ]] 
+    Value: !Sub http://${EBEnvironment.EndpointURL} 

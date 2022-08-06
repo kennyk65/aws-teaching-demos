@@ -202,4 +202,4 @@ Mappings:
 Outputs:
   EC2InstancePublicIP:
     Description: The IP address for EC2 instance.
-    Value: !Join ['', ["http://", !GetAtt WebServer.PublicIp ]]
+    Value: !Sub http://${WebServer.PublicIp}

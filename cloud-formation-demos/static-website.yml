@@ -128,7 +128,7 @@ Outputs:
 
   DnsName:
     Description: Website
-    Value: !Join ['', ["https://", !Ref HostedZoneName ]]
+    Value: !Sub https://${HostedZoneName}
 
   Route53:
     Description:  Just a shortcut to the Route53 Console.

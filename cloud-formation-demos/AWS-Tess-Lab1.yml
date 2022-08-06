@@ -197,7 +197,7 @@ Resources:
 Outputs:
   IPAddress:
     Description: IP Address of web server
-    Value: !Join ['', ["http://", !GetAtt  WebInstance.PublicIp ]]
+    Value: !Sub http://${WebInstance.PublicIp}
 
   VPC:
     Description: VPC of the base network
