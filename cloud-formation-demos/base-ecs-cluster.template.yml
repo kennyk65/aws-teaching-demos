@@ -257,6 +257,7 @@ Resources:
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain  # Keep the logs around if the stack fails 
     Properties:
       LogGroupName: !Sub ${AWS::StackName}-ECSLogGroup
       RetentionInDays: 3
@@ -266,4 +267,10 @@ Outputs:
   ecscluster:
     Value: !Ref ECSCluster
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", ECSCluster ] ]
+      Name: !Sub ${AWS::StackName}:ECSCluster
+
+  CloudWatchLogsConsole:
+    Description:  Link to the CloudWatch Logs console for your log group
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
+
+
