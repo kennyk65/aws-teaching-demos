@@ -309,3 +309,7 @@ Outputs:
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", EC2InstanceProfile ] ]
 
+  PublicInstanceSessionManagerLink:
+    Description: Access instance via web browser
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${PublicInstance}?region=${AWS::Region}#  
+
