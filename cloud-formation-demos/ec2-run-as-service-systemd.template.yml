@@ -13,6 +13,7 @@ Metadata:
           - VPC
           - PublicSubnet
           - AmazonLinuxAMI
+          - LogGroupSuffix
 
 Parameters:
   VPC:
@@ -69,7 +70,7 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-WebServer    
-      UserData:      #  This code installs a demo Java/Spring app as a systemd service.  Then it signals completion:
+      UserData:      #  This code installs the CloudWatch agent plus a demo Java/Spring app as a systemd service.
         Fn::Base64: !Sub |
           #!/bin/bash
           # Update the OS and get Java
