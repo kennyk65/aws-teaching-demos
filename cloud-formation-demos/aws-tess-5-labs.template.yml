@@ -423,7 +423,7 @@ Resources:
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 5
 
-  # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance.
+  # Attach permissions to each EC2 Instance.
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
