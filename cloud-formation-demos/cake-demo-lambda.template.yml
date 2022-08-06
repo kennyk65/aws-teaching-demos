@@ -144,6 +144,7 @@ Resources:
   # Explicitly declaring the log group makes it easier to delete.
   lambdaLogGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain  # Keep the logs around if the stack fails 
     Properties:
       LogGroupName: !Sub /aws/lambda/${CakeLambda}
       RetentionInDays: 3
