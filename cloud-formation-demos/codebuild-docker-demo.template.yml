@@ -146,12 +146,13 @@ Resources:
   # but they are easier to cleanup when they are part of the stack.  
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain  # Keep the logs around if the stack fails 
     Properties:
       LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-CodeBuildDemo
-      RetentionInDays: 3
+      RetentionInDays: 1
 
 Outputs:
-  CodeBuild:
-    Value: !Ref MyBuild
-  IamRole:
-    Value: !Ref CodeBuildRole  
+  CloudWatchLogsConsole:
+    Description:  Link to the CloudWatch Logs console for your log group
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
+
