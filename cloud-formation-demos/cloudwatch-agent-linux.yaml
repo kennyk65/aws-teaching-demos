@@ -128,3 +128,8 @@ Outputs:
   CloudWatchLogsConsole:
     Description:  Link to the CloudWatch Logs console for your log group
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${LogGroupName}
+
+  SessionManagerLink:
+    Description: Access instance via web browser
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${EC2Instance}?region=${AWS::Region}#  
+
