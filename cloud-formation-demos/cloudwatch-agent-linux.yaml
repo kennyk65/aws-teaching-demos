@@ -113,6 +113,7 @@ Resources:
   # Explicit declaration of the LogGroup allows us to control its retention:
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain  # Keep the logs around if the stack fails 
     Properties:
       LogGroupName: !Ref LogGroupName
       RetentionInDays: 3
