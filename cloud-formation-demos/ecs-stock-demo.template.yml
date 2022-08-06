@@ -91,7 +91,7 @@ Resources:
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Join ['', ["DemoCluster-", !Ref 'AWS::StackName']]
+      ClusterName: !Sub DemoCluster-${AWS::StackName}
 
   # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers.
   ECSService:
@@ -190,7 +190,7 @@ Resources:
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Join ['-', [ECSLogGroup, !Ref 'AWS::StackName']]
+      LogGroupName: !Sub ECSLogGroup-${AWS::StackName}
       RetentionInDays: 14
 
 
@@ -310,7 +310,7 @@ Resources:
     Properties:
       MinCapacity: 1
       MaxCapacity: 2
-      ResourceId: !Join ['', [service/, !Ref 'ECSCluster', /, !GetAtt [ECSService, Name]]]
+      ResourceId: !Sub service/${ECSCluster}/${ECSService.Name}
       RoleARN: !GetAtt [AutoscalingRole, Arn]
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
@@ -370,7 +370,7 @@ Outputs:
     Value: !Ref ECSCluster
   ECSALB:
     Description: Your ALB DNS URL
-    Value: !Join ['', [!GetAtt [ALB, DNSName]]]
+    Value: !Sub ${ALB.DNSName}
   taskdef:
     Value: !Ref TaskDefinition
 

@@ -135,4 +135,4 @@ Resources:
 Outputs:
   S3ConsoleBucket:
     Description: The S3 bucket via the console
-    Value: !Join ['', ["https://s3.console.aws.amazon.com/s3/buckets/", !Ref  TheBucketName ]]
+    Value: !Sub https://s3.console.aws.amazon.com/s3/buckets/${TheBucketName}

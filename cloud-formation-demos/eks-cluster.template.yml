@@ -259,7 +259,7 @@ Outputs:
 
   EKSClusterConsole:
     Description: AWS management console screen where you can look at your cluster
-    Value: !Join ['', ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/eks/home?region=", !Ref "AWS::Region", "#/clusters/", !Ref Cluster ]]
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/eks/home?region=${AWS::Region}#/clusters/${Cluster}
 
   ClusterName:
     Description: Name of the EKS Cluster

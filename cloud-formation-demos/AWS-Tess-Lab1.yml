@@ -203,36 +203,36 @@ Outputs:
     Description: VPC of the base network
     Value: !Ref VPC
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", VPC ] ]
+      Name: !Sub ${AWS::StackName}:VPC
 
   PublicSubnet1:
     Description: First Public Subnet
     Value: !Ref PublicSubnet1
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnet1 ] ]
+      Name: !Sub ${AWS::StackName}:PublicSubnet1 
 
   PublicSubnet2:
     Description: Second Public Subnet
     Value: !Ref PublicSubnet2
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PublicSubnet2 ] ]
+      Name: !Sub ${AWS::StackName}:PublicSubnet2 
 
   PrivateSubnet1:
     Description: First Private Subnet
     Value: !Ref PrivateSubnet1
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnet1 ] ]
+      Name: !Sub ${AWS::StackName}:PrivateSubnet1 
 
   PrivateSubnet2:
     Description: Second Private Subnet
     Value: !Ref PrivateSubnet2
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", PrivateSubnet2 ] ]
+      Name: !Sub ${AWS::StackName}:PrivateSubnet2 
 
   WebSecurityGroup:
     Description: Id of the Web Security group.
     Value: !Ref WebSecurityGroup
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", WebSecurityGroup ] ]
+      Name: !Sub ${AWS::StackName}:WebSecurityGroup 
 
 
