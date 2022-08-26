@@ -1,7 +1,9 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 # Stand up an ECS and run a container on it.  Front it with an ALB.
-# You will need an existing VPC with at least 2 subnets in two different AZs.  If you use private subnets be sure NATting is enabled.
+# You will need an existing VPC with at least 2 subnets in two different AZs.  
+# If you use private subnets be sure NATting is enabled.
+# You can run the demo container on Fargate or EC2, different resources created in each case.
 
 Metadata: 
   AWS::CloudFormation::Interface: 
@@ -20,7 +22,7 @@ Metadata:
       - Label: 
           default: ECS Cluster
         Parameters: 
-        - ClusterType
+        - DeployType
         - MaxSize
         - DesiredCapacity
         - ContainerInsights
@@ -38,8 +40,8 @@ Parameters:
     Default: 80
     Description: The port that the Docker container will listen on.  For example nginx would listen on port 80, mysql would expect 3306, etc.
     
-  ClusterType:
-    Description:  Do you want to deploy to a standard ECS cluster or Fargate cluster?  Fargate is easier, but more expensive - takes a lot more CPU and memory.
+  DeployType:
+    Description:  Do you want to deploy your container/task on EC2 or Fargate?  Fargate is easier, but more expensive - takes a lot more CPU and memory.
     Type: String
     Default: Fargate
     AllowedValues:
@@ -83,8 +85,8 @@ Parameters:
 
 Conditions:
   UseContainerInsights: !Equals [ !Ref ContainerInsights, enabled ]
-  DeployToFargate:     !Equals [ !Ref ClusterType, Fargate ]
-  DeployToEc2:  !Not [ !Equals [ !Ref ClusterType, Fargate ] ]
+  DeployToFargate:     !Equals [ !Ref DeployType, Fargate ]
+  DeployToEc2:  !Not [ !Equals [ !Ref DeployType, Fargate ] ]
 
 Resources:
 
