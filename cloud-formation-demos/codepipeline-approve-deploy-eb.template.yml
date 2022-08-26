@@ -25,7 +25,7 @@ Parameters:
   GitHubOAuthToken:
     Type: String
     Default: hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
-    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Or put a 'g' in front of this one. 
 
   OutputS3BucketAndPrefix:
     Description: Existing S3 Bucket (and optional folder/prefix) where you want to place output artifacts
@@ -255,6 +255,12 @@ Resources:
               build:
                 commands:
                   - mvn test
+            reports:
+              # Capture the JUnit report
+              mvn-test-reports:
+                files:
+                - "target/surefire-reports/*.xml"
+                file-format: "JUNITXML"      
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -335,8 +341,10 @@ Resources:
                 Provider: Manual        
                 Version: 1                  
               Configuration:
-                NotificationArn: !Ref SnsTopic  
                 CustomData: Approval or Reject this change
+                NotificationArn: !Ref SnsTopic  
+                # TODO: Publish a link back to the CodeBuildved from the test phase.  Something like this:
+                # ExternalEntityLink: !Sub https://us-west-2.console.aws.amazon.com/codesuite/codebuild/011673140073/testReports/reports/testreport-CodeBuildDemo-mvn-test-reports/testreport-CodeBuildDemo-mvn-test-reports%3A55a31b92-1db0-44f9-bc69-e2f30720f718?region=us-west-2&test-reports-meta=eyJmIjp7InRleHQiOiIifSwicyI6eyJkaXJlY3Rpb24iOjEsInByb3BlcnR5Ijoic3RhdHVzIn0sIm4iOjIwLCJpIjowfQ
 
         # Stage 4:  Deploy on ElasticBeanstalk:
         - Name: Deploy
