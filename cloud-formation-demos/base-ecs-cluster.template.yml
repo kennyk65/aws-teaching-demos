@@ -178,7 +178,7 @@ Resources:
         PropagateAtLaunch: true
     CreationPolicy:
       ResourceSignal:
-        Timeout: PT10M     
+        Timeout: PT5M     
     UpdatePolicy:
       AutoScalingReplacingUpdate:
         WillReplace: true
@@ -192,8 +192,9 @@ Resources:
       InstanceType: !Ref InstanceType 
       IamInstanceProfile: !Ref EC2InstanceProfile
       UserData:
+      UserData:  
         Fn::Base64: !Sub |
-          #!/bin/bash -xe
+          #!/bin/bash
           yum update -y
           yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
 
@@ -203,7 +204,7 @@ Resources:
 
           # Critical: this ecs.config file must know the name of the cluster to connect to.
           # This is the only actual setup required (besides the pre-installed software)
-          echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+          echo "ECS_CLUSTER=${ECSCluster}" >> /etc/ecs/ecs.config        
           
           # Believe it or not, you must configure the CloudWatch agent yourself.
           cd ~
@@ -261,8 +262,7 @@ Resources:
           sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
           /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
-          # Signal CloudFormation we are complete:
-          /opt/aws/bin/cfn-signal --resource ECSAutoScalingGroup --stack ${AWS::StackName} --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup 
 
 
   # This LogsGroup will be useful when several containers emit output:
