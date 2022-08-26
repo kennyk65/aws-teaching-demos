@@ -34,6 +34,11 @@ Parameters:
     # Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-ebs
     Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
+  LogGroupName:
+    Description: The name of the CloudWatch log group that you want the CloudWatch agent to log to.
+    Type: String
+    Default: CodeDeployDemo
+
 Metadata: 
   AWS::CloudFormation::Interface: 
     ParameterGroups: 
@@ -44,6 +49,7 @@ Metadata:
           - Subnets
           - InstancesKeyName
           - DesiredCapacity
+          - LogGroupName
           - AmazonLinuxAMI
 
 
