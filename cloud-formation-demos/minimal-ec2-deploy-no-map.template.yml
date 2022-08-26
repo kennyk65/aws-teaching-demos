@@ -36,7 +36,7 @@ Parameters:
 
 Resources:
 
-  # Security Group for the web server.  Allow HTTP and SSH from anywhere:
+  # Security Group for the web server.  Allow HTTP from anywhere:
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -50,10 +50,7 @@ Resources:
         FromPort: 80
         ToPort: 80
         CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: 0.0.0.0/0
+
 
   # web server:
   WebServer:
