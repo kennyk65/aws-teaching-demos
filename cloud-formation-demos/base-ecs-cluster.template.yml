@@ -51,7 +51,6 @@ Parameters:
   ECSAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
-  #  Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI for ECS using the Parameter Store...
 
 
@@ -182,7 +181,6 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       ImageId: !Ref ECSAMI
-      # ImageId: !FindInMap [AmazonLinuxAMI, !Ref 'AWS::Region', AMI]
       SecurityGroups: [!Ref EcsSecurityGroup]
       InstanceType: !Ref InstanceType 
       IamInstanceProfile: !Ref EC2InstanceProfile
