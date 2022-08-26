@@ -111,13 +111,22 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub ${AWS::StackName}-ECSInstanceRole
-      ManagedPolicyArns: [ "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role" ]
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
           Action: sts:AssumeRole
           Principal:
             Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role  # Includes CloudWatch Logs
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM  # Permissions for SSM Agent (session manager and such)
+
+  # Attach EC2Role's permissions to each ECS Instance.
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref ECSInstanceRole]
 
   # Security Group for the ECS instances.  
   EcsSecurityGroup:
@@ -185,12 +194,17 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
+          yum update -y
+          yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
+
+          # Apparently, SSM agent is either not installed or not started when using the ECS AMIs:          
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          start amazon-ssm-agent
+
           # Critical: this ecs.config file must know the name of the cluster to connect to.
           # This is the only actual setup required (besides the pre-installed software)
           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-          yum update -y
-          # These appear to be installed already
-          yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
+          
           # Believe it or not, you must configure the CloudWatch agent yourself.
           cd ~
           cat <<EOF > amazon-cloudwatch-agent.json
@@ -250,13 +264,6 @@ Resources:
           # Signal CloudFormation we are complete:
           /opt/aws/bin/cfn-signal --resource ECSAutoScalingGroup --stack ${AWS::StackName} --region ${AWS::Region}
 
-
-  # Attach EC2Role's permissions to each ECS Instance.
-  EC2InstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Path: /
-      Roles: [!Ref ECSInstanceRole]
 
   # This LogsGroup will be useful when several containers emit output:
   CloudwatchLogsGroup:
