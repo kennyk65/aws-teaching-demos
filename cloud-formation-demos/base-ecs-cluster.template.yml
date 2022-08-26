@@ -21,7 +21,7 @@ Parameters:
   
   MaxSize:
     Type: String
-    Default: 1
+    Default: 4
     Description: Maximum number of ECS instances.
 
   DesiredCapacity:
@@ -119,15 +119,7 @@ Resources:
           Principal:
             Service: ec2.amazonaws.com
 
-
-  # Now, an ECS Cluster to deploy to:
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Sub ${AWS::StackName}-ECSCluster    # Something you can recognize in the console, but unique.
-
-
-  # Security Group for the ECS instances.  Allow inbound ports for the ELB to use:
+  # Security Group for the ECS instances.  
   EcsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -135,7 +127,7 @@ Resources:
       GroupDescription: ECS Security Group
       VpcId: !Ref VpcId
 
-  #  Inbound rules for HTTP on 80.  31000 - 61000 is for dynamic port assignment in ECS:
+  # Allow free intercommunication between instances and incoming traffic on 80:
   EcsSecurityGroupHTTPinbound:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -143,7 +135,7 @@ Resources:
       IpProtocol: tcp
       FromPort: 80
       ToPort: 80
-      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
+      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a other demos I restrict source traffic to the load balancer.
   EcsSecurityGroupALBports:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -151,7 +143,13 @@ Resources:
       IpProtocol: tcp
       FromPort: 31000
       ToPort: 61000
-      CidrIp: 0.0.0.0/0     # This is pretty wide open.  In a real cluster I might restrict the source to a known SG used by the LB
+      SourceSecurityGroupId: !Ref EcsSecurityGroup   # Self-reference - The cluster instances can freely intercommunicate with each other.
+
+  # Now, an ECS Cluster to deploy to:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AWS::StackName}-ECSCluster    # Something you can recognize in the console, but unique.
 
   # Auto-Scaling Group for the cluser:
   ECSAutoScalingGroup:
@@ -192,55 +190,63 @@ Resources:
           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
           yum update -y
           # These appear to be installed already
-          yum install -y aws-cfn-bootstrap awslogs 
-          
-          # Believe it or not, you have to configure CloudWatch Logs yourself:
-          # Inject the CloudWatch Logs configuration file contents
-          cat > /etc/awslogs/awslogs.conf <<EOF
-          [general]
-          state_file = /var/lib/awslogs/agent-state        
-
-          [/var/log/dmesg]
-          file = /var/log/dmesg
-          log_group_name = {cluster}/var/log/dmesg
-          log_stream_name = {cluster}
-
-          [/var/log/messages]
-          file = /var/log/messages
-          log_group_name = {cluster}/var/log/messages
-          log_stream_name = {cluster}
-          datetime_format = %b %d %H:%M:%S
-
-          [/var/log/docker]
-          file = /var/log/docker
-          log_group_name = {cluster}/var/log/docker
-          log_stream_name = {cluster}
-          datetime_format = %Y-%m-%dT%H:%M:%S.%f
-
-          [/var/log/ecs/ecs-init.log]
-          file = /var/log/ecs/ecs-init.log
-          log_group_name = {cluster}/var/log/ecs/ecs-init.log
-          log_stream_name = {cluster}
-          datetime_format = %Y-%m-%dT%H:%M:%SZ
-
-          [/var/log/ecs/ecs-agent.log]
-          file = /var/log/ecs/ecs-agent.log.*
-          log_group_name = {cluster}/var/log/ecs/ecs-agent.log
-          log_stream_name = {cluster}
-          datetime_format = %Y-%m-%dT%H:%M:%SZ
-
-          [/var/log/ecs/audit.log]
-          file = /var/log/ecs/audit.log.*
-          log_group_name = {cluster}/var/log/ecs/audit.log
-          log_stream_name = {cluster}
-          datetime_format = %Y-%m-%dT%H:%M:%SZ
+          yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
+          # Believe it or not, you must configure the CloudWatch agent yourself.
+          cd ~
+          cat <<EOF > amazon-cloudwatch-agent.json
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/var/log/dmesg",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/dmesg",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/messages",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/messages",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/docker",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/docker",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/ecs-agent.log.*",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/ecs-agent.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/audit.log.*",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/audit.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/ecs-init.log",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/ecs-init.log",
+                      "timezone": "UTC"
+                    }
+                  ]
+                }
+              },
+              "log_stream_name": "default-stream",
+              "force_flush_interval" : 15
+            }                  
+          }
           EOF
-          # Replace 
-          sed -i -e "s/{cluster}/${ECSCluster}/g" /etc/awslogs/awslogs.conf
-          # Start CloudWatch logs service:
-          systemctl start awslogsd
-          # Make sure CloudWatch logs starts on restart:
-          systemctl enable awslogsd.service
+          chmod o=r amazon-cloudwatch-agent.json
+          sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
           # Signal CloudFormation we are complete:
           /opt/aws/bin/cfn-signal --resource ECSAutoScalingGroup --stack ${AWS::StackName} --region ${AWS::Region}
 
