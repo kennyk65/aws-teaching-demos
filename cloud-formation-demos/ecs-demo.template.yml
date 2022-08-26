@@ -178,8 +178,8 @@ Resources:
           Principal:
             Service: ec2.amazonaws.com
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
       - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM  # Permissions for SSM Agent (session manager and such)
 
   # Attach EC2Role's permissions to each ECS Instance.
   EC2InstanceProfile:
@@ -189,21 +189,45 @@ Resources:
       Path: /
       Roles: [!Ref EC2Role]
 
+  # Security Group for the load balancer.  Allow HTTP from anywhere:
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for load balancer server
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: ALBSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
   # Security Group for the ECS instances.  Allow inbound ports for the ELB to use:
   EcsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: ECS Security Group
       VpcId: !Ref VpcId
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 31000
-        ToPort: 61000
-        CidrIp: 0.0.0.0/0
+
+  # Allow free intercommunication between cluster instances.  Allow any incoming traffic but only from the load balancer:
+  EcsSecurityGroupALBinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EcsSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80        # Fargate may use 80 as a host port since it doesn't worry about port conflicts.  EC2 would use 31000 - 61000 because it does.
+      ToPort: 61000
+      SourceSecurityGroupId: !Ref ALBSecurityGroup   # Only any traffic as long as it is coming from the load balancer.
+  EcsSecurityGroupIntercommunication:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EcsSecurityGroup
+      IpProtocol: tcp
+      FromPort: 31000
+      ToPort: 61000
+      SourceSecurityGroupId: !Ref EcsSecurityGroup   # Self-reference - The cluster instances can freely intercommunicate with each other.
 
   # Now, an ECS Cluster to deploy to.  The cluster nodes are defined below in the AutoScaling group:
   ECSCluster:
@@ -250,11 +274,73 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum update -y
-          yum install -y aws-cfn-bootstrap 
+          yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
+
+          # Apparently, SSM agent is either not installed or not started when using the ECS AMIs:          
           yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-          start amazon-ssm-agent          
-          /opt/aws/bin/cfn-signal --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup 
+          start amazon-ssm-agent
+
+          # Critical: this ecs.config file must know the name of the cluster to connect to.
+          # This is the only actual setup required (besides the pre-installed software)
           echo "ECS_CLUSTER=${ECSCluster}" >> /etc/ecs/ecs.config        
+          
+          # Believe it or not, you must configure the CloudWatch agent yourself.
+          cd ~
+          cat <<EOF > amazon-cloudwatch-agent.json
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/var/log/dmesg",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/dmesg",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/messages",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/messages",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/docker",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/docker",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/ecs-agent.log.*",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/ecs-agent.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/audit.log.*",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/audit.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/ecs-init.log",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/ecs-init.log",
+                      "timezone": "UTC"
+                    }
+                  ]
+                }
+              },
+              "log_stream_name": "default-stream",
+              "force_flush_interval" : 15
+            }                  
+          }
+          EOF
+          chmod o=r amazon-cloudwatch-agent.json
+          sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+          /opt/aws/bin/cfn-signal --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup 
 
 
   # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers. 
@@ -301,7 +387,7 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     Condition: DeployToEc2
     Properties:
-      Family: !Sub ${AWS::StackName}-DemoTask
+      Family: !Sub ${AWS::StackName}-DemoTask  # Basically, this is the name of the Task Definition
       ContainerDefinitions:
       - Name: TheContainer    # The name of the container cannot be a reasonable value like the image name.
         Image: !Ref DockerImage
@@ -313,7 +399,9 @@ Resources:
           Options:
             awslogs-group: !Ref CloudwatchLogsGroup
             awslogs-region: !Ref AWS::Region
-            awslogs-stream-prefix: ecs-demo-app
+            awslogs-stream-prefix: task
+            mode: non-blocking    # We encounter large number of small files otherwise.
+            max-buffer-size: 1m
         PortMappings:
         - ContainerPort: !Ref ContainerPort
           # Notice how the HostPort is not defined.  This means it will be assigned randomly.  The ALB will find it automatically.  Cool huh?
@@ -339,7 +427,9 @@ Resources:
           Options:
             awslogs-group: !Ref CloudwatchLogsGroup
             awslogs-region: !Ref AWS::Region
-            awslogs-stream-prefix: ecs-demo-app
+            awslogs-stream-prefix: task
+            mode: non-blocking    # We encounter large number of small files otherwise.
+            max-buffer-size: 1m
         PortMappings:
         - ContainerPort: !Ref ContainerPort
           # Notice how the HostPort is not defined.  This means it will be assigned randomly.  The ALB will find it automatically.  Cool huh?
@@ -352,7 +442,7 @@ Resources:
       Name: !Sub ${AWS::StackName}-ALB
       Scheme: internet-facing
       Subnets: !Ref PublicSubnetIds
-      SecurityGroups: [!Ref EcsSecurityGroup]
+      SecurityGroups: [!Ref ALBSecurityGroup]
   # Listener.  Whenever traffic comes in on port 80, pass all traffic to our only TargetGroup:
   ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -367,7 +457,7 @@ Resources:
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub ${AWS::StackName}-ALBTargetGroup
+      Name: !Sub ${AWS::StackName}-TargetGroup
       VpcId: !Ref VpcId
       TargetType: !If [DeployToFargate, ip, instance]  # Fargate deploy must be IP for awsvpc mode, otherwise instance.
       Port: 80
