@@ -1,0 +1,440 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Stand up an ECS and run a container on it.
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+    - Label: 
+        default: "Network Configuration"
+      Parameters: 
+      - VpcId
+      - SubnetIds
+    - Label: 
+        default: "ECS Cluster"
+      Parameters: 
+      - MaxSize
+      - DesiredCapacity
+      - ContainerInsights
+      - ECSAMI
+
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances access to the Internet.
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at least two public subnets in your selected VPC.  These will be associated with your load balancer.
+
+  MaxSize:
+    Type: String
+    Default: 4
+    Description: Maximum number of ECS instances.
+
+  DesiredCapacity:
+    Type: String
+    Default: 1
+    Description: Desired number of ECS instances.
+
+  ContainerInsights:
+    Type: String 
+    Default: enabled
+    AllowedValues:
+    - enabled
+    - disabled
+    Description:  Do you want to turn on Container Insights?  It is fun to play with, but can add extra charges on your account.  
+
+  ECSAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: '/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id'
+    Description: You probably won't need to change this value.  This is looking up the latest ECS AMI using the Parameter Store...
+
+Conditions:
+  UseContainerInsights: !Equals [ !Ref ContainerInsights, enabled ]
+
+Resources:
+
+  # The IAM Role to be used by the EC2 instances in the ECS cluster.
+  # Essential permissions to allow registration / deregistration with load balancer.
+  # Allows your Amazon ECS container agent to make calls to your load balancer: 
+  ECSContainerAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ecs.amazonaws.com
+      Path: /
+      Policies:
+      - PolicyName: ecs-service
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: 
+            - elasticloadbalancing:Register*
+            - elasticloadbalancing:Deregister*
+            - elasticloadbalancing:Describe*
+            - ec2:Describe*
+            - ec2:AuthorizeSecurityGroupIngress
+            Resource: '*'
+
+  AutoscalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: application-autoscaling.amazonaws.com
+      Path: /
+      Policies:
+      - PolicyName: service-autoscaling
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: 
+              - application-autoscaling:*
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:PutMetricAlarm
+              - ecs:DescribeServices
+              - ecs:UpdateService
+            Resource: '*'
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM  # Permissions for SSM Agent (session manager and such)
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref EC2Role]
+
+  # Security Group for the load balancer.  Allow HTTP from anywhere:
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for load balancer server
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: ALBSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  # Security Group for the ECS instances.  Allow inbound ports for the ELB to use:
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS Security Group
+      VpcId: !Ref VpcId
+
+  # Allow free intercommunication between cluster instances.  Allow incoming traffic on 80 but only from the load balancer:
+  EcsSecurityGroupALBinbound:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EcsSecurityGroup
+      IpProtocol: tcp
+      FromPort: 31000
+      ToPort: 61000
+      SourceSecurityGroupId: !Ref ALBSecurityGroup   # Only any traffic as long as it is coming from the load balancer.
+  EcsSecurityGroupIntercommunication:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EcsSecurityGroup
+      IpProtocol: tcp
+      FromPort: 31000
+      ToPort: 61000
+      SourceSecurityGroupId: !Ref EcsSecurityGroup   # Self-reference - The cluster instances can freely intercommunicate with each other.
+
+  # Now, an ECS Cluster to deploy to:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub DemoCluster-${AWS::StackName}
+      ClusterSettings: 
+      - Name: containerInsights
+        Value: !Ref ContainerInsights
+
+  # Auto-Scaling Group for the cluser:
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchConfigurationName: !Ref ContainerInstances
+      MinSize: 1
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      Tags:
+      - Key: Name
+        Value: ECS Cluster Node
+        PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+
+  # The LaunchConfiguration for the cluster:      
+  ContainerInstances:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref ECSAMI
+      SecurityGroups: [!Ref EcsSecurityGroup]
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:  
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
+
+          # Apparently, SSM agent is either not installed or not started when using the ECS AMIs:          
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          start amazon-ssm-agent
+
+          # Critical: this ecs.config file must know the name of the cluster to connect to.
+          # This is the only actual setup required (besides the pre-installed software)
+          echo "ECS_CLUSTER=${ECSCluster}" >> /etc/ecs/ecs.config        
+          
+          # Believe it or not, you must configure the CloudWatch agent yourself.
+          cd ~
+          cat <<EOF > amazon-cloudwatch-agent.json
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/var/log/dmesg",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/dmesg",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/messages",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/messages",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/docker",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/docker",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/ecs-agent.log.*",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/ecs-agent.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/audit.log.*",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/audit.log",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/ecs/ecs-init.log",
+                      "log_group_name": "${CloudwatchLogsGroup}",
+                      "log_stream_name": "/var/log/ecs/ecs-init.log",
+                      "timezone": "UTC"
+                    }
+                  ]
+                }
+              },
+              "log_stream_name": "default-stream",
+              "force_flush_interval" : 15
+            }                  
+          }
+          EOF
+          chmod o=r amazon-cloudwatch-agent.json
+          sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+          /opt/aws/bin/cfn-signal --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup 
+
+
+  # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers.
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: [ALBListener, ECSAutoScalingGroup]   # Problematic to create service before cluster nodes or load balancer in place.
+    Properties:
+      ServiceName: !Sub ${AWS::StackName}-DemoAppService
+      Cluster: !Ref ECSCluster
+      Role: !Ref ECSContainerAgentRole
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1             # We want 1 running copy of whatever is defined in the TaskDefinition
+      LoadBalancers:              # The "apache" will be associated with the ALBTargetGroup.  
+      - ContainerName: apache
+        ContainerPort: 80         # Should probably be a parameter
+        TargetGroupArn: !Ref ALBTargetGroup
+
+  # This TaskDefinition defines the image(s) we want to run on ECS
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-ecs-demo-app    # Basically, this is the name of the Task Definition
+      ContainerDefinitions:
+        # This container runs a little HTTP server.  
+        # It serves content from a shared volume...
+      - Name: apache
+        Image: httpd:2.4
+        Cpu: 10
+        Memory: 300
+        Essential: true
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: task
+        MountPoints:
+        - ContainerPath: /usr/local/apache2/htdocs
+          SourceVolume: my-vol
+        PortMappings:
+        - ContainerPort: 80
+
+        # This little container writes a simple html page to its file system, 
+        # which happens to be shared by the HTTP server.  
+        # The loop keeps adding a new date/time to the file.
+      - Name: busybox
+        Image: busybox
+        Cpu: 10
+        Memory: 200
+        Essential: false
+        Command: ['/bin/sh -c "while true; do echo ''<html> <head> <title>Amazon ECS
+            Sample App</title> <style>body {margin-top: 40px; background-color: #333;}
+            </style> </head><body> <div style=color:white;text-align:center> <h1>Amazon
+            ECS Sample App</h1> <h2>Congratulations!</h2> <p>Your application is now
+            running on a container in Amazon ECS.</p>'' > top; /bin/date > date ;
+            echo ''</div></body></html>'' > bottom; cat top date bottom > /usr/local/apache2/htdocs/index.html
+            ; sleep 1; done"']
+        EntryPoint: [sh, -c]
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: task
+        VolumesFrom:
+        - SourceContainer: apache
+      Volumes:
+      - Name: my-vol      
+
+
+  # Now the Load Balancer, with all of its sub-components:
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [!Ref ALBSecurityGroup]
+  # Listen on port 80, pass all traffic to our only TargetGroup:
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref ALB
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+  # The rule is simple; all traffic to "/" goes to our one and only target group:      
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      Priority: 1
+  # This TargetGroup is hooked up to the ECS "Service" above.
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-TargetGroup
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  # Scale the number of tasks in the service based on ... TODO
+  ServiceScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: 1
+      MaxCapacity: 4
+      ResourceId: !Sub service/${ECSCluster}/${ECSService.Name}
+      RoleARN: !GetAtt [AutoscalingRole, Arn]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  ServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ServiceScalingPolicy
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref ServiceScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 60
+        MetricAggregationType: Average
+        StepAdjustments:
+        - MetricIntervalLowerBound: 0
+          ScalingAdjustment: 200
+
+
+  # This LogsGroup will be useful when several containers emit output:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ECSLogGroup-${AWS::StackName}
+      RetentionInDays: 3
+
+
+Outputs:
+
+  ECSALB:
+    Description: Your ALB DNS URL
+    Value: !Sub ${ALB.DNSName}
+
+  ECSClusterConsole:
+    Description:  Link to the ECS Console page
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/ecs/home?region=${AWS::Region}#/clusters/${ECSCluster}/services
+  
+  CloudWatchLogs:
+    Description:  Console link to CloudWatch Logs
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
+
+  CloudWatchContainerInsights:
+    Condition: UseContainerInsights
+    Description:  Console link to CloudWatch Container Insights for monitoring
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#container-insights:performance/ECS:Cluster?~(query~(controls~(CW*3a*3aECS.cluster~(~'${ECSCluster})))~context~())
