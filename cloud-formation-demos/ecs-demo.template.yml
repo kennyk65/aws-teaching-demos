@@ -245,7 +245,9 @@ Resources:
     Properties:
       AutoScalingGroupName: !Ref AWS::StackName
       VPCZoneIdentifier: !Ref PrivateSubnetIds
-      LaunchConfigurationName: !Ref ECSLaunchConfiguration
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
       MinSize: 1
       MaxSize: !Ref MaxSize
       DesiredCapacity: !Ref DesiredCapacity
@@ -260,87 +262,91 @@ Resources:
       AutoScalingReplacingUpdate:
         WillReplace: true
 
-  # The LaunchConfiguration for the cluster:      
-  ECSLaunchConfiguration:
-    Type: AWS::AutoScaling::LaunchConfiguration
+  # The LaunchTemplate for the cluster:      
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Condition: DeployToEc2
-    Properties:
-      LaunchConfigurationName: !Ref AWS::StackName
-      ImageId: !Ref ECSAMI
-      SecurityGroups: [!Ref EcsSecurityGroup]
-      InstanceType: t3.small
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      UserData:  
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum update -y
-          yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-LaunchTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref ECSAMI
+        InstanceType: t3.small 
+        IamInstanceProfile: 
+          Name: !Ref EC2InstanceProfile
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref EcsSecurityGroup ]   # Plug in the security group.
+        UserData:      
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y aws-cfn-bootstrap amazon-cloudwatch-agent
 
-          # Apparently, SSM agent is either not installed or not started when using the ECS AMIs:          
-          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-          start amazon-ssm-agent
+            # Apparently, SSM agent is either not installed or not started when using the ECS AMIs:          
+            yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+            start amazon-ssm-agent
 
-          # Critical: this ecs.config file must know the name of the cluster to connect to.
-          # This is the only actual setup required (besides the pre-installed software)
-          echo "ECS_CLUSTER=${ECSCluster}" >> /etc/ecs/ecs.config        
-          
-          # Believe it or not, you must configure the CloudWatch agent yourself.
-          cd ~
-          cat <<EOF > amazon-cloudwatch-agent.json
-          {
-            "logs": {
-              "logs_collected": {
-                "files": {
-                  "collect_list": [
-                    {
-                      "file_path": "/var/log/dmesg",
-                      "log_group_name": "${CloudwatchLogsGroup}",
-                      "log_stream_name": "/var/log/dmesg",
-                      "timezone": "UTC"
-                    },
-                    {
-                      "file_path": "/var/log/messages",
-                      "log_group_name": "${CloudwatchLogsGroup}",
-                      "log_stream_name": "/var/log/messages",
-                      "timezone": "UTC"
-                    },
-                    {
-                      "file_path": "/var/log/docker",
-                      "log_group_name": "${CloudwatchLogsGroup}",
-                      "log_stream_name": "/var/log/docker",
-                      "timezone": "UTC"
-                    },
-                    {
-                      "file_path": "/var/log/ecs/ecs-agent.log.*",
-                      "log_group_name": "${CloudwatchLogsGroup}",
-                      "log_stream_name": "/var/log/ecs/ecs-agent.log",
-                      "timezone": "UTC"
-                    },
-                    {
-                      "file_path": "/var/log/ecs/audit.log.*",
-                      "log_group_name": "${CloudwatchLogsGroup}",
-                      "log_stream_name": "/var/log/ecs/audit.log",
-                      "timezone": "UTC"
-                    },
-                    {
-                      "file_path": "/var/log/ecs/ecs-init.log",
-                      "log_group_name": "${CloudwatchLogsGroup}",
-                      "log_stream_name": "/var/log/ecs/ecs-init.log",
-                      "timezone": "UTC"
-                    }
-                  ]
-                }
-              },
-              "log_stream_name": "default-stream",
-              "force_flush_interval" : 15
-            }                  
-          }
-          EOF
-          chmod o=r amazon-cloudwatch-agent.json
-          sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
-          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+            # Critical: this ecs.config file must know the name of the cluster to connect to.
+            # This is the only actual setup required (besides the pre-installed software)
+            echo "ECS_CLUSTER=${ECSCluster}" >> /etc/ecs/ecs.config        
+            
+            # Believe it or not, you must configure the CloudWatch agent yourself.
+            cd ~
+            cat <<EOF > amazon-cloudwatch-agent.json
+            {
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      {
+                        "file_path": "/var/log/dmesg",
+                        "log_group_name": "${CloudwatchLogsGroup}",
+                        "log_stream_name": "/var/log/dmesg",
+                        "timezone": "UTC"
+                      },
+                      {
+                        "file_path": "/var/log/messages",
+                        "log_group_name": "${CloudwatchLogsGroup}",
+                        "log_stream_name": "/var/log/messages",
+                        "timezone": "UTC"
+                      },
+                      {
+                        "file_path": "/var/log/docker",
+                        "log_group_name": "${CloudwatchLogsGroup}",
+                        "log_stream_name": "/var/log/docker",
+                        "timezone": "UTC"
+                      },
+                      {
+                        "file_path": "/var/log/ecs/ecs-agent.log.*",
+                        "log_group_name": "${CloudwatchLogsGroup}",
+                        "log_stream_name": "/var/log/ecs/ecs-agent.log",
+                        "timezone": "UTC"
+                      },
+                      {
+                        "file_path": "/var/log/ecs/audit.log.*",
+                        "log_group_name": "${CloudwatchLogsGroup}",
+                        "log_stream_name": "/var/log/ecs/audit.log",
+                        "timezone": "UTC"
+                      },
+                      {
+                        "file_path": "/var/log/ecs/ecs-init.log",
+                        "log_group_name": "${CloudwatchLogsGroup}",
+                        "log_stream_name": "/var/log/ecs/ecs-init.log",
+                        "timezone": "UTC"
+                      }
+                    ]
+                  }
+                },
+                "log_stream_name": "default-stream",
+                "force_flush_interval" : 15
+              }                  
+            }
+            EOF
+            chmod o=r amazon-cloudwatch-agent.json
+            sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
-          /opt/aws/bin/cfn-signal --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup 
+            /opt/aws/bin/cfn-signal --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup 
 
 
   # An ECS "Service" associates a TaskDefinition with a cluster; it ties tasks to load balancers. 
