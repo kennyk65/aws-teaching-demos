@@ -213,24 +213,26 @@ Resources:
       ResourceSignal:
         Timeout: PT5M     # 5 minutes
     
-
-  # Launch Configuration for our web server running within an ASG:            
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      ImageId: !Ref AmazonLinuxAMI   # We lookup the AMI from SSM to always get the latest one in this Region
-      InstanceType: t2.micro          # Any instance type will do
-      SecurityGroups:
-      - !Ref WebServerSecurityGroup   # Plug in the security group.
-      UserData:      #  This code Installs the "blue" version of our code:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum -y update
-          yum install wget java-11-amazon-corretto -y
-          java -version     
-          wget -q https://${S3Bucket}.s3.amazonaws.com/${WARFile}
-          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-          sudo java -jar ${WARFile} --server.port=80        
+  # LaunchTemplate for the cluster
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-LaunchTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinuxAMI    # We lookup the AMI from SSM to always get the latest one in this Region
+        InstanceType: t3.micro            # Any instance type will do 
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          Groups: [ !Ref WebServerSecurityGroup ]   # Plug in the security group.
+        UserData:       #  This code Installs the "blue" or "green" versions of our code:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum -y update
+            yum install wget java-11-amazon-corretto -y
+            java -version     
+            wget -q https://${S3Bucket}.s3.amazonaws.com/${WARFile}
+            /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
+            sudo java -jar ${WARFile} --server.port=80        
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -240,7 +242,9 @@ Resources:
       VPCZoneIdentifier:
       - Ref: PrivateSubnet1
       - Ref: PrivateSubnet2
-      LaunchConfigurationName: !Ref LaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber        
       MinSize: 4        
       MaxSize: 6
       DesiredCapacity: 4
