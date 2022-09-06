@@ -82,6 +82,20 @@ Resources:
       - Key: Name
         Value: Private Subnet 2
         
+  #NATs
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags: 
+      - Key: Name
+        Value: !Sub "NAT-${AWS::StackName}"
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC      
+
   # Some route tables for our subnets:        
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -113,7 +127,7 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !Ref NATInstance
+      NatGatewayId: !Ref NATGateway
 
   
   # Attach the public subnets to public route tables, 
@@ -139,29 +153,6 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
       
-  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
-  NATSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    DependsOn: AttachGateway
-    Properties:
-      GroupDescription: Enable internal access to the NAT device
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '1024'
-        CidrIp: !GetAtt VPC.CidrBlock
-      SecurityGroupEgress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: udp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-
-
   # Security Group for the web server.  Allow HTTP from anywhere:
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -178,40 +169,6 @@ Resources:
         ToPort: '80'
         CidrIp: 0.0.0.0/0
       
-            
-  # Create a NAT instance.  I could use a gateway instead but this is fine:    
-  NATInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !Ref AmazonLinuxAMI   # We lookup the AMI from SSM to always get the latest one in this Region
-      InstanceType: t2.small                                          # Any instance type is fine
-      NetworkInterfaces:
-      - DeviceIndex: '0'
-        SubnetId: !Ref PublicSubnet1                                  # Any public subnet is fine
-        AssociatePublicIpAddress: 'true'                              # We will definitely need a public IP address
-        GroupSet:
-        - Ref: NATSecurityGroup                                       # Plug in the security group
-      SourceDestCheck: 'false'                                        # NATs don't work if EC2 tries the match source addresses with destinations.
-      Tags:
-      - Key: Name
-        Value: NAT
-      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum -y update
-          echo 1 > /proc/sys/net/ipv4/ip_forward
-          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
-          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
-          /sbin/iptables-save > /etc/sysconfig/iptables
-          mkdir -p /etc/sysctl.d/
-          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
-          net.ipv4.ip_forward = 1
-          net.ipv4.conf.eth0.send_redirects = 0
-          NatConfFileMarker
-          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NATInstance --region ${AWS::Region}
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT5M     # 5 minutes
     
   # LaunchTemplate for the cluster
   LaunchTemplate:
@@ -236,8 +193,6 @@ Resources:
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
-    DependsOn: 
-    - NATInstance
     Properties:
       VPCZoneIdentifier:
       - Ref: PrivateSubnet1
