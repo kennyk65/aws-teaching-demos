@@ -107,6 +107,7 @@ Resources:
           - cloudtrail:Lookup*
           - cloudtrail:Describe*
           - config:Describe*
+          - aps:*
           Resource: 
           - "*"
       Roles: 
