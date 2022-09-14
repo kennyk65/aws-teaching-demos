@@ -46,10 +46,6 @@ Parameters:
     Description:  IAM roles NAME (NOT ARN!) of the role we wish this Bastion Host to assume.  Should be same role used to create the cluster.
     Default:  EksClusterCreatorRole
 
-  BastionHostKeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: The name of the private key file to use for SSH/RDP access to the bastion host.
-
   AmazonLinux2AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
@@ -87,7 +83,6 @@ Metadata:
         Parameters:
           - CreateBastionHost
           - BastionRole
-          - BastionHostKeyName
           - AmazonLinux2AMI
       - Label:
           default: Cloud9 Details
@@ -161,23 +156,6 @@ Resources:
         MaxSize:     !Select [2,  !Split [ ":", !Ref ClusterSize ]]
       Subnets: !Ref SubnetIds
 
-
-  # Security Group for the Bastion Host.  Allow SSH from anywhere:
-  BastionHostSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Condition:  CreateBastionHostCondition
-    Properties:
-      GroupDescription: Security Group for Bastion Host
-      VpcId: !Ref VpcId
-      Tags:
-      - Key: Name
-        Value: BastionHostSecurityGroup
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: 0.0.0.0/0     # A little bit loose
-
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Condition:  CreateBastionHostCondition
@@ -185,15 +163,14 @@ Resources:
       LaunchTemplateName: !Sub ${AWS::StackName}-Template
       LaunchTemplateData: 
         ImageId: !Ref AmazonLinux2AMI        # We lookup AMI using the AWS Systems Manager
-        InstanceType: t2.micro             
-        KeyName: !Ref BastionHostKeyName       # Use the keypair from the input parameters
+        InstanceType: t3.small             
         IamInstanceProfile: 
           Name: !Ref BastionInstanceProfile      # Allows EC2 Instance to talk with SSM
         NetworkInterfaces:
         - DeviceIndex: 0
           AssociatePublicIpAddress: true
           SubnetId: !Select [ 0, !Ref SubnetIds ]   # You have to specify a subnet in this launch template, but this will be ignored when using ASG.
-          Groups: [!Ref BastionHostSecurityGroup]       # Plug in the security group.
+          Groups: [!GetAtt Cluster.ClusterSecurityGroupId ]       # Same security group used by cluster nodes and API server allows seamless intercommunication.
         InstanceMarketOptions: 
           MarketType: spot
         BlockDeviceMappings: 
@@ -234,23 +211,16 @@ Resources:
             echo Installing Helm
             curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
-  AppAutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
+  EC2Instance:
+    Type: AWS::EC2::Instance
     Condition:  CreateBastionHostCondition
     Properties:
-      VPCZoneIdentifier: 
-      - !Select [ 0, !Ref SubnetIds ]
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate 
         Version: !GetAtt LaunchTemplate.LatestVersionNumber  
-      MinSize: 1
-      MaxSize: 1
-      DesiredCapacity: 1
-      HealthCheckGracePeriod: 300
       Tags:
       - Key: Name
         Value: EKS Bastion
-        PropagateAtLaunch: true
 
   # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
   BastionInstanceProfile:
@@ -265,8 +235,7 @@ Resources:
     Condition:  CreateCloud9Condition
     Properties: 
       Name: !Sub ${AWS::StackName} 
-      # OwnerArn:  !Sub arn:aws:sts::${AWS::AccountId}:assumed-role/${BastionRole}
-      InstanceType: t2.micro 
+      InstanceType: t3.small 
       AutomaticStopTimeMinutes: 60
       SubnetId: !Select [ 0, !Ref SubnetIds ] 
       Repositories: 
@@ -275,13 +244,19 @@ Resources:
 
 Outputs:
 
+  Cloud9Console:
+    Condition:  CreateCloud9Condition  
+    Description: Click here to go to the Cloud9 console
+    Value: !Sub https://us-west-2.console.aws.amazon.com/cloud9/ide/${Cloud9}
+
+  SessionManagerLink:
+    Condition: CreateBastionHostCondition
+    Description: Access bastion host via web browser
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${EC2Instance}?region=${AWS::Region}#  
+
   EKSClusterConsole:
     Description: AWS management console screen where you can look at your cluster
-    Value: !Join ['', ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/eks/home?region=", !Ref "AWS::Region", "#/clusters/", !Ref Cluster ]]
-
-  ClusterName:
-    Description: Name of the EKS Cluster
-    Value: !Ref Cluster
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/eks/home?region=${AWS::Region}#/clusters/${Cluster}
 
   CertificateAuthorityData:
     Description: The certificate-authority-data for your cluster.
@@ -294,9 +269,3 @@ Outputs:
   EKSNodeRole:
     Description: Role applied to the EKS Nodes.  Used when running kubectl apply -f aws-auth-cm.yaml
     Value: !GetAtt EKSNodeRole.Arn
-
-  Cloud9Console:
-    Condition:  CreateCloud9Condition  
-    Description: Click here to go to the Cloud9 console
-    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloud9/home?region=${AWS::Region}#   
-
