@@ -46,7 +46,7 @@ Resources:
   RoleFeedbackLambda:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-RoleFeedbackLambda" ]]
+      RoleName: !Sub ${AWS::StackName}-RoleFeedbackLambda
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -60,19 +60,19 @@ Resources:
   PolicyFeedbackLambda:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: !Join ['', [!Ref 'AWS::StackName', "-FeedbackLambdaPolicy" ]]
+      PolicyName: !Sub ${AWS::StackName}-FeedbackLambdaPolicy
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
           Effect: Allow
           Action: 
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-            - cloudwatch:putMetric*
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - cloudwatch:putMetric*
           Resource: "*"
       Roles: 
-        -  !Ref RoleFeedbackLambda
+      -  !Ref RoleFeedbackLambda
 
               
   # This Role gives permission to our custom resource Lambda.
@@ -137,7 +137,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt RoleFeedbackLambda.Arn
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Handler: index.handler
       InlineCode: !Sub |
         console.log('Loading function');
