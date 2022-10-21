@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: 'Developing on AWS - Lab 6 - Pollynotes'
 
+# Can be run in any region.
+# Warning: Website URL will not be available immediately.  Please allow a few minutes for CodeBuild process to populate the S3 bucket.
 Parameters:
   S3Bucket:
     Type: String
