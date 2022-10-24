@@ -12,7 +12,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 #   export NO_PROXY="169.254.169.254"
 #
 #  Then run commands like these: 
-#   curl https://v2.jokeapi.dev/joke/Any?format=json&safe-mode
+#   curl 'https://v2.jokeapi.dev/joke/Any?format=json&safe-mode'
 #   curl http://www.amazon.com
 
 
@@ -269,14 +269,28 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
-      SecurityGroupIds:
-      - !Ref ProxyTrafficSGConsumerVPC
+      InstanceType: t2.micro
       SubnetId: !Ref ConsumerPublicSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
+      SecurityGroupIds:
+      - !Ref ProxyTrafficSGConsumerVPC
       Tags:
       - Key: Name
         Value: Test Instance
-      InstanceType: t2.micro
+      UserData:      #  Instruct all users of this instance to proxy HTTP and HTTPS traffic through the private link endpoint.
+        Fn::Base64: 
+          Fn::Sub: 
+          - |
+            #!/bin/bash -xe
+            # Set the *_PROXY environment variables to route traffic through the private link endpoint:
+            cat <<EOF > script.sh
+            export HTTP_PROXY="http://${DNSName}:3128"
+            export HTTPS_PROXY="http://${DNSName}:3128"
+            export NO_PROXY="169.254.169.254"
+            EOF
+            sudo cp script.sh /etc/profile.d/script.sh
+          - DNSName: !Select [1, !Split [ ':', !Select [ 0, !GetAtt ConsumerVPCEndpointLink.DnsEntries ]]]
+          # Note that endpoint DnsEntries contains multiple values, each in the format name:DNS.
 
   # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
   SSMInstanceProfile:
@@ -327,6 +341,7 @@ Outputs:
     Value: !Select [1, !Split [ ':', !Select [ 0, !GetAtt ConsumerVPCEndpointLink.DnsEntries ]]]
 
   ConsumerSessionManagerLink:
-    Description: Access the service CONSUMER using web browser.  Then run a command like "curl https://v2.jokeapi.dev/joke/Any?format=json&safe=true"
+    Description: Access the service CONSUMER using web browser.  Then run a command like "curl 'https://v2.jokeapi.dev/joke/Any?format=json&safe-mode'"
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${Ec2ServiceConsumerHost}?region=${AWS::Region}#  
+
 
