@@ -27,11 +27,10 @@ Parameters:
   LabImplementation:
     Type: String
     AllowedValues: 
-    - 3. Build a VPC and run a web server within 
-    - 4. Add S3 Bucket for images
-    - 5. Add DynamoDB
-    - 6. ELB with Autoscaling
-    Default: 6. ELB with Autoscaling
+    - 2. Build a VPC and run a web server within 
+    - 3. Add S3 Bucket and DynamoDB
+    - 4. ELB with Autoscaling
+    Default: 4. ELB with Autoscaling
     Description: Which of the labs from AWS Tech Essentials do you want to implement?
 
 Metadata:
@@ -51,9 +50,8 @@ Metadata:
       - VPCCIDR
 
 Conditions:
-  CreateLab6:                  !Equals [ !Ref LabImplementation, "6. ELB with Autoscaling" ]
-  CreateLab5OrGreater:   !Or [ !Equals [ !Ref LabImplementation, "5. Add DynamoDB" ], !Condition CreateLab6 ]
-  CreateLab4OrGreater:   !Or [ !Equals [ !Ref LabImplementation, "4. Add S3 Bucket for images" ], !Condition CreateLab5OrGreater ]
+  CreateLab4:                  !Equals [ !Ref LabImplementation, "4. ELB with Autoscaling" ]
+  CreateLab3OrGreater:   !Or [ !Equals [ !Ref LabImplementation, "3. Add S3 Bucket and DynamoDB" ], !Condition CreateLab4 ]
 
 
 Resources:
@@ -251,13 +249,13 @@ Resources:
 
   S3Bucket:
     Type: AWS::S3::Bucket
-    Condition: CreateLab4OrGreater
+    Condition: CreateLab3OrGreater
     Properties: 
       BucketName: !Sub employee-photo-bucket-${InitialsPlusRandomNumber}
 
   S3BucketPolicy:
     Type: AWS::S3::BucketPolicy
-    Condition: CreateLab4OrGreater
+    Condition: CreateLab3OrGreater
     Properties: 
       Bucket: !Ref S3Bucket
       PolicyDocument: 
@@ -274,7 +272,7 @@ Resources:
 
   DynamoDbTable:
     Type: AWS::DynamoDB::Table
-    Condition: CreateLab5OrGreater
+    Condition: CreateLab3OrGreater
     Properties:
       TableName: Employees   # Unfortunately, the table name is hard-coded in the NodeJS application.
       AttributeDefinitions:
@@ -289,7 +287,7 @@ Resources:
 
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties: 
       LaunchTemplateName: lab-app-launch-template   # Hard-coded in lab
       LaunchTemplateData: 
@@ -335,7 +333,7 @@ Resources:
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties:
       VPCZoneIdentifier:
       - !Ref PublicSubnet1
@@ -356,7 +354,7 @@ Resources:
 
   TargetScalingPolicy: 
     Type: AWS::AutoScaling::ScalingPolicy
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties: 
       PolicyType: TargetTrackingScaling
       AutoScalingGroupName: !Ref AppAutoScalingGroup
@@ -369,7 +367,7 @@ Resources:
 
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties:
       GroupDescription: Load balancer security group for employee directory app
       VpcId: !Ref VPC
@@ -385,7 +383,7 @@ Resources:
   # An Application Load Balancer, with all of its sub-components:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties:
       Name: ALB
       Scheme: internet-facing
@@ -398,7 +396,7 @@ Resources:
   # Listen on port 80, pass all traffic to our only TargetGroup:
   ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties:
       Port: 80
       Protocol: HTTP
@@ -409,7 +407,7 @@ Resources:
   # TargetGroup
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Condition: CreateLab6
+    Condition: CreateLab4
     Properties:
       Name: lab-app-target-group
       VpcId: 
@@ -452,7 +450,7 @@ Resources:
   # This function will setup the content in our S3 bucket
   CustomResourceS3ContentLambda:
     Type: AWS::Lambda::Function
-    Condition: CreateLab4OrGreater
+    Condition: CreateLab3OrGreater
     Properties: 
       FunctionName: !Sub ${AWS::StackName}-CustomResource
       Description: Handles miscellaneous tasks associated with labs.
@@ -541,7 +539,7 @@ Resources:
   CustomResourceS3Content:
     Type: Custom::helper
     DependsOn: CloudwatchLogsGroup  # Force log group to be created first and deleted last
-    Condition: CreateLab4OrGreater
+    Condition: CreateLab3OrGreater
     Properties:
       ServiceToken: !GetAtt CustomResourceS3ContentLambda.Arn
       S3Bucket: !Ref S3Bucket
@@ -550,7 +548,7 @@ Resources:
   # Explicitly creating LogGroups allows us to clean up these on stack delete.
   CloudwatchLogsGroup:
     Type: AWS::Logs::LogGroup
-    Condition: CreateLab4OrGreater
+    Condition: CreateLab3OrGreater
     Properties:
       LogGroupName: !Sub /aws/lambda/${CustomResourceS3ContentLambda}
       RetentionInDays: 3
@@ -564,4 +562,4 @@ Outputs:
 
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !If [CreateLab6, !Sub "http://${ALB.DNSName}", ""]
+    Value: !If [CreateLab4, !Sub "http://${ALB.DNSName}", ""]
