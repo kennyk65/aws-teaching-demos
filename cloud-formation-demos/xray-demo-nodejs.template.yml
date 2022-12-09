@@ -118,6 +118,10 @@ Resources:
       - Namespace: aws:ec2:vpc
         OptionName: VPCId
         Value: !Ref VPC
+      # Currently getting a warning that the environment is deprecated.  I've tried running a newer solution stack
+      # but I get a weird error in beanstalk about unsupported option "/static" and the app won't start.
+      # I've opened a support ticket
+      # SolutionStackName: 64bit Amazon Linux 2 v5.6.2 running Node.js 14
       PlatformArn:
         Fn::Join:
         - ":"
