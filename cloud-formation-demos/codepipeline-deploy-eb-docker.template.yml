@@ -39,7 +39,7 @@ Parameters:
   GitHubOAuthToken:
     Type: String
     Default:  hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
-    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Put a 'g' in front of this value. 
 
   DockerRepositoryPrefix:
     Description:  The name of the existing ECR repository, no image, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
