@@ -57,8 +57,6 @@ Resources:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
-            - s3:putObject
-            - s3:get*
           Resource: "*"
       Roles: 
         -  !Ref LambdaFunctionRole   
