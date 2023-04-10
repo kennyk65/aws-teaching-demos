@@ -54,12 +54,30 @@ Resources:
             OriginAccessIdentity: ''   # This is required, but unneeded when using OAC.  Must supply an empty string.
         DefaultCacheBehavior:
           TargetOriginId: S3Bucket
-          DefaultTTL: 0   # No caching
+          CachePolicyId: !Ref SampleCachePolicy
           ForwardedValues:
             QueryString: true
             Cookies:
               Forward: none
           ViewerProtocolPolicy: redirect-to-https   # allow-all, redirect-to-https, https-only        
+
+  SampleCachePolicy:    # Just an example of a cache policy
+    Type: AWS::CloudFront::CachePolicy
+    Properties: 
+      CachePolicyConfig: 
+        Name: SixySeconds
+        Comment: An example cache policy which caches for 60 seconds, unless the origin says different.
+        DefaultTTL: 60  # Time object will remain in cache, unless origin says different.
+        MaxTTL: 600     # Maximum time object will remain in cache regardless of what the origin says.
+        MinTTL: 0       # Minimum time object will stay in cache regardless of what the origin says.
+        ParametersInCacheKeyAndForwardedToOrigin: 
+          CookiesConfig: 
+             CookieBehavior: none
+          EnableAcceptEncodingGzip: true
+          HeadersConfig: 
+            HeaderBehavior: none
+          QueryStringsConfig: 
+            QueryStringBehavior: none
 
   OAC:
     Type: AWS::CloudFront::OriginAccessControl
@@ -159,3 +177,7 @@ Outputs:
 
   S3DomainName:
     Value:  !GetAtt S3.DomainName  
+
+  CloudFrontConsole:
+    Description:  AWS Management Console, CloudFront page for this distribution
+    Value: !Sub https://us-east-1.console.aws.amazon.com/cloudfront/v3/home?region=${AWS::Region}#/distributions/${CloudFront.Id}
