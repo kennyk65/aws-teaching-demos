@@ -493,8 +493,12 @@ Resources:
 
 
 Outputs:
+  CodePipelineConsole:
+    Description:  Link to the CodePipeline console page for this pipeline
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${MyPipe}/view
   CodeBuild:
-    Value: !Ref MyPipe
+    Description:  Link to the main CodeBuild build project
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codebuild/${AWS::AccountId}/projects/${MyBuild}
   IamRole:
     Value: !Ref CodeBuildRole  
 
