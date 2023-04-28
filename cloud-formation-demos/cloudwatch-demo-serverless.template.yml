@@ -123,6 +123,8 @@ Resources:
       BucketName: !Sub ${WebsiteS3BucketName}
       WebsiteConfiguration:
         IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
 
   # This policy allows anyone in the world to make GET requests against the bucket.
   WebsiteS3BucketPolicy:

@@ -266,6 +266,8 @@ Resources:
       WebsiteConfiguration:
         ErrorDocument: error.html
         IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
   webBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:

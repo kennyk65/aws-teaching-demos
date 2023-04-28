@@ -16,6 +16,8 @@ Resources:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: !Sub website-${WebsiteSuffix}
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
 
   # Contents of the bucket are publicly gettable:
   BucketPolicy:
