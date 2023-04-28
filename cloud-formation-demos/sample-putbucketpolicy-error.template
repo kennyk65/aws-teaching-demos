@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Demonstrates the transient error associated with putBucketPolicy'
+
+# Can be run in any region.
+
+Resources:
+  
+  s3BucketWeb:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        ErrorDocument: error.html
+        IndexDocument: index.html
+  s3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref s3BucketWeb
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource: !Sub arn:aws:s3:::${s3BucketWeb}/*
+          Principal: '*'
+
