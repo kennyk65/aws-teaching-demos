@@ -88,6 +88,8 @@ Resources:
       BucketName: !Sub ${S3BucketName}
       WebsiteConfiguration:
         IndexDocument: sqs-standard.html
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
 
   # This policy allows anyone in the world to make GET requests against the bucket.
   MainS3BucketPolicy:
