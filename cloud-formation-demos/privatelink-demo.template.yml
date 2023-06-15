@@ -313,4 +313,6 @@ Outputs:
     Description: Access the service CONSUMER using web browser.  Then run a command like "curl 'https://v2.jokeapi.dev/joke/Any?format=json&safe-mode'"
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${Ec2ServiceConsumerHost}?region=${AWS::Region}#  
 
-
+  ReachabilityAnalyzerLink:
+    Description:  Convenient link to the Network Manager Reachability Analyzer.  Enter 'Consumer' instance as source and 'Provider' instance as target
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/networkinsights/home?region=${AWS::Region}#CreateNetworkPath
