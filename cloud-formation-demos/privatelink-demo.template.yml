@@ -3,20 +3,23 @@ AWSTemplateFormatVersion: '2010-09-09'
 #   https://aws.amazon.com/blogs/networking-and-content-delivery/how-to-use-aws-privatelink-to-secure-and-scale-web-filtering-using-explicit-proxy/
 #
 #  Instructions:
-#  Run this CloudFormation template.  This was tested in us-west-2 but should work anywhere.
-#  Find the output link to session manager.  This will open a session manager on an EC2 instance in the CONSUMER VPC.
-#  Replace the DNS name in the following commands with the "PrivateLinkDNSName" value and run them:
-#
-#   export HTTP_PROXY="http://<DNS name of PrivateLink>:3128"
-#   export HTTPS_PROXY="http://<DNS name of PrivateLink>:3128"
-#   export NO_PROXY="169.254.169.254"
-#
-#  Then run commands like these: 
-#   curl 'https://v2.jokeapi.dev/joke/Any?format=json&safe-mode'
-#   curl http://www.amazon.com
-
+#  1. Run this CloudFormation template.  This was tested in us-west-2 but should work anywhere.
+#  2. Find "ConsumerSessionManagerLink" in the stack output.  Open this in a new browser tab.  This is a session manager link to the 'consumer' instance.
+#  3. Find "DnsName" in the stack output.  Use it to run a command like this:
+#   curl 'http://<<DNS-NAME-GOES-HERE>>/api?value=2
+#  
+#  The request will be sent to the VPC Interface Endpoint, to the NLB, to an
+#  Instance in the 'provider' VPC.  It will square the value and send it back.
+#  
+#  Optional: In the console, Go to VPC / Network Manager / Reachability Analyzer.
+#  Enter source as consumer instance, target as provider instance.
 
 Parameters:
+
+  DockerImage:
+    Type: String
+    Default: public.ecr.aws/kkrueger/flask-api:1
+    Description: Image to use for a container.  Can be from DockerHub or include registry URL for a different source (repository-url/image:tag). 
 
   AmazonLinuxAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -96,102 +99,82 @@ Resources:
       RouteTableId: !Ref ProviderVPCPublicRouteTable
       SubnetId: !Ref ProviderPublicSubnet2
 
-  SquidProxySG:
+  ProviderSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: SquidProxySG
-      GroupDescription: Accepts traffic on incoming port 3218 from Consumer VPCs- 172.16.0.0/16
+      GroupName: !Sub ${AWS::StackName}-ProviderSG
+      GroupDescription: Accepts traffic on 80
       VpcId: !Ref ProviderVPC
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 3128
-        ToPort: 3128
-        CidrIp: 172.16.0.0/16
-        Description: Accept Only Squid proxy traffic from Service Consumer VPC - 172.16.0.0/16
-      - IpProtocol: tcp
-        FromPort: 3128
-        ToPort: 3128
-        CidrIp: 10.0.0.0/16
-        Description: Rule is required for Network Load Balancer health check to pass.
-      Tags:
-      - Key: Name
-        Value: SquidProxySG
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
 
-  Ec2InstanceSquid1:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
-      SecurityGroupIds:
-      - !Ref SquidProxySG
-      SubnetId: !Ref ProviderPublicSubnet1
-      SourceDestCheck: false
-      Tags:
-      - Key: Name
-        Value: Squid Instance-1
-      InstanceType: t2.micro
-      UserData:      #  Install and start squid proxy.
-        Fn::Base64: !Sub |
-          #!/bin/bash -xe
-          sudo yum install -y aws-cfn-bootstrap
-          sudo yum install -y squid
-          sudo chkconfig squid on
-          sudo service squid start
+  ProviderLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-ProviderLaunchTemplate
+      LaunchTemplateData: 
+        ImageId: !Ref AmazonLinuxAMI    # Latest Amazon Linux 2
+        InstanceType: t3.micro 
+        IamInstanceProfile:
+          Name: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
+        NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true     # Needs public IP to update software, download image  
+          Groups: [ !Ref ProviderSG ]
+        UserData:                           # Starts a simple web app on port 80
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y docker
+            service docker start
+            docker pull ${DockerImage}
+            docker run -d -p80:5000 ${DockerImage}   
 
-  Ec2InstanceSquid2:
-    Type: AWS::EC2::Instance
+  ProviderAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
-      SecurityGroupIds:
-      - !Ref SquidProxySG
-      SubnetId: !Ref ProviderPublicSubnet2
-      SourceDestCheck: false
+      AutoScalingGroupName: !Sub ${AWS::StackName}-ProviderASG
+      VPCZoneIdentifier: [ !Ref ProviderPublicSubnet1, !Ref ProviderPublicSubnet2 ]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ProviderLaunchTemplate
+        Version: !GetAtt ProviderLaunchTemplate.LatestVersionNumber        
+      MinSize: 1        
+      MaxSize: 2
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:  [ !Ref ProviderTargetGroup ]
       Tags:
       - Key: Name
-        Value: Squid Instance-2
-      InstanceType: t2.micro
-      UserData:      #  Install and start squid proxy.
-        Fn::Base64: !Sub |
-          #!/bin/bash -xe
-          sudo yum install -y aws-cfn-bootstrap
-          sudo yum install -y squid
-          sudo chkconfig squid on
-          sudo service squid start
+        Value: !Sub ${AWS::StackName}-ProviderInstance
+        PropagateAtLaunch: true
 
   NetworkLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: NetworkLoadBalancer
-      Scheme: internal
-      Subnets:
-      - !Ref ProviderPublicSubnet1
-      - !Ref ProviderPublicSubnet2
-      Tags:
-      - Key: Name
-        Value: NetworkLoadBalancer
+      Name: !Sub ${AWS::StackName}-ProviderNLB
       Type: network
+      Scheme: internal
+      Subnets: [!Ref ProviderPublicSubnet1, !Ref ProviderPublicSubnet2]
+
+  ProviderListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Protocol: TCP
+      Port: 80
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ProviderTargetGroup
 
   ProviderTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: SquidProxyServerTG
-      Port: 3128
-      Protocol: TCP
-      Targets:
-      - Id: !Ref Ec2InstanceSquid1
-        Port: 3128
-      - Id: !Ref Ec2InstanceSquid2
-        Port: 3128
+      Name: !Sub ${AWS::StackName}-ProviderTG
       VpcId: !Ref ProviderVPC
-      TargetType: instance
-
-  ServiceProviderListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn: !Ref ProviderTargetGroup
-      LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 3128
+      Port: 80
       Protocol: TCP
 
   # This is the CONSUMER network
@@ -226,7 +209,7 @@ Resources:
       - Key: Name
         Value: Consumer Public Subnet1
 
-  ConsuerVPCPublicRouteTable:
+  ConsumerVPCPublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref ConsumerVPC
@@ -238,59 +221,45 @@ Resources:
     Type: AWS::EC2::Route
     DependsOn: ConsumerInternetGatewayAttachment
     Properties:
-      RouteTableId: !Ref ConsuerVPCPublicRouteTable
+      RouteTableId: !Ref ConsumerVPCPublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref ConsumerInternetGateway
 
   ConsumerPublicSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref ConsuerVPCPublicRouteTable
+      RouteTableId: !Ref ConsumerVPCPublicRouteTable
       SubnetId: !Ref ConsumerPublicSubnet1
 
-  ProxyTrafficSGConsumerVPC:
+  ConsumerEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: ProxyTraffic-SG-ConsumerVPC
+      GroupName: !Sub ${AWS::StackName}-ConsumerEndpointSG
       GroupDescription: Accepts traffic on incoming port 3218 from Provider VPCs- 172.16.0.0/16
       VpcId: !Ref ConsumerVPC
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 3128
-        ToPort: 3128
+        FromPort: 80
+        ToPort: 80
         CidrIp: 172.16.0.0/16
-        Description: Accept Only Squid proxy traffic from Service Consumer VPC - 172.16.0.0/16
+        Description: Accept Only traffic from Service Consumer VPC - 172.16.0.0/16
       Tags:
       - Key: Name
-        Value: ProxyTraffic-SG-ConsumerVPC
+        Value: !Sub ${AWS::StackName}-ConsumerEndpointSG
 
 
   Ec2ServiceConsumerHost:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
-      InstanceType: t2.micro
+      InstanceType: t3.micro
       SubnetId: !Ref ConsumerPublicSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
       SecurityGroupIds:
-      - !Ref ProxyTrafficSGConsumerVPC
+      - !Ref ConsumerEndpointSecurityGroup
       Tags:
       - Key: Name
-        Value: Test Instance
-      UserData:      #  Instruct all users of this instance to proxy HTTP and HTTPS traffic through the private link endpoint.
-        Fn::Base64: 
-          Fn::Sub: 
-          - |
-            #!/bin/bash -xe
-            # Set the *_PROXY environment variables to route traffic through the private link endpoint:
-            cat <<EOF > script.sh
-            export HTTP_PROXY="http://${DNSName}:3128"
-            export HTTPS_PROXY="http://${DNSName}:3128"
-            export NO_PROXY="169.254.169.254"
-            EOF
-            sudo cp script.sh /etc/profile.d/script.sh
-          - DNSName: !Select [1, !Split [ ':', !Select [ 0, !GetAtt ConsumerVPCEndpointLink.DnsEntries ]]]
-          # Note that endpoint DnsEntries contains multiple values, each in the format name:DNS.
+        Value: !Sub ${AWS::StackName}-ConsumerInstance
 
   # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
   SSMInstanceProfile:
@@ -331,13 +300,13 @@ Resources:
       SubnetIds:
       - !Ref ConsumerPublicSubnet1
       SecurityGroupIds:
-      - !Ref ProxyTrafficSGConsumerVPC
+      - !Ref ConsumerEndpointSecurityGroup
 
 
 Outputs:
 
-  PrivateLinkDNSName:
-    Description: DNS name used to call the private link service from the consumer VPC.  Use this value to set HTTP_PROXY and HTTPS_PROXY
+  DnsName:
+    Description: DNS Name of the VPC Endpoint.  
     Value: !Select [1, !Split [ ':', !Select [ 0, !GetAtt ConsumerVPCEndpointLink.DnsEntries ]]]
 
   ConsumerSessionManagerLink:
