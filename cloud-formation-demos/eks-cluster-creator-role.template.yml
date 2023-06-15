@@ -108,6 +108,7 @@ Resources:
           - cloudtrail:Describe*
           - config:Describe*
           - aps:*
+          - grafana:*
           Resource: 
           - "*"
       Roles: 
