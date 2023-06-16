@@ -15,8 +15,14 @@ AWSTemplateFormatVersion: '2010-09-09'
 #  same demo ideas for peering.
 #
 #  To demonstrate VPC Endpoints / Private Link, create the stack with option 3.
-#  TODO - ADD SERVICE.
+#  The destination instance hosts a small web service (Python/Flask in a Docker container)
+#  Which can be called via the VPC Endpoint's DNS name.  Copy it from stack
+#  output and call the web service like this:  http://<DNSNAME>/api?value=2 .
 #  
+#  Optional: For any of these options, use the link in stack output to open
+#  VPC / Network Manager / Reachability Analyzer.  Enter source as consumer 
+#  instance, target as provider instance.
+
 
 Parameters:
 
@@ -29,6 +35,10 @@ Parameters:
     Default: 1. Use VPC Peering
     Description: How would you like to connect the two VPCs?
 
+  DockerImage:
+    Type: String
+    Default: public.ecr.aws/kkrueger/flask-api:1
+    Description: Image to use for a container.  Can be from DockerHub or include registry URL for a different source (repository-url/image:tag). 
 
   AmazonLinuxAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -40,9 +50,6 @@ Conditions:
   UseTransitGatewayCondition:   !Equals [ !Ref VPCConnectionType, "2. Use Transit Gateway" ]
   UseEndpointCondition:         !Equals [ !Ref VPCConnectionType, "3. Use Endpoint" ]
 
-
-
-
 Resources:
 
   #  Destination network:
@@ -52,14 +59,14 @@ Resources:
       CidrBlock: 10.0.0.0/16
       Tags:
       - Key: Name
-        Value: Destination VPC
+        Value: !Sub ${AWS::StackName} Destination VPC
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
       - Key: Name
-        Value: DestinationIGW
+        Value: !Sub ${AWS::StackName}-DestinationIGW
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
@@ -75,7 +82,7 @@ Resources:
       MapPublicIpOnLaunch: True
       Tags:
       - Key: Name
-        Value: Destination Subnet
+        Value: !Sub ${AWS::StackName} Destination Subnet
 
   DestinationRouteTable:
     Type: AWS::EC2::RouteTable
@@ -83,7 +90,7 @@ Resources:
       VpcId: !Ref DestinationVPC
       Tags:
       - Key: Name
-        Value: Destination Route table
+        Value: !Sub ${AWS::StackName} Destination Route table
 
   DestinationRoute:
     Type: AWS::EC2::Route
@@ -102,7 +109,7 @@ Resources:
   DestinationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: DestinationSecurityGroup
+      GroupName: !Sub ${AWS::StackName}-DestinationSecurityGroup
       GroupDescription: DestinationSecurityGroup
       VpcId: !Ref DestinationVPC
       SecurityGroupIngress:
@@ -116,19 +123,27 @@ Resources:
         CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
-        Value: DestinationSecurityGroup
+        Value: !Sub ${AWS::StackName}-DestinationSecurityGroup
 
   DestinationInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
+      ImageId: !Ref AmazonLinuxAMI        # Latest Amazon Linux 2
       InstanceType: t2.micro
       SubnetId: !Ref DestinationSubnet
       SecurityGroupIds:
       - !Ref DestinationSecurityGroup
       Tags:
       - Key: Name
-        Value: Destination Instance
+        Value: !Sub ${AWS::StackName} Destination Instance
+      UserData:                           # Starts a simple web app on port 80
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y docker
+          service docker start
+          docker pull ${DockerImage}
+          docker run -d -p80:5000 ${DockerImage}   
 
 
   # This is the Source network
@@ -138,14 +153,14 @@ Resources:
       CidrBlock: 172.16.0.0/16
       Tags:
       - Key: Name
-        Value: Source VPC 
+        Value: !Sub ${AWS::StackName} Source VPC 
 
   SourceInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
       - Key: Name
-        Value: SourceIGW
+        Value: !Sub ${AWS::StackName}-SourceIGW
   SourceInternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
@@ -161,7 +176,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
       - Key: Name
-        Value: Source Subnet
+        Value: !Sub ${AWS::StackName} Source Subnet
 
   SourceRouteTable:
     Type: AWS::EC2::RouteTable
@@ -169,7 +184,7 @@ Resources:
       VpcId: !Ref SourceVPC
       Tags:
       - Key: Name
-        Value: Source Route Table
+        Value: !Sub ${AWS::StackName} Source Route Table
 
   SourceRoute:
     Type: AWS::EC2::Route
@@ -188,7 +203,7 @@ Resources:
   SourceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: SourceSecurityGroup
+      GroupName: !Sub ${AWS::StackName}-SourceSecurityGroup
       GroupDescription: SourceSecurityGroup
       VpcId: !Ref SourceVPC
       SecurityGroupIngress:
@@ -198,7 +213,7 @@ Resources:
         CidrIp: 172.16.0.0/16
       Tags:
       - Key: Name
-        Value: SourceSecurityGroup
+        Value: !Sub ${AWS::StackName}-SourceSecurityGroup
 
   SourceInstance:
     Type: AWS::EC2::Instance
@@ -211,7 +226,7 @@ Resources:
       - !Ref SourceSecurityGroup
       Tags:
       - Key: Name
-        Value: Source Instance
+        Value: !Sub ${AWS::StackName} Source Instance
 
   # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
   SSMInstanceProfile:
@@ -232,67 +247,6 @@ Resources:
             Service: ec2.amazonaws.com
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
-
-  # PRIVATE LINK STARTS HERE!!
-  # This is the Private Link VPC Endpoint Service.  This endpoint will be avalilable outside the Provider VPC to those who need to consume it.
-  SourceEndPointService:
-    Type: AWS::EC2::VPCEndpointService
-    Condition:  UseEndpointCondition
-    Properties:
-      NetworkLoadBalancerArns:
-      - !Ref NetworkLoadBalancer
-      AcceptanceRequired: false
-
-  # This is the Source endpoint.  It resides in the source VPC/Subnets and sends traffic to the destination VPC Endpoint.
-  SourceEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Condition:  UseEndpointCondition
-    Properties:
-      VpcId: !Ref SourceVPC
-      VpcEndpointType: Interface
-      ServiceName: !Sub com.amazonaws.vpce.${AWS::Region}.${SourceEndPointService}
-      SubnetIds:
-      - !Ref SourceSubnet
-      SecurityGroupIds:
-      - !Ref SourceSecurityGroup
-
-  NetworkLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Condition:  UseEndpointCondition
-    Properties:
-      Name: NetworkLoadBalancer
-      Scheme: internal
-      Subnets:
-      - !Ref DestinationSubnet
-      Tags:
-      - Key: Name
-        Value: NetworkLoadBalancer
-      Type: network
-
-  DestinationTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Condition:  UseEndpointCondition
-    Properties:
-      Name: ProviderTargetGroup
-      Port: 80
-      Protocol: TCP
-      VpcId: !Ref DestinationVPC
-      TargetType: instance
-      Targets:
-      - Id: !Ref DestinationInstance
-        Port: 80
-
-  DestinationListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Condition:  UseEndpointCondition
-    Properties:
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn: !Ref DestinationTargetGroup
-      LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 80
-      Protocol: TCP
-
 
   # PEERING STARTS HERE!!
   PeeringConnection:
@@ -361,6 +315,66 @@ Resources:
       DestinationCidrBlock: 172.16.0.0/16
       TransitGatewayId: !Ref TransitGateway
 
+  # PRIVATE LINK STARTS HERE!!
+  # This is the Private Link VPC Endpoint Service.  This endpoint will be avalilable outside the Provider VPC to those who need to consume it.
+  SourceEndPointService:
+    Type: AWS::EC2::VPCEndpointService
+    Condition:  UseEndpointCondition
+    Properties:
+      NetworkLoadBalancerArns:
+      - !Ref NetworkLoadBalancer
+      AcceptanceRequired: false
+
+  # This is the Source endpoint.  It resides in the source VPC/Subnets and sends traffic to the destination VPC Endpoint.
+  SourceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition:  UseEndpointCondition
+    Properties:
+      VpcId: !Ref SourceVPC
+      VpcEndpointType: Interface
+      ServiceName: !Sub com.amazonaws.vpce.${AWS::Region}.${SourceEndPointService}
+      SubnetIds:
+      - !Ref SourceSubnet
+      SecurityGroupIds:
+      - !Ref SourceSecurityGroup
+
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition:  UseEndpointCondition
+    Properties:
+      Name: NetworkLoadBalancer
+      Scheme: internal
+      Subnets:
+      - !Ref DestinationSubnet
+      Tags:
+      - Key: Name
+        Value: NetworkLoadBalancer
+      Type: network
+
+  DestinationTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition:  UseEndpointCondition
+    Properties:
+      Name: ProviderTargetGroup
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref DestinationVPC
+      TargetType: instance
+      Targets:
+      - Id: !Ref DestinationInstance
+        Port: 80
+
+  DestinationListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition:  UseEndpointCondition
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref DestinationTargetGroup
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 80
+      Protocol: TCP
+
 
 Outputs:
 
@@ -375,3 +389,8 @@ Outputs:
   ReachabilityAnalyzerLink:
     Description:  Convenient link to the Network Manager Reachability Analyzer.  Enter 'Source' instance as source and 'Destination' instance as target
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/networkinsights/home?region=${AWS::Region}#CreateNetworkPath
+
+  DnsName:
+    Description: DNS Name of the VPC Endpoint.  
+    Condition:  UseEndpointCondition
+    Value: !Select [1, !Split [ ':', !Select [ 0, !GetAtt SourceEndpoint.DnsEntries ]]]
