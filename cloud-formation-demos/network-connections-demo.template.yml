@@ -52,66 +52,66 @@ Conditions:
 
 Resources:
 
-  #  Destination network:
-  DestinationVPC:
+  #  Provider network:
+  ProviderVPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Destination VPC
+        Value: !Sub ${AWS::StackName} Provider VPC
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName}-DestinationIGW
+        Value: !Sub ${AWS::StackName}-ProviderIGW
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: !Ref DestinationVPC
+      VpcId: !Ref ProviderVPC
       InternetGatewayId: !Ref InternetGateway
 
-  DestinationSubnet:
+  ProviderSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref DestinationVPC
+      VpcId: !Ref ProviderVPC
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
       CidrBlock: 10.0.0.0/24
       MapPublicIpOnLaunch: True
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Destination Subnet
+        Value: !Sub ${AWS::StackName} Provider Subnet
 
-  DestinationRouteTable:
+  ProviderRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref DestinationVPC
+      VpcId: !Ref ProviderVPC
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Destination Route table
+        Value: !Sub ${AWS::StackName} Provider Route table
 
-  DestinationRoute:
+  ProviderRoute:
     Type: AWS::EC2::Route
     DependsOn: InternetGatewayAttachment
     Properties:
-      RouteTableId: !Ref DestinationRouteTable
+      RouteTableId: !Ref ProviderRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  DestinationRouteTableAssociation:
+  ProviderRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref DestinationRouteTable
-      SubnetId: !Ref DestinationSubnet
+      RouteTableId: !Ref ProviderRouteTable
+      SubnetId: !Ref ProviderSubnet
 
-  DestinationSecurityGroup:
+  ProviderSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub ${AWS::StackName}-DestinationSecurityGroup
-      GroupDescription: DestinationSecurityGroup
-      VpcId: !Ref DestinationVPC
+      GroupName: !Sub ${AWS::StackName}-ProviderSecurityGroup
+      GroupDescription: ProviderSecurityGroup
+      VpcId: !Ref ProviderVPC
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
@@ -123,19 +123,20 @@ Resources:
         CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName}-DestinationSecurityGroup
+        Value: !Sub ${AWS::StackName}-ProviderSecurityGroup
 
-  DestinationInstance:
+  ProviderInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmazonLinuxAMI        # Latest Amazon Linux 2
       InstanceType: t2.micro
-      SubnetId: !Ref DestinationSubnet
+      SubnetId: !Ref ProviderSubnet
       SecurityGroupIds:
-      - !Ref DestinationSecurityGroup
+      - !Ref ProviderSecurityGroup
+      IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM, just in case we need to debug something
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Destination Instance
+        Value: !Sub ${AWS::StackName} Provider Instance
       UserData:                           # Starts a simple web app on port 80
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -146,66 +147,66 @@ Resources:
           docker run -d -p80:5000 ${DockerImage}   
 
 
-  # This is the Source network
-  SourceVPC:
+  # This is the Consumer network
+  ConsumerVPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 172.16.0.0/16
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Source VPC 
+        Value: !Sub ${AWS::StackName} Consumer VPC 
 
-  SourceInternetGateway:
+  ConsumerInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName}-SourceIGW
-  SourceInternetGatewayAttachment:
+        Value: !Sub ${AWS::StackName}-ConsumerIGW
+  ConsumerInternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: !Ref SourceVPC
-      InternetGatewayId: !Ref SourceInternetGateway
+      VpcId: !Ref ConsumerVPC
+      InternetGatewayId: !Ref ConsumerInternetGateway
 
-  SourceSubnet:
+  ConsumerSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref SourceVPC
+      VpcId: !Ref ConsumerVPC
       AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
       CidrBlock: 172.16.0.0/24
       MapPublicIpOnLaunch: true
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Source Subnet
+        Value: !Sub ${AWS::StackName} Consumer Subnet
 
-  SourceRouteTable:
+  ConsumerRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref SourceVPC
+      VpcId: !Ref ConsumerVPC
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Source Route Table
+        Value: !Sub ${AWS::StackName} Consumer Route Table
 
-  SourceRoute:
+  ConsumerRoute:
     Type: AWS::EC2::Route
-    DependsOn: SourceInternetGatewayAttachment
+    DependsOn: ConsumerInternetGatewayAttachment
     Properties:
-      RouteTableId: !Ref SourceRouteTable
+      RouteTableId: !Ref ConsumerRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref SourceInternetGateway
+      GatewayId: !Ref ConsumerInternetGateway
 
-  SourceRouteTableAssociation:
+  ConsumerRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref SourceRouteTable
-      SubnetId: !Ref SourceSubnet
+      RouteTableId: !Ref ConsumerRouteTable
+      SubnetId: !Ref ConsumerSubnet
 
-  SourceSecurityGroup:
+  ConsumerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub ${AWS::StackName}-SourceSecurityGroup
-      GroupDescription: SourceSecurityGroup
-      VpcId: !Ref SourceVPC
+      GroupName: !Sub ${AWS::StackName}-ConsumerSecurityGroup
+      GroupDescription: ConsumerSecurityGroup
+      VpcId: !Ref ConsumerVPC
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
@@ -213,20 +214,20 @@ Resources:
         CidrIp: 172.16.0.0/16
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName}-SourceSecurityGroup
+        Value: !Sub ${AWS::StackName}-ConsumerSecurityGroup
 
-  SourceInstance:
+  ConsumerInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
       InstanceType: t2.micro
-      SubnetId: !Ref SourceSubnet
+      SubnetId: !Ref ConsumerSubnet
       IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
       SecurityGroupIds:
-      - !Ref SourceSecurityGroup
+      - !Ref ConsumerSecurityGroup
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName} Source Instance
+        Value: !Sub ${AWS::StackName} Consumer Instance
 
   # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
   SSMInstanceProfile:
@@ -253,22 +254,22 @@ Resources:
     Type: AWS::EC2::VPCPeeringConnection
     Condition:  UsePeeringCondition
     Properties: 
-      PeerVpcId: !Ref DestinationVPC
-      VpcId: !Ref SourceVPC
+      PeerVpcId: !Ref ProviderVPC
+      VpcId: !Ref ConsumerVPC
 
-  DestinationPeerRoute:
+  ProviderPeerRoute:
     Type: AWS::EC2::Route
     Condition:  UsePeeringCondition
     Properties:
-      RouteTableId: !Ref DestinationRouteTable
+      RouteTableId: !Ref ProviderRouteTable
       DestinationCidrBlock: 172.16.0.0/16
       VpcPeeringConnectionId: !Ref PeeringConnection
 
-  SourcePeerRoute:
+  ConsumerPeerRoute:
     Type: AWS::EC2::Route
     Condition:  UsePeeringCondition
     Properties:
-      RouteTableId: !Ref SourceRouteTable
+      RouteTableId: !Ref ConsumerRouteTable
       DestinationCidrBlock: 10.0.0.0/16
       VpcPeeringConnectionId: !Ref PeeringConnection
 
@@ -279,45 +280,45 @@ Resources:
     Properties: 
       AutoAcceptSharedAttachments: enable   # Hoping this makes attaching VPCs easier
 
-  SourceTransitGatewayAttachment:
+  ConsumerTransitGatewayAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
     Condition: UseTransitGatewayCondition
     Properties: 
       TransitGatewayId: !Ref TransitGateway
-      VpcId: !Ref SourceVPC
+      VpcId: !Ref ConsumerVPC
       SubnetIds: 
-      - !Ref SourceSubnet
+      - !Ref ConsumerSubnet
 
-  DestinationTransitGatewayAttachment:
+  ProviderTransitGatewayAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
     Condition: UseTransitGatewayCondition
     Properties: 
       TransitGatewayId: !Ref TransitGateway
-      VpcId: !Ref DestinationVPC
+      VpcId: !Ref ProviderVPC
       SubnetIds: 
-      - !Ref DestinationSubnet
+      - !Ref ProviderSubnet
 
-  SourceTransitGatewayRoute: 
+  ConsumerTransitGatewayRoute: 
     Type: AWS::EC2::Route
     Condition: UseTransitGatewayCondition
-    DependsOn: SourceTransitGatewayAttachment
+    DependsOn: ConsumerTransitGatewayAttachment
     Properties: 
-      RouteTableId: !Ref SourceRouteTable
+      RouteTableId: !Ref ConsumerRouteTable
       DestinationCidrBlock: 10.0.0.0/16
       TransitGatewayId: !Ref TransitGateway
 
-  DestinationTransitGatewayRoute: 
+  ProviderTransitGatewayRoute: 
     Type: AWS::EC2::Route
     Condition: UseTransitGatewayCondition
-    DependsOn: DestinationTransitGatewayAttachment
+    DependsOn: ProviderTransitGatewayAttachment
     Properties: 
-      RouteTableId: !Ref DestinationRouteTable
+      RouteTableId: !Ref ProviderRouteTable
       DestinationCidrBlock: 172.16.0.0/16
       TransitGatewayId: !Ref TransitGateway
 
   # PRIVATE LINK STARTS HERE!!
   # This is the Private Link VPC Endpoint Service.  This endpoint will be avalilable outside the Provider VPC to those who need to consume it.
-  SourceEndPointService:
+  ConsumerEndPointService:
     Type: AWS::EC2::VPCEndpointService
     Condition:  UseEndpointCondition
     Properties:
@@ -325,52 +326,52 @@ Resources:
       - !Ref NetworkLoadBalancer
       AcceptanceRequired: false
 
-  # This is the Source endpoint.  It resides in the source VPC/Subnets and sends traffic to the destination VPC Endpoint.
-  SourceEndpoint:
+  # This is the Consumer endpoint.  It resides in the source VPC/Subnets and sends traffic to the destination VPC Endpoint.
+  ConsumerEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Condition:  UseEndpointCondition
     Properties:
-      VpcId: !Ref SourceVPC
+      VpcId: !Ref ConsumerVPC
       VpcEndpointType: Interface
-      ServiceName: !Sub com.amazonaws.vpce.${AWS::Region}.${SourceEndPointService}
+      ServiceName: !Sub com.amazonaws.vpce.${AWS::Region}.${ConsumerEndPointService}
       SubnetIds:
-      - !Ref SourceSubnet
+      - !Ref ConsumerSubnet
       SecurityGroupIds:
-      - !Ref SourceSecurityGroup
+      - !Ref ConsumerSecurityGroup
 
   NetworkLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Condition:  UseEndpointCondition
     Properties:
-      Name: NetworkLoadBalancer
+      Name: !Sub ${AWS::StackName}-NLB
       Scheme: internal
       Subnets:
-      - !Ref DestinationSubnet
+      - !Ref ProviderSubnet
       Tags:
       - Key: Name
-        Value: NetworkLoadBalancer
+        Value: !Sub ${AWS::StackName}-NetworkLoadBalancer
       Type: network
 
-  DestinationTargetGroup:
+  ProviderTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Condition:  UseEndpointCondition
     Properties:
-      Name: ProviderTargetGroup
+      Name: !Sub ${AWS::StackName}-TG
       Port: 80
       Protocol: TCP
-      VpcId: !Ref DestinationVPC
+      VpcId: !Ref ProviderVPC
       TargetType: instance
       Targets:
-      - Id: !Ref DestinationInstance
+      - Id: !Ref ProviderInstance
         Port: 80
 
-  DestinationListener:
+  ProviderListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Condition:  UseEndpointCondition
     Properties:
       DefaultActions:
       - Type: forward
-        TargetGroupArn: !Ref DestinationTargetGroup
+        TargetGroupArn: !Ref ProviderTargetGroup
       LoadBalancerArn: !Ref NetworkLoadBalancer
       Port: 80
       Protocol: TCP
@@ -378,19 +379,19 @@ Resources:
 
 Outputs:
 
-  SourceSessionManagerLink:
+  ConsumerSessionManagerLink:
     Description: Access the service SOURCE using web browser.  
-    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${SourceInstance}?region=${AWS::Region}#  
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${ConsumerInstance}?region=${AWS::Region}#  
 
-  DestinationPrivateIpAddress:
+  ProviderPrivateIpAddress:
     Description:  Private IP address of the destination EC2 instance.  Should be pingable from source instance when using Peering or Transit Gateway.
-    Value: !GetAtt  DestinationInstance.PrivateIp
+    Value: !GetAtt  ProviderInstance.PrivateIp
 
   ReachabilityAnalyzerLink:
-    Description:  Convenient link to the Network Manager Reachability Analyzer.  Enter 'Source' instance as source and 'Destination' instance as target
+    Description:  Convenient link to the Network Manager Reachability Analyzer.  Enter 'Consumer' instance as source and 'Provider' instance as target
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/networkinsights/home?region=${AWS::Region}#CreateNetworkPath
 
   DnsName:
     Description: DNS Name of the VPC Endpoint.  
     Condition:  UseEndpointCondition
-    Value: !Select [1, !Split [ ':', !Select [ 0, !GetAtt SourceEndpoint.DnsEntries ]]]
+    Value: !Select [1, !Split [ ':', !Select [ 0, !GetAtt ConsumerEndpoint.DnsEntries ]]]
