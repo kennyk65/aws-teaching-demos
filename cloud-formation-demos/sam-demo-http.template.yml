@@ -21,7 +21,7 @@ Resources:
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: index.entrypoint
-      Runtime: nodejs12.x
+      Runtime: nodejs18.x
       InlineCode: |
         'use strict';
 

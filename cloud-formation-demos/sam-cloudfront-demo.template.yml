@@ -19,10 +19,10 @@ Parameters:
 
   Runtime:
     Type: String
-    Default: nodejs12.x
+    Default: nodejs18.x
     Description: Runtime of your zipped lambda code.
     AllowedValues: 
-      - nodejs12.x
+      - nodejs18.x
       - java8
       - python2.7
       - python3.6
