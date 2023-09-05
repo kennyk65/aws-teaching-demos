@@ -97,7 +97,7 @@ Resources:
       FunctionName: !Sub CustomResource-${AWS::StackName}
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
       Timeout: 15
       Code:
         ZipFile: |
