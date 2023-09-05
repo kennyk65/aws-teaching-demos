@@ -7,7 +7,6 @@ AWSTemplateFormatVersion: 2010-09-09
 #    2.  See the accompanying "2-services" template.  Follow the instructions within, running it three times to establish the three services.
 #    3.  Be sure to delete the services when done, each runs in Fargate generating Fargate costs.  Delete this when done because of the ALB charges.
 
-
 Parameters:
 
   CodePipelineBucketPrefix:
@@ -270,7 +269,7 @@ Resources:
       Role: !GetAtt CustomResourceRole.Arn
       MemorySize: 128     
       Timeout: 15         # Uploads and downloads take a bit of time.
-      Runtime: python3.7
+      Runtime: python3.11
       Handler: index.lambda_handler
       Code:
         ZipFile: !Sub |

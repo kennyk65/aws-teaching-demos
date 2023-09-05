@@ -43,7 +43,7 @@ Resources:
       Description: Function which does some work on a schedule
       Handler: index.lambda_handler
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
       MemorySize: 128
       Timeout: 3
       InlineCode: !Sub |
