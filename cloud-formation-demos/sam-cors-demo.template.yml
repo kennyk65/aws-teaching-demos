@@ -43,9 +43,9 @@ Parameters:
     Description: Runtime of your lambda code.
     AllowedValues: 
       - nodejs10.x
-      - java8
+      - java17
       - python2.7
-      - python3.6
+      - python3.11
       - dotnetcore1.0
 Globals:
   Api:

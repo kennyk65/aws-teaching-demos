@@ -32,7 +32,7 @@ Globals:  # This section defines settings that we don't want to repeat over and 
   Function:
     MemorySize: 1024
     Timeout: 8
-    Runtime: java8
+    Runtime: java17
     CodeUri: 
       Bucket: !Ref CodeUriBucket
       Key: !Ref CodeUriKey

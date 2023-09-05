@@ -23,9 +23,9 @@ Parameters:
     Description: Runtime of your zipped lambda code.
     AllowedValues: 
       - nodejs18.x
-      - java8
+      - java17
       - python2.7
-      - python3.6
+      - python3.11
       - dotnetcore1.0
 
 
