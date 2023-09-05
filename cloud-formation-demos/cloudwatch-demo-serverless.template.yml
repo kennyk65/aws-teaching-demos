@@ -248,7 +248,7 @@ Resources:
       Role: !GetAtt CustomResourceRole.Arn
       MemorySize: 128     
       Timeout: 15         # Uploads and downloads take a bit of time.
-      Runtime: python3.7
+      Runtime: python3.11
       Handler: index.lambda_handler
       Code:
         ZipFile: !Sub |
