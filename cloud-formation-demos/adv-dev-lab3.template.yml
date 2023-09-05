@@ -54,6 +54,10 @@ Resources:
               - s3:Get*
               - s3:List*
             Resource: "*"
+          - Effect: Allow
+            Action:
+              - logs:*
+            Resource: "*"
       Roles: [!Ref rekRole]
 
   onS3UploadCallStepFunctionRole:
@@ -171,7 +175,7 @@ Resources:
               return
       Handler: index.handler
       Role: !GetAtt onS3UploadCallStepFunctionRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
       Environment:
         Variables:
           STEP_ARN: !Ref StateMachine
@@ -194,8 +198,9 @@ Resources:
                   MinConfidence=75)
               print('Detected the following labels for ' + key)
               for label in response['Labels']:
-                  print(label['Name'] + ' : ' + str(label['Confidence']))
-                  if label['Name'] == "Human":
+                  labelName = label['Name']
+                  print(labelName + ' : ' + str(label['Confidence']))
+                  if labelName == "Human" or labelName == "Person":
                       found = 'human'
                       break
                   else:
@@ -207,7 +212,7 @@ Resources:
 
       Handler: index.handler
       Role: !GetAtt rekRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
 
   # This Lambda is called by step functions when a human is found.  
   # It sends an SNS notification - you can't do this directly from Step Functions.
@@ -224,7 +229,7 @@ Resources:
               smsMessage = "We found a human!"
               print('Initiating image rekognition')
               found = event['found']
-              if found == 'human':
+              if found == 'human' || found == 'person':
                   sns_client = boto3.client('sns')
                   sms = sns_client.publish(
                       PhoneNumber = phoneNumber, 
@@ -236,7 +241,7 @@ Resources:
 
       Handler: index.handler
       Role: !GetAtt rekRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
       Environment:
         Variables:
           PHONE_NUMBER: !Ref NotificationPhoneNumber
