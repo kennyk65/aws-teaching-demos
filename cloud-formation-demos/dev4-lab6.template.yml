@@ -180,7 +180,7 @@ Resources:
       Description: This Lambda function creates starts the codebuild build project, cleans S3 buckets when finished.
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
       Timeout: 500      
       Code:
         ZipFile: |

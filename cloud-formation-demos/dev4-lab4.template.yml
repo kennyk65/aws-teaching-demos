@@ -147,7 +147,7 @@ Resources:
       Description: This Lambda function populates some DDB data and cleans out S3 on delete.
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.7
+      Runtime: python3.11
       Timeout: 500      
       Code:
         ZipFile: |

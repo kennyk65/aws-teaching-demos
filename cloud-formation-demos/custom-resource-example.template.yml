@@ -85,7 +85,7 @@ Resources:
 
       MemorySize: 128     
       Timeout: 1         # Usually runs in less than one second.
-      Runtime: python3.7
+      Runtime: python3.11
       Handler: index.lambda_handler
 
 
