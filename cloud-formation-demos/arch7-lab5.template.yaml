@@ -2,6 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
 # Re-creates lab 5 from AWS Architecting
+# TODO: UPGRADE PYTHON FROM 3.7 TO 3.11.  THIS WILL REQUIRE NEW CODE FROM THE LAB ENVIRONMENT AS THERE ARE CHANGES IN THE PIL "PILLOW" LIBRARIES.
 
 Parameters:
 
