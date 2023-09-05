@@ -97,7 +97,7 @@ Resources:
       Role: !GetAtt CleanupCustomResourceLambdaRole.Arn
       MemorySize: 128     
       Timeout: 15         
-      Runtime: python3.7
+      Runtime: python3.11
       Handler: index.handler
       Code:
         ZipFile: !Sub |
