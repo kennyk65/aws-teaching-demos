@@ -13,7 +13,17 @@ Resources:
       Description: Example Lambda from CloudFormation
       MemorySize: 128
       Timeout: 4
-      Role: !GetAtt LambdaFunctionRole.Arn
+      # SAM will use this policy to create a role to attach to the function:
+      Policies:  
+      - Version: 2012-10-17 
+        Statement:
+          - Effect: Allow
+            Action: 
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:putObject
+            Resource: "*"
       Handler: index.entrypoint
       Runtime: nodejs18.x
       InlineCode: |
@@ -41,10 +51,6 @@ Resources:
             }
           );   
         };   
-
-      # CodeUri: 
-      #   Bucket: !Ref LambdaCodeBucket
-      #   Key: !Ref LambdaCodeKey
       # Events section defines what triggers the Lambda
       Events:
         # This will define an API Gateway resource that will call our function on a GET to /hello.
@@ -56,38 +62,6 @@ Resources:
             Path: /hello
             Method: GET
 
-
-  # This Role allows the Lambda function to make API calls if needed.
-  LambdaFunctionRole:
-    Type: AWS::IAM::Role
-    Properties: 
-      RoleName: !Sub ${AWS::StackName}-BasicLambdaRole
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-
-  # This Policy is attached to the LambdaFunctionRole.
-  # Basic permissions for CloudWatch Logs, expand as needed.
-  LambdaFunctionPolicy:
-    Type: AWS::IAM::Policy
-    Properties: 
-      PolicyName: !Sub ${AWS::StackName}-LambdaFunctionPolicy
-      PolicyDocument: 
-        Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Action: 
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-            - s3:putObject
-          Resource: "*"
-      Roles: 
-        -  !Ref LambdaFunctionRole
 
   # CloudWatch Logs Groups are created automatically when Lambdas execute, but they are retained forever by default.
   # To control this, make them part of the stack:
