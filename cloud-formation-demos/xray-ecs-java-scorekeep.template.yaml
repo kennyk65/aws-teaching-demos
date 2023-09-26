@@ -72,20 +72,20 @@ Resources:
     Properties:
       TableName: scorekeep-game
       AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: session
-          AttributeType: S
+      - AttributeName: id
+        AttributeType: S
+      - AttributeName: session
+        AttributeType: S
       KeySchema:
-        - AttributeName: id
-          KeyType: HASH
+      - AttributeName: id
+        KeyType: HASH
       GlobalSecondaryIndexes:
-        - IndexName: session-index
-          KeySchema:
-            - AttributeName: session
-              KeyType: HASH
-          ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
-          Projection: { ProjectionType: ALL }
+      - IndexName: session-index
+        KeySchema:
+        - AttributeName: session
+          KeyType: HASH
+        ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
+        Projection: { ProjectionType: ALL }
       ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
 
   MoveTable:
@@ -93,20 +93,20 @@ Resources:
     Properties:
       TableName: scorekeep-move
       AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: game
-          AttributeType: S
+      - AttributeName: id
+        AttributeType: S
+      - AttributeName: game
+        AttributeType: S
       KeySchema:
-        - AttributeName: id
-          KeyType: HASH
+      - AttributeName: id
+        KeyType: HASH
       GlobalSecondaryIndexes:
-        - IndexName: game-index
-          KeySchema:
-            - AttributeName: game
-              KeyType: HASH
-          ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
-          Projection: { ProjectionType: ALL }
+      - IndexName: game-index
+        KeySchema:
+        - AttributeName: game
+          KeyType: HASH
+        ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
+        Projection: { ProjectionType: ALL }
       ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
 
   StateTable:
@@ -114,20 +114,20 @@ Resources:
     Properties:
       TableName: scorekeep-state
       AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: game
-          AttributeType: S
+      - AttributeName: id
+        AttributeType: S
+      - AttributeName: game
+        AttributeType: S
       KeySchema:
-        - AttributeName: id
-          KeyType: HASH
+      - AttributeName: id
+        KeyType: HASH
       GlobalSecondaryIndexes:
-        - IndexName: game-index
-          KeySchema:
-            - AttributeName: game
-              KeyType: HASH
-          ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
-          Projection: { ProjectionType: ALL }
+      - IndexName: game-index
+        KeySchema:
+        - AttributeName: game
+          KeyType: HASH
+        ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
+        Projection: { ProjectionType: ALL }
       ProvisionedThroughput: {ReadCapacityUnits: 2, WriteCapacityUnits: 2}
 
   NotificationTopic:
@@ -196,7 +196,6 @@ Resources:
       ClusterName: !Sub ${AWS::StackName}
 
   EcsSecurityGroup:
-    # Condition: CreateNewSecurityGroup
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: ECS Allowed Ports
@@ -262,29 +261,29 @@ Resources:
         Cpu: '256'
         MemoryReservation: '256'
         PortMappings: 
-          - ContainerPort: '80'
+        - ContainerPort: '80'
       - Name: scorekeep-api
         Image: !Ref BackendImageUri
         Cpu: '512'
         MemoryReservation: '512'
         Environment: 
-          - Name: AWS_REGION
-            Value: !Sub ${AWS::Region}
-          - Name: NOTIFICATION_TOPIC
-            Value: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:scorekeep-notifications
-          - Name: NOTIFICATION_EMAIL
-            Value: !Ref Email
+        - Name: AWS_REGION
+          Value: !Sub ${AWS::Region}
+        - Name: NOTIFICATION_TOPIC
+          Value: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:scorekeep-notifications
+        - Name: NOTIFICATION_EMAIL
+          Value: !Ref Email
         PortMappings: 
-          - ContainerPort: '5000'
+        - ContainerPort: '5000'
       - Name: xray-daemon
         Image: amazon/aws-xray-daemon
         Cpu: '256'
         MemoryReservation: '128'
         Essential: true
         PortMappings: 
-          - ContainerPort: '2000'
-            HostPort: '2000'
-            Protocol: udp
+        - ContainerPort: '2000'
+          HostPort: '2000'
+          Protocol: udp
       Cpu: 1024
       ExecutionRoleArn: !Ref ECSExecutionRole
       Family: scorekeep
