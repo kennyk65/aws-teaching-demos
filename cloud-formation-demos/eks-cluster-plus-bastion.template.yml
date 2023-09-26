@@ -236,6 +236,7 @@ Resources:
     Properties: 
       Name: !Sub ${AWS::StackName} 
       InstanceType: t3.small 
+      ImageId: resolve:ssm:/aws/service/cloud9/amis/amazonlinux-2-x86_64
       AutomaticStopTimeMinutes: 60
       SubnetId: !Select [ 0, !Ref SubnetIds ] 
       Repositories: 

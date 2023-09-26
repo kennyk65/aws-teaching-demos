@@ -29,6 +29,7 @@ Resources:
     Type: AWS::Cloud9::EnvironmentEC2 
     Properties: 
       Name: !Sub ${AWS::StackName} 
+      ImageId: resolve:ssm:/aws/service/cloud9/amis/amazonlinux-2-x86_64
       InstanceType: !Ref InstanceType 
       AutomaticStopTimeMinutes: 60
       SubnetId: !Ref PublicSubnet 
