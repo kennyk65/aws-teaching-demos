@@ -9,7 +9,6 @@ Metadata:
         Parameters: 
           - VPC
           - PublicSubnet
-          - AmazonLinuxAMIID
 
 Parameters:
   VPC:
@@ -20,9 +19,6 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Select a public subnet in your selected VPC.  The web server will run here.
 
-  AmazonLinuxAMIID:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
 
 Resources:
 

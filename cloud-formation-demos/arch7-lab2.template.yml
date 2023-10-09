@@ -5,13 +5,6 @@ AWSTemplateFormatVersion: 2010-09-09
 # The main difference is the IAM Role
 # It also creates two additional subnets that will be needed later.
 
-Parameters:
-
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
-
 Resources:
 
   # First, a VPC:
