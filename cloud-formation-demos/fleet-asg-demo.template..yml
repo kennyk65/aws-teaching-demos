@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # Demonstrates running a fleet of on-demand / spot instances using a standard ASG. 
 
-Metadata: 
+Metadata:  
   AWS::CloudFormation::Interface: 
     ParameterGroups: 
       - Label: 
@@ -20,11 +20,6 @@ Parameters:
   PublicSubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 1-2 public, internet-facing subnets in your selected VPC
-
-  AmazonLinux2AMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
 Resources:
 
@@ -96,7 +91,7 @@ Resources:
     Properties:
       LaunchTemplateName: !Sub ${AWS::StackName}-LaunchTemplate
       LaunchTemplateData: 
-        ImageId: !Ref AmazonLinux2AMI
+        ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
         SecurityGroupIds:  [!Ref SecurityGroup]
     #    InstanceType: t2.micro     # Ordinarily we'd specify instance type in the launch template, but our ASG's mixed instance policy will override it anyway.
         # InstanceInitiatedShutdownBehavior: String
