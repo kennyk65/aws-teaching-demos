@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 # Demonstrates running a fleet of on-demand / spot instances using a EC2 Fleet
-
-Metadata: 
+# TODO: i'M NOT SURE THIS WAS EVER WORKING.  CURRENT ERROR IS DUPLICATE PARAMETER COMBINATION IN LAUNCHSPECIFICATION
+Metadata:  
   AWS::CloudFormation::Interface: 
     ParameterGroups: 
       - Label: 
@@ -69,19 +69,19 @@ Resources:
             - InstanceType: t3.small 
             - Priority: 1            # Docs are conflicting, say it should be a whole number but then say double.
               InstanceType: t2.nano
-              SubnetId: !Sel [0, !Ref PublicSubnetIds]
+              SubnetId: !Select [0, !Ref PublicSubnetIds]
               WeightedCapacity: 1     # Not a weight, a discrete integer amount.
             - Priority: 2
               InstanceType: t2.nano
-              SubnetId: !Sel [1, !Ref PublicSubnetIds]
+              SubnetId: !Select [1, !Ref PublicSubnetIds]
               WeightedCapacity: 1  
             - Priority: 3            
               InstanceType: t3.micro
-              SubnetId: !Sel [0, !Ref PublicSubnetIds]
+              SubnetId: !Select [0, !Ref PublicSubnetIds]
               WeightedCapacity: 1    
             - Priority: 4
               InstanceType: t3.micro
-              SubnetId: !Sel [1, !Ref PublicSubnetIds]
+              SubnetId: !Select [1, !Ref PublicSubnetIds]
               WeightedCapacity: 1 
       OnDemandOptions: 
         AllocationStrategy: prioritized # default value.  Could do lowest price.
