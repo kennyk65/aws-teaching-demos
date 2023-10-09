@@ -128,7 +128,7 @@ Resources:
   ProviderInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI        # Latest Amazon Linux 2
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t2.micro
       SubnetId: !Ref ProviderSubnet
       SecurityGroupIds:
@@ -219,7 +219,7 @@ Resources:
   ConsumerInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t2.micro
       SubnetId: !Ref ConsumerSubnet
       IamInstanceProfile: !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
