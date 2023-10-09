@@ -43,11 +43,6 @@ Parameters:
     Default:  "NAT Gateway"
     Description:  What type of NAT to use for private instances to communicate with the internet.  A single EC2 instance can be used as a NAT, or you can use the AWS NAT Gateway (managed, scalable, more expensive).  This setting will be IGNORED if you do not build private subnets.
 
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: Only used when using an EC2-based NAT.  You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
-
 
 Conditions:
   BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
@@ -254,7 +249,7 @@ Resources:
     Condition: BuildNATInstance
     DependsOn: PublicRoute1                                           # Must have route to IGW established.
     Properties:
-      ImageId: !Ref AmazonLinuxAMI  
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t2.small                                          # Any instance type is fine
       NetworkInterfaces:
       - DeviceIndex: '0'
