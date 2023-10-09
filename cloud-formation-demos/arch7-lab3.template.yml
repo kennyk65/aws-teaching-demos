@@ -12,11 +12,6 @@ Parameters:
     Description:  The name of the stack from Lab 2.  Must be exact.  Will be used for input values like VPC, Secrutiy Groups, etc.
     Default: lab2
 
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
-
 Resources:
 
   LabALBSecurityGroup:
@@ -124,7 +119,7 @@ Resources:
   AppInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI           # We lookup AMI in the region map
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t3.micro                        # Any instance type will do
       IamInstanceProfile: 
         Fn::ImportValue:

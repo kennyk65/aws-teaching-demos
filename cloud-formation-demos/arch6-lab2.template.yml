@@ -15,7 +15,6 @@ Metadata:
           - PublicSubnet
           - PrivateSubnets
           - PrivateKeyName
-          - AmazonLinuxAMI
 
 Parameters:
   PrivateKeyName:
@@ -33,11 +32,6 @@ Parameters:
   PrivateSubnets:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 2 subnets in your selected VPC, RDS instance will run here.
-
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
 
 Resources:
@@ -76,7 +70,7 @@ Resources:
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI                                    # We lookup AMI via the SSM-provided value
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       KeyName: !Ref PrivateKeyName                                    # We get the keypair name from the input parameters
       InstanceType: t2.micro                                          # Any instance type will do
       IamInstanceProfile: !Ref EC2InstanceProfile
