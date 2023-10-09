@@ -9,17 +9,12 @@ Parameters:
     Type: String
     Default: cloudwatch-agent-demo
 
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
-
 Resources:
 
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI     # Obtain the AMI from the SSM Parameter
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t3.micro
       IamInstanceProfile: !Ref InstanceProfile
       SecurityGroups:

@@ -22,11 +22,6 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Select a public subnet in your selected VPC.  The web server will run here.
 
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux 2 AMI using the Parameter Store...
-
 
 Resources:
 
@@ -49,7 +44,7 @@ Resources:
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinuxAMI                # Latest Amazon Linux 2
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t2.micro                      # Any instance type will do
       NetworkInterfaces:
       - DeviceIndex: 0
