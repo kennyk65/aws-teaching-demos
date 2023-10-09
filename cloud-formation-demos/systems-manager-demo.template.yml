@@ -6,10 +6,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 
 Parameters:
-  AmazonLinux2AMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
   WindowsAMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -117,7 +113,7 @@ Resources:
     Properties: 
       LaunchTemplateName: !Sub ${AWS::StackName}-LinuxTemplate
       LaunchTemplateData: 
-        ImageId: !Ref AmazonLinux2AMI             # We lookup AMI using the AWS Systems Manager
+        ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
         InstanceType: t3.micro 
         IamInstanceProfile: 
           Name:  !Ref SSMInstanceProfile     # Allows EC2 Instance to talk with SSM
