@@ -16,10 +16,6 @@ Parameters:
     Default: zero-downtime-blue.war
     Description: Object key (optional prefix) of WAR file to run as a webserver.
 
-  AmazonLinuxAMI:
-    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
 
 Resources:
   # First, A VPC:
@@ -176,7 +172,7 @@ Resources:
     Properties: 
       LaunchTemplateName: !Sub ${AWS::StackName}-LaunchTemplate
       LaunchTemplateData: 
-        ImageId: !Ref AmazonLinuxAMI    # We lookup the AMI from SSM to always get the latest one in this Region
+        ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
         InstanceType: t3.micro            # Any instance type will do 
         NetworkInterfaces:
         - DeviceIndex: 0
