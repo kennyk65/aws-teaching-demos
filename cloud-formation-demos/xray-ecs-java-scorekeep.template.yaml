@@ -133,7 +133,7 @@ Resources:
   NotificationTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: scorekeep-notifications
+      TopicName: !Sub ${AWS::StackName}-scorekeep-notifications
 
   ECSExecutionRole:
     Type: AWS::IAM::Role
@@ -230,10 +230,10 @@ Resources:
       DesiredCapacity: 1
       Tags:
       - Key: Name
-        Value: !Sub ${AWS::StackName}-ECS Instance"
+        Value: !Sub ${AWS::StackName}-ECS Instance
         PropagateAtLaunch: true
       - Key: Description
-        Value: "This instance is the part of the Auto Scaling group which was created through ECS Console"
+        Value: ECS Cluster Member
         PropagateAtLaunch: true
       TargetGroupARNs:
       - !Ref ScorekeepTargetGroup
@@ -270,7 +270,7 @@ Resources:
         - Name: AWS_REGION
           Value: !Sub ${AWS::Region}
         - Name: NOTIFICATION_TOPIC
-          Value: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:scorekeep-notifications
+          Value: !GetAtt NotificationTopic.TopicArn
         - Name: NOTIFICATION_EMAIL
           Value: !Ref Email
         PortMappings: 
