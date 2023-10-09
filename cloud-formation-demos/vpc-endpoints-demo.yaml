@@ -10,10 +10,10 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: https://amcginlay-cfn.s3.amazonaws.com/cfn-vpc-endpoints-demo.yaml
 
-Parameters:
-  LatestAmiId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+# Parameters:
+#   LatestAmiId:
+#     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+#     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
 
 Resources:
 
@@ -130,20 +130,6 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-Public
 
-  # VPCPublicNATIP:
-  #   Type: "AWS::EC2::EIP"
-  #   Properties:
-  #     Domain: "vpc"
-
-  # VPCPublicNAT:
-  #   Type: AWS::EC2::NatGateway
-  #   Properties:
-  #     SubnetId: !Ref SubnetPublic
-  #     AllocationId: !GetAtt [VPCPublicNATIP, AllocationId]
-  #     Tags:
-  #       - Key: Name
-  #         Value: cfn-vpn-endpoints-nat
-
   SubnetPublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -205,7 +191,7 @@ Resources:
   Jumpbox:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref LatestAmiId
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
       InstanceType: t2.micro
       IamInstanceProfile: !Ref SSMInstanceProfile
       NetworkInterfaces:
