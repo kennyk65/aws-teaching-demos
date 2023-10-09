@@ -1,0 +1,91 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Just run an EC2 with in a Default VPC/subnet with a sample program on it.
+# This one looks up the AMI using the SSM Parameter Store...
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+          - PrivateKeyName
+          - AmazonLinuxAMI
+
+Parameters:
+  PrivateKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the private key file to use for SSH/RDP access to the instance, if needed.
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
+  AmazonLinuxAMI:
+    Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: You probably won't need to change this value.  This is looking up the latest AMI using the Parameter Store...
+
+
+Resources:
+
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+
+  # web server:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMI     # Obtain the AMI from the SSM Parameter
+      InstanceType: t2.micro             # Any instance type will do
+      KeyName: !Ref PrivateKeyName         # We get the keypair name from the input parameters
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true         # We will need a public IP address
+        SubnetId: !Ref PublicSubnet              # We should sit in a public subnet.
+        GroupSet: [ !Ref WebServerSecurityGroup ]  # Attach the security group
+      UserData:      #  This code installs a demo Java/Spring app.  Then it signals completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update the OS and get Java
+          yum -y update
+          yum install -y wget java
+          # Download and start Java/Spring app:
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
+          java -jar spring-cloud-aws-environment-demo-1.jar --server.port=80
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT3M
+        
+# Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
+Outputs:
+  WebServerIpAddress:
+    Description: IP Address of the web server
+    Value: !Sub http://${WebServer.PublicIp}
+
+  AmazonLinuxAMI:
+    Description: the AMI we ended up using
+    Value: !Ref AmazonLinuxAMI
+
