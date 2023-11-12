@@ -71,10 +71,10 @@ Resources:
           # Update the OS and get Java
           # These lines will work on Ubuntu, will simply fail on other distros:
           apt-get update && sudo apt-get upgrade -y
-          apt-get install openjdk-8-jdk wget -y
+          apt-get install java-17-amazon-corretto wget -y
           # These lines will work on Amazon Linux and RHEL, will simply fail on Ubuntu:
           yum -y update
-          yum install wget java-1.8.0 -y
+          yum install wget java-17-amazon-corretto -y
 
           # Install and run the cloudwatch agent
           yum install -y amazon-cloudwatch-agent
@@ -110,7 +110,7 @@ Resources:
           /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
           # Download Java/Spring app:
-          wget -q https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          wget -q https://kk-uploads-oregon.s3.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-17.jar
           mv *.jar app.jar
           chmod +x app.jar
           mkdir /var/app
