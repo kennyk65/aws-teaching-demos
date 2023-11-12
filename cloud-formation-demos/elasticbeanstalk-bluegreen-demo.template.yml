@@ -26,12 +26,12 @@ Parameters:
   S3ObjectBlue:
     Description: Object key (optional prefix) of the existing BLUE WAR file in the S3 bucket
     Type: String
-    Default: zero-downtime-blue.war
+    Default: zero-downtime-blue-17.war
 
   S3ObjectGreen:
     Description: Object key (optional prefix) of the existing GREEN WAR file in the S3 bucket
     Type: String
-    Default: zero-downtime-green.war
+    Default: zero-downtime-green-17.war
 
 
 Resources:
@@ -140,11 +140,12 @@ Resources:
       VersionLabel: !Ref BlueVersion
       EnvironmentName: Blue
       CNAMEPrefix: !Ref PrefixProduction
-      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      # SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2023 v5.1.0 running Tomcat 10 Corretto 17"
       OptionSettings: 
-        - Namespace: aws:elasticbeanstalk:application
-          OptionName: "Application Healthcheck URL"
-          Value: /health
+        # - Namespace: aws:elasticbeanstalk:application
+        #   OptionName: "Application Healthcheck URL"
+        #   Value: /health
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !Ref BeanstalkServiceRole        # What is the ElasticBeanstalk service allowed to do?
@@ -159,11 +160,12 @@ Resources:
       VersionLabel: !Ref GreenVersion
       EnvironmentName: Green
       CNAMEPrefix: !Ref PrefixStaging
-      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      # SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2023 v5.1.0 running Tomcat 10 Corretto 17"
       OptionSettings: 
-        - Namespace: aws:elasticbeanstalk:application
-          OptionName: "Application Healthcheck URL"
-          Value: /health
+        # - Namespace: aws:elasticbeanstalk:application
+        #   OptionName: "Application Healthcheck URL"
+        #   Value: /health
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !Ref BeanstalkServiceRole        # What is the ElasticBeanstalk service allowed to do?

@@ -13,7 +13,7 @@ Parameters:
 
   WARFile:
     Type: String
-    Default: zero-downtime-blue.war
+    Default: zero-downtime-blue-17.war
     Description: Object key (optional prefix) of WAR file to run as a webserver.
 
 
@@ -23,8 +23,8 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.1.0.0/16
-      EnableDnsSupport: 'true'
-      EnableDnsHostnames: 'true'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags:
       - Key: Name
         Value: Lab VPC
@@ -86,7 +86,7 @@ Resources:
       SubnetId: !Ref PublicSubnet1
       Tags: 
       - Key: Name
-        Value: !Sub "NAT-${AWS::StackName}"
+        Value: !Sub ${AWS::StackName}-NAT
   ElasticIPAddress:
     Type: AWS::EC2::EIP
     Properties:
@@ -161,8 +161,8 @@ Resources:
         Value: WebServerSecurityGroup
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
+        FromPort: 80
+        ToPort: 80
         CidrIp: 0.0.0.0/0
       
     
@@ -181,11 +181,13 @@ Resources:
           Fn::Base64: !Sub |
             #!/bin/bash
             yum -y update
-            yum install wget java-11-amazon-corretto -y
-            java -version     
+            yum install java-17-amazon-corretto -y
+            yum install https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm -y
+            start amazon-ssm-agent
+            cd /tmp
             wget -q https://${S3Bucket}.s3.amazonaws.com/${WARFile}
             /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
-            sudo java -jar ${WARFile} --server.port=80        
+            sudo java -jar ${WARFile} --server.port=80     
 
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -205,7 +207,7 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub WebServer-${WARFile}
-        PropagateAtLaunch: 'true'
+        PropagateAtLaunch: true
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -223,7 +225,7 @@ Resources:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: ALB
+      Name: !Sub ${AWS::StackName}-ALB
       Scheme: internet-facing
       Subnets:
       - Ref: PublicSubnet1
@@ -243,7 +245,7 @@ Resources:
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: Inventory-App
+      Name: !Sub ${AWS::StackName}-TG
       VpcId: !Ref VPC
       Port: 80
       Protocol: HTTP
