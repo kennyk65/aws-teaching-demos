@@ -20,12 +20,12 @@ Parameters:
   S3ObjectOld:
     Description: Object key (optional prefix) of the existing OLD WAR file in the S3 bucket
     Type: String
-    Default: zero-downtime-old.war
+    Default: zero-downtime-old-17.war
 
   S3ObjectNew:
     Description: Object key (optional prefix) of the existing NEW WAR file in the S3 bucket
     Type: String
-    Default: zero-downtime-new.war
+    Default: zero-downtime-new-17.war
 
 
 Resources:
@@ -34,7 +34,7 @@ Resources:
   BeanstalkServiceRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole" ]]  
+      RoleName: !Sub ${AWS::StackName}-BeanstalkServiceRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement: 
@@ -134,11 +134,8 @@ Resources:
       VersionLabel: !Ref OldVersion
       EnvironmentName: Rolling
       CNAMEPrefix: !Ref Prefix
-      SolutionStackName: "64bit Amazon Linux 2018.03 v3.0.6 running Tomcat 8.5 Java 8"
+      SolutionStackName: "64bit Amazon Linux 2023 v5.1.0 running Tomcat 10 Corretto 17"
       OptionSettings: 
-        # - Namespace: aws:elasticbeanstalk:application
-        #   OptionName: "Application Healthcheck URL"
-        #   Value: /health
 
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
