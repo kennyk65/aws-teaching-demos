@@ -96,16 +96,17 @@ Resources:
           #!/bin/bash
           # Update the OS and get Java
           # These lines will work on Ubuntu, will simply fail on other distros:
-          apt-get update && sudo apt-get upgrade -y
-          apt-get install openjdk-8-jdk wget -y
-          # These lines will work on Amazon Linux and RHEL, will simply fail on Ubuntu:
-          yum -y update
-          yum install wget java-1.8.0 -y
-
-          # Install and run the cloudwatch agent
+          apt-get -qq update && sudo apt-get upgrade -y -qq
+          apt-get -qq install wget java-common -y
+          echo Installing Java:
           cd ~
-          wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
-          dpkg -i -E ./amazon-cloudwatch-agent.deb     
+          wget -q https://corretto.aws/downloads/resources/17.0.9.8.1/java-17-amazon-corretto-jdk_17.0.9.8-1_amd64.deb
+          dpkg -i -E java-17-amazon-corretto-jdk_17.0.9.8-1_amd64.deb >/dev/null  
+
+          echo Install and run the cloudwatch agent
+          cd ~
+          wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+          dpkg -i -E ./amazon-cloudwatch-agent.deb  >/dev/null    
           cat <<EOF > amazon-cloudwatch-agent.json
           {
             "logs": {
@@ -136,14 +137,15 @@ Resources:
           sudo mv *.json /opt/aws/amazon-cloudwatch-agent/etc/
           /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
-          # Download Java/Spring app:
-          wget -q https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          echo Download Java/Spring app:
+          cd ~
+          wget -q https://kk-uploads-oregon.s3.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo-17.jar
           mv *.jar app.jar
           chmod +x app.jar
           mkdir /var/app
           mv app.jar /var/app
           
-          # Run app as service by creating app.service file:
+          echo Run app as service by creating app.service file:
           cat > spring-boot-app.service <<EOF
           [Unit]
           Description=Spring Boot Demo
@@ -162,7 +164,7 @@ Resources:
           EOF
           mv spring-boot-app.service /etc/systemd/system/
 
-          # Run Java Spring app as service:
+          echo Run Java Spring app as service:
           systemctl daemon-reload
           systemctl enable spring-boot-app.service
           systemctl start spring-boot-app
