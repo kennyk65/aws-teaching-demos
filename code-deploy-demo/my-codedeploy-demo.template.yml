@@ -63,17 +63,17 @@ Resources:
       VpcId: !Ref VpcId
       Tags:
       - Key: Name
-        Value: !Join ['', [!Ref 'AWS::StackName', "-WebServerSecurityGroup" ]] 
+        Value: !Sub ${AWS::StackName}-WebServerSecurityGroup 
       - Key: ResourceGroup
         Value: CloudFormationResource
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: '80'
-        ToPort: '80'
+        FromPort: 80
+        ToPort: 80
         CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
-        FromPort: '22'
-        ToPort: '22'
+        FromPort: 22
+        ToPort: 22
         CidrIp: 0.0.0.0/0
 
 
@@ -90,16 +90,16 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum -y update
-          yum install -y ruby wget awslogs java-11-amazon-corretto 
+          yum install -y ruby wget awslogs java-17-amazon-corretto 
 
-          # Install CodeDeploy agent:
+          echo Install CodeDeploy agent:
           cd /home/ec2-user
-          wget https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install
+          wget -q https://aws-codedeploy-us-west-2.s3.amazonaws.com/latest/install
           chmod +x ./install
           ./install auto
           service codedeploy-agent start
 
-          # Install and run the difficult-to-use cloudwatch agent
+          echo Install and run the cloudwatch agent
           yum install -y amazon-cloudwatch-agent
           cd ~
           cat <<EOF > amazon-cloudwatch-agent.json
@@ -132,17 +132,38 @@ Resources:
           sudo mv amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
           /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
-          # Download and start Java/Spring app, signal completion:
-          mkdir /opt/app
-          cd /opt/app
-          wget https://s3-us-west-2.amazonaws.com/kk-uploads-oregon/zero-downtime-old.jar
-          mv zero-downtime-old.jar app.jar
+          echo Download and start Java/Spring app, signal completion:
+          wget -q https://kk-uploads-oregon.s3.us-west-2.amazonaws.com/zero-downtime-old-17.jar
+          mv *.jar app.jar
           chmod +x app.jar
-          # Run Java Spring app as service:
-          ln -s /opt/app/app.jar /etc/init.d/demoapp
-          service demoapp start
+          mkdir /var/app
+          mv app.jar /var/app
+          
+          echo Run app as service by creating app.service file:
+          cat > spring-boot-app.service <<EOF
+          [Unit]
+          Description=Spring Boot Demo
+          
+          [Service]
+          SuccessExitStatus=143
+          TimeoutStartSec=30
+          TimeoutStopSec=10
+          Restart=on-failure
+          RestartSec=5
+          ExecStart=/bin/sh -c "/usr/bin/java -jar /var/app/app.jar --server.port=80 >> /var/log/spring-cloud-aws-environment-demo.log"
+          KillMode=control-group
 
-          # Signal CloudFormation that we are complete:
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          mv spring-boot-app.service /etc/systemd/system/
+
+          echo Run Java Spring app as service:
+          systemctl daemon-reload
+          systemctl enable spring-boot-app.service
+          systemctl start spring-boot-app
+
+          echo  Signal CloudFormation that we are complete:
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource AppAutoScalingGroup --region ${AWS::Region}
         
 
@@ -172,7 +193,7 @@ Resources:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Join ['', [!Ref 'AWS::StackName', "-Alb" ]]
+      Name: !Sub ${AWS::StackName}-Alb
       Scheme: internet-facing
       Subnets: !Ref Subnets
       SecurityGroups: [!Ref WebServerSecurityGroup ]
@@ -190,7 +211,7 @@ Resources:
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Join ['', [!Ref 'AWS::StackName', "-AlbTargetGroup" ]]
+      Name: !Sub ${AWS::StackName}-AlbTargetGroup
       VpcId: !Ref VpcId
       Port: 80
       Protocol: HTTP
@@ -257,7 +278,7 @@ Resources:
   CodeDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref 'AWS::StackName', "-CodeDeployRole" ]]
+      RoleName: !Sub ${AWS::StackName}-CodeDeployRole
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
@@ -274,4 +295,4 @@ Resources:
 Outputs:
   ELBEndpoint:
     Description: The URL for our Elastic Load Balancer.
-    Value: !Join ['', ["http://", !GetAtt [ALB, DNSName]]]
+    Value: !Sub http://${ALB.DNSName}

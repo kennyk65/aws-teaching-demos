@@ -5,7 +5,7 @@ os: linux
 files:
   # A clumsy way to copy, but it gets the job done.
   - source: /
-    destination: /opt/app
+    destination: /var/app
 hooks:
   # This fires after revision is downloaded, before the files (above) are copied.
   BeforeInstall:
