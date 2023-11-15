@@ -71,7 +71,7 @@ Resources:
 
 
   # The CodeBuild project will obtain source from the given GitHub repository.
-  # This is a Java Maven build, so the openjdk 8 is fine.
+  # The build image is expected to contain the correct Java version and Maven.
   # This is using an in-line build-spec rather than the one included with the source.
   MyBuild:
     Type: AWS::CodeBuild::Project
@@ -83,7 +83,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0  
+        Image: aws/codebuild/standard:7.0  
         PrivilegedMode: true      
       Triggers:  # Fire build on any push to master.
         Webhook: true
@@ -99,7 +99,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11             
+                  java: corretto17              
               pre_build:
                 commands:
                   - echo Version of AWS CLI is $(aws --version)
