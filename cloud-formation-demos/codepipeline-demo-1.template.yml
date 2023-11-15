@@ -5,7 +5,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
 # To make a GitHub OAuthToken, go to GitHub / Settings / Developer Settings / Personal Access Tokens
-# Put a '0' on the front of the default value you see here.
+# Put a 'g' on the front of the default value you see here.
 
 
 Parameters:
@@ -22,7 +22,7 @@ Parameters:
   GitHubOAuthToken:
     Type: String
     Default:  hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
-    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Or put a 'g' in front of this one. 
 
   OutputS3BucketAndPrefix:
     Description: Existing S3 Bucket (and optional folder/prefix) where you want to place output artifacts
@@ -132,7 +132,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17 
               pre_build:
                 commands:
                   - mvn test
@@ -146,7 +146,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0        
+        Image: aws/codebuild/standard:7.0        
       Artifacts:    
         Type: CODEPIPELINE
 

@@ -6,7 +6,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # TO RUN THIS:  You'll need a GitHub Repository, and a GitHub OAuthToken.
 # To make a GitHub OAuthToken, go to GitHub / Settings / Developer Settings / Personal Access Tokens
-# Put a '0' on the front of the value you see here.
+# Put a 'g' on the front of the value you see here.
 
 
 Parameters:
@@ -23,7 +23,7 @@ Parameters:
   GitHubOAuthToken:
     Type: String
     Default:  hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
-    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Or put a 'g' in front of this one. 
 
   OutputS3BucketAndPrefix:
     Description: Existing S3 Bucket (and optional folder/prefix) where you want to place output artifacts
@@ -115,8 +115,6 @@ Resources:
 
 
   # This CodeBuild project runs packaging only, tests are separate.
-  # This is a Java / Maven build.  Most of the details on how to to the build 
-  # itself is in the project's buildspec: https://github.com/kennyk65/aws-cloudbuild-demo/blob/master/buildspec.yml
   MyBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
@@ -127,7 +125,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0         
+        Image: aws/codebuild/standard:7.0         
       Source:
         Type: CODEPIPELINE
         BuildSpec: !Sub |
@@ -138,7 +136,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17  
               build:
                 commands:
                   - mvn package -DskipTests
@@ -148,7 +146,7 @@ Resources:
                   - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
             artifacts:
               files:
-                - target/cloud-build-demo-1.war
+                - target/cloud-build-demo-17.war
               discard-paths: yes
             #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
             #  See https://aws.amazon.com/about-aws/whats-new/2019/02/aws-codebuild-now-supports-local-caching/
@@ -170,7 +168,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0        
+        Image: aws/codebuild/standard:7.0        
       Source:
         Type: CODEPIPELINE
         BuildSpec: !Sub |
@@ -179,7 +177,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17 
               build:
                 commands:
                   - echo Testing started on `date`
