@@ -215,14 +215,14 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17
               build:
                 commands:
                   - mvn package -DskipTests
             artifacts:
               files:
                 - '**/*'
-              base-directory: 'target/cloud-build-demo-1'
+              base-directory: 'target/cloud-build-demo-17'
             # THE PROBLEM I HAD is that codepipeline Zips the output artifacts, so it is a WAR within a ZIP.  
             # ElasticBeanstalk doesn't know how to deploy this, and there is no way to make code pipeline stop its zipping.
             # So a suggestion on the forum https://forums.aws.amazon.com/thread.jspa?threadID=244614 is to upload the unzipped folder produced by Maven before it makes the WAR.
@@ -230,7 +230,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0        
+        Image: aws/codebuild/standard:7.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -251,7 +251,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17 
               build:
                 commands:
                   - mvn test
@@ -264,7 +264,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0 
+        Image: aws/codebuild/standard:7.0 
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -377,7 +377,7 @@ Resources:
       EnvironmentName: !Sub ${AWS::StackName}-TestEnvironment
       Description: Quick live-test environment for the app.
       CNAMEPrefix: kk-test                          # This will become part of the DNS name.  Probably shouldn't be hard-coded.
-      SolutionStackName: "64bit Amazon Linux 2 v4.1.7 running Tomcat 8.5 Corretto 11"
+      SolutionStackName: "64bit Amazon Linux 2023 v5.1.0 running Tomcat 10 Corretto 17"
       OptionSettings: 
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
@@ -390,8 +390,8 @@ Resources:
   SnsTopic:
     Type: AWS::SNS::Topic
     Properties: 
-      DisplayName: CPApproval
-      TopicName: CPApproval
+      DisplayName: !Sub ${AWS::StackName}-CPApproval
+      TopicName: !Sub ${AWS::StackName}-CPApproval
       Subscription:
         - Endpoint: !Ref emailAddress
           Protocol: email
