@@ -39,7 +39,7 @@ Parameters:
   GitHubOAuthToken:
     Type: String
     Default:  hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
-    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Put a 'g' in front of this value. 
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Or put a 'g' in front of this one. 
 
   DockerRepositoryPrefix:
     Description:  The name of the existing ECR repository, no image, no tag.  You'll have to create one and initially push to it the docker image that you want to demo.  CodeBuild will push an updated Docker image here when built.  Check that Region and account number.
@@ -216,7 +216,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11             
+                  java: corretto17             
               pre_build:
                 commands:
                   - echo Version of AWS CLI is $(aws --version)
@@ -243,7 +243,7 @@ Resources:
                   - docker push $REPOSITORY_URI:$IMAGE_TAG
                   - docker push $REPOSITORY_URI:$GIT_TAG
                   - echo Creating the Dockerrun.aws.json file needed by ElasticBeanstalk
-                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":80}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
+                  - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s"},"Ports":[{"ContainerPort":8080}]}' $REPOSITORY_URI:$IMAGE_TAG > Dockerrun.aws.json 
             artifacts:
                 files: Dockerrun.aws.json                  
             #  This is implementing a "local / custom" cache to reduce maven download time on subsequent builds.
@@ -255,7 +255,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0  
+        Image: aws/codebuild/standard:7.0  
         PrivilegedMode: true
       Artifacts:    
         Type: CODEPIPELINE
@@ -277,7 +277,7 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17 
               build:
                 commands:
                   - mvn test
@@ -287,7 +287,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0
+        Image: aws/codebuild/standard:7.0
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -385,7 +385,7 @@ Resources:
       EnvironmentName: TestEnvironment
       Description: Quick live-test environment for the app.
       CNAMEPrefix: !Sub ${DockerImageName}    # This will become part of the DNS name.
-      SolutionStackName: "64bit Amazon Linux 2018.03 v2.16.7 running Docker 19.03.13-ce"
+      SolutionStackName: "64bit Amazon Linux 2023 v4.1.0 running Docker"
       OptionSettings: 
       - Namespace: aws:elasticbeanstalk:application
         OptionName: "Application Healthcheck URL"
