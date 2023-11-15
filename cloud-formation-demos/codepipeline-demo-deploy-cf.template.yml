@@ -9,6 +9,7 @@ AWSTemplateFormatVersion: 2010-09-09
 # To make a GitHub OAuthToken, go to GitHub / Settings / Personal Access Tokens
 # The default value you see here will work only if you prepend it with a 'g'.
 
+# TODO: PRESENTLY NOT WORKING.  HAVING DIFFICULTY PASSING PARAMETERS FROM BUILD STAGE TO DEPLOYMENT.
 Metadata: 
   AWS::CloudFormation::Interface: 
     ParameterGroups: 
@@ -44,7 +45,7 @@ Parameters:
   GitHubOAuthToken:
     Type: String
     Default:  hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
-    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens 
+    Description:  CodePipeline sources require an OAuthToken, even if they are public.  To make one go to GitHub / Settings / Personal Access Tokens.  Or put a 'g' in front of this one. 
 
   OutputS3BucketAndPrefix:
     Description: Existing S3 Bucket (and optional folder/prefix) where you want to place output artifacts
@@ -190,12 +191,12 @@ Resources:
         BuildSpec: !Sub |
             version: 0.2
             # This AWS CodeBuild buildspec runs a Maven build, packaging only.  Tests run separately.
-            # The output file will be ./target/spring-cloud-aws-environment-demo-1.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
+            # The output file will be ./target/cloud-build-demo-17.war, BUT codepipeline will zip this before sending it on, and ElasticBeanstalk cannot cope with the ZIP file containing one WAR.
             # The work-around is to specify the entire target folder as the output artifact, which is ridiculous and a much larger upload than it needs to be.
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17 
               build:
                 commands:
                   - mvn package -DskipTests
@@ -203,19 +204,19 @@ Resources:
                 commands:
                   - echo Copying WAR file to S3
                   - aws s3 cp ./target/*.war s3://${OutputS3BucketAndPrefix}/
-                  - printf '{"Parameters":{"VPC":"%s","PublicSubnet":"%s"}}' ${VPC} ${PublicSubnet} > ./target/cloud-build-demo-1/stack-config.json
+                  - printf '{"Parameters":{"VPC":"%s","PublicSubnet":"%s"}}' ${VPC} ${PublicSubnet} > ./target/cloud-build-demo-17/stack-config.json
                   - echo The configuration parameters that will be sent in to deploy the CloudFormation stack:
-                  - cat ./target/cloud-build-demo-1/stack-config.json
+                  - cat ./target/cloud-build-demo-17/stack-config.json
             artifacts:
               # The artifact sent to the next CodePipeline stage will be everything under the target/cloud-build-demo-1 folder.
               # CodePipeline will refer to this content as "TheArtifact".
               files:
                 - '**/*'
-              base-directory: 'target/cloud-build-demo-1'
+              base-directory: 'target/cloud-build-demo-17'
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0        
+        Image: aws/codebuild/standard:7.0        
       Artifacts:    
         Type: CODEPIPELINE
 
@@ -236,14 +237,14 @@ Resources:
             phases:
               install:
                 runtime-versions:
-                  java: corretto11  # formerly openjdk11 
+                  java: corretto17 
               build:
                 commands:
                   - mvn test
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0        
+        Image: aws/codebuild/standard:7.0        
       Artifacts:    
         Type: CODEPIPELINE
 
