@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+## TOOD:  I STOPPED BECAUSE THE LAMBDA RUNTIME USES BOTO3 1.26, BUT BEDROCK REQUIRES 1.28 PLUS BOTOCORE 1.31.
+## THE WORKAROUND IS TO CREATE A LAMBDA LAYER AND I DON'T WANT TO GO THROUGH THE HASSLE RIGHT NOW.
+
+Description: >
+  bedrock-api
+
+  Sample SAM Template for bedrock-api
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    MemorySize: 128
+    Runtime: python3.11
+    Architectures:
+      - x86_64
+
+Resources:
+  GenerateText:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code_gen_text/
+      Handler: app.lambda_handler
+      Timeout: 20
+      Policies:
+      - !Ref InvokeModelPolicy
+      Events:
+        GenText:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /text
+            Method: get
+
+  GenerateImage:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code_gen_image/
+      Handler: app.lambda_handler
+      Timeout: 120
+      Policies:
+      - !Ref InvokeModelPolicy
+      Events:
+        GenImage:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /image
+            Method: get
+
+
+  # create an IAM policy which allows bedrock invokeModel:
+  InvokeModelPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: bedrock:InvokeModel
+            Resource: "*"
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  GenerateTextApi:
+    Description: "API Gateway endpoint URL for Prod stage for GenerateText function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/text/"
+  GenerateTextFunction:
+    Description: "GenerateText Lambda Function ARN"
+    Value: !GetAtt GenerateText.Arn
+  GenerateTextFunctionIamRole:
+    Description: "Implicit IAM Role created for GenerateText function"
+    Value: !GetAtt GenerateTextRole.Arn
