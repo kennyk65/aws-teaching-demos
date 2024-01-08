@@ -13,7 +13,7 @@ Description: >
 Globals:
   Function:
     MemorySize: 128
-    Runtime: python3.11
+    Runtime: python3.12
     Architectures:
       - x86_64
 
@@ -27,11 +27,12 @@ Resources:
       Policies:
       - !Ref InvokeModelPolicy
       Events:
-        GenText:
+        ApiEvent:
           Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
           Properties:
             Path: /text
             Method: get
+            RestApiId: !Ref ApiGatewayApi            
 
   GenerateImage:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
@@ -42,12 +43,35 @@ Resources:
       Policies:
       - !Ref InvokeModelPolicy
       Events:
-        GenImage:
+        ApiEvent:
           Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
           Properties:
             Path: /image
             Method: get
+            RestApiId: !Ref ApiGatewayApi            
 
+  StaticImage:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code_static_image/
+      Handler: app.lambda_handler
+      Timeout: 12
+      Policies:
+      - !Ref InvokeModelPolicy
+      Events:
+        ApiEvent:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /static
+            Method: get
+            RestApiId: !Ref ApiGatewayApi            
+
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      BinaryMediaTypes:
+      - "*/*"
 
   # create an IAM policy which allows bedrock invokeModel:
   InvokeModelPolicy:
