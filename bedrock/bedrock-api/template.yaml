@@ -34,6 +34,22 @@ Resources:
             Method: get
             RestApiId: !Ref ApiGatewayApi            
 
+  GenerateTextKnowledge:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code_gen_text_knowledge/
+      Handler: app.lambda_handler
+      Timeout: 30
+      Policies:
+      - !Ref InvokeModelPolicy
+      Events:
+        ApiEvent:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /knowledge
+            Method: get
+            RestApiId: !Ref ApiGatewayApi            
+
   GenerateImage:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -81,7 +97,9 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Effect: Allow
-            Action: bedrock:InvokeModel
+            Action: 
+            - bedrock:Invoke*
+            - bedrock:Retrieve*
             Resource: "*"
 
 Outputs:

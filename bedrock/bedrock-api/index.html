@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebService Image Viewer</title>
+</head>
+<body>
+
+<h1>WebService Image Viewer</h1>
+
+<form id="myForm">
+    <label for="textInput">Describe the image you would like to generate:</label>
+    <input type="text" id="textInput" name="textInput" required>
+    <button type="button" onclick="callWebService()">Get Image</button>
+</form>
+
+<div id="imageContainer">
+    <img id="resultImage" style="display: none;" alt="Result Image">
+</div>
+
+<script>
+function callWebService() {
+    // Get the text input value
+    var userInput = document.getElementById('textInput').value;
+
+    // Make a request to the webservice with the user input
+    var webserviceUrl = 'https://s5nkoou91a.execute-api.us-east-1.amazonaws.com/Prod/image?prompt=' + encodeURIComponent(userInput);
+
+    // Get the image element and set its source with the webservice URL
+    var imageElement = document.getElementById('resultImage');
+    imageElement.src = webserviceUrl;
+
+    // Display the image
+    imageElement.style.display = 'block';
+}
+
+</script>
+
+</body>
+</html>
