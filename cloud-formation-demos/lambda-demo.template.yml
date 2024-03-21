@@ -13,7 +13,7 @@ Resources:
       MemorySize: 256
       Timeout: 8
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs14.x
+      Runtime: nodejs20.x
       Handler: index.justatest
       Code:
         ZipFile: !Sub |
