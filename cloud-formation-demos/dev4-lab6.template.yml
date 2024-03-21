@@ -469,34 +469,35 @@ Resources:
       ManagedPolicyArns:
       - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
   
-  CognitoAuthRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: PollyCognitoAuthRole
-      Path: /
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-        - Effect: Allow
-          Principal:
-            Federated: cognito-identity.amazonaws.com
-          Action:
-          - sts:AssumeRoleWithWebIdentity
-      Policies:
-      - PolicyName: pollyAuthorizedPolicy
-        PolicyDocument:
-          Version: 2012-10-17
-          Statement:
-          - Effect: Allow
-            Action:
-            - mobileanalytics:PutEvents
-            - cognito-sync:*
-            - cognito-identity:*
-            Resource: "*"
-          - Effect: Allow
-            Action:
-            - execute-api:Invoke
-            Resource: "*"
+  # TODO:  Resource handler returned message: "A condition block must be present for the Cognito provider (Service: Iam, Status Code: 400, Request ID: 958e5162-bcf4-4afe-94f6-13203c8791f4)" (RequestToken: 1c8e8b10-9cb0-bc1a-a51b-72eda575c29c, HandlerErrorCode: InvalidRequest)
+  # CognitoAuthRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: PollyCognitoAuthRole
+  #     Path: /
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #       - Effect: Allow
+  #         Principal:
+  #           Federated: cognito-identity.amazonaws.com
+  #         Action:
+  #         - sts:AssumeRoleWithWebIdentity
+  #     Policies:
+  #     - PolicyName: pollyAuthorizedPolicy
+  #       PolicyDocument:
+  #         Version: 2012-10-17
+  #         Statement:
+  #         - Effect: Allow
+  #           Action:
+  #           - mobileanalytics:PutEvents
+  #           - cognito-sync:*
+  #           - cognito-identity:*
+  #           Resource: "*"
+  #         - Effect: Allow
+  #           Action:
+  #           - execute-api:Invoke
+  #           Resource: "*"
 
 Outputs:
   PollyNotesWebsite:
