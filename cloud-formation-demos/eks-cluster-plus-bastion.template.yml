@@ -48,7 +48,8 @@ Parameters:
 
   AmazonLinux2AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    #Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
   CreateCloud9:
@@ -188,15 +189,17 @@ Resources:
             start amazon-ssm-agent
             # eksctl
             echo Installing eksctl
-            curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+            curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
             sudo mv /tmp/eksctl /usr/local/bin
             eksctl version
             # Kubectl
             echo Installing Kubectl
-            curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.9/2020-08-04/bin/linux/amd64/kubectl
+            curl --silent -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.3/2023-11-14/bin/linux/amd64/kubectl
             chmod +x ./kubectl
             sudo mv ./kubectl /usr/local/bin
             kubectl version --short --client
+            # setup kubeconfig:
+            aws eks update-kubeconfig --name ${AWS::StackName} --alias admin --region ${AWS::Region}
             # Helm
             echo Installing Helm
             curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
@@ -205,11 +208,13 @@ Resources:
             echo current region is set to `aws configure get region`
             # Display your current identity in the log 
             aws sts get-caller-identity 
-            # Configure kubeconfig
-            aws eks update-kubeconfig --name ${Cluster}
             # Helm
             echo Installing Helm
             curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+            #
+            # Note: you will need to run this command on the node when you connect to it:
+            # aws eks update-kubeconfig --name primary --alias admin
+            # It cannot be done in this script because it needs to be user-specific.
 
   EC2Instance:
     Type: AWS::EC2::Instance
