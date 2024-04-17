@@ -14,14 +14,16 @@ Parameters:
     Default: kk-123
     Description: Enter your initials, a dash, and a random number.  This will be used to name an S3 bucket.
 
-  AmazonLinux2AMI:
+  AmazonLinux2023AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    #Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
   PhotoZipUrl:
     Type: String 
-    Default:  https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/sample-photos.zip
+    #Default:  https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/sample-photos.zip
+    Default:  https://kk-courses.s3.amazonaws.com/aws-tech-ess-5/sample-photos.zip
     Description:  Location of Images to download.  You don't need to change this value
 
   LabImplementation:
@@ -46,7 +48,7 @@ Metadata:
         default: You probably don't need to change these...
       Parameters:
       - PhotoZipUrl
-      - AmazonLinux2AMI
+      - AmazonLinux2023AMI
       - VPCCIDR
 
 Conditions:
@@ -206,7 +208,7 @@ Resources:
   WebInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AmazonLinux2AMI
+      ImageId: !Ref AmazonLinux2023AMI
       InstanceType: t2.micro
       IamInstanceProfile:  !Ref InstanceProfile     # Allows EC2 Instance to talk with S3, DynamoDB
       NetworkInterfaces:
@@ -223,25 +225,21 @@ Resources:
           #!/bin/bash -ex
           # Update yum
           yum -y update
-          # Add node's source repo
-          curl -sL https://rpm.nodesource.com/setup_15.x | bash -
           #Install nodejs
           yum -y install nodejs
-          #Install Amazon Linux extras
-          amazon-linux-extras install epel
           #Install stress tool (for load balancing testing)
           yum -y install stress
           # Create a dedicated directory for the application
           mkdir -p /var/app
           # Get the app from S3
-          wget https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/app.zip
+          wget https://kk-courses.s3.amazonaws.com/aws-tech-ess-5/tech-essentials-nodejs-app.zip
           # Unzip it into a specific folder
-          unzip app.zip -d /var/app/
+          unzip tech-essentials-nodejs-app.zip -d /var/app/
           cd /var/app/
           # Configure default AWS Region
-          export DEFAULT_AWS_REGION=`curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|grep region|awk -F\" '{print $4}'`
+          export DEFAULT_AWS_REGION=${AWS::Region}
           # Enable admin tools for stress testing
-          export SHOW_ADMIN_TOOLS=1
+          export SHOW_ADMIN_TOOLS=0
           # Install dependencies
           npm install
           # Start your app
@@ -291,7 +289,7 @@ Resources:
     Properties: 
       LaunchTemplateName: lab-app-launch-template   # Hard-coded in lab
       LaunchTemplateData: 
-        ImageId: !Ref AmazonLinux2AMI     # We lookup AMI from parameter store
+        ImageId: !Ref AmazonLinux2023AMI     # We lookup AMI from parameter store
         InstanceType: t3.micro              # hard-coded
         IamInstanceProfile: 
           Name:  !Ref InstanceProfile     # Allows EC2 Instance to talk with S3, DynamoDB
@@ -305,25 +303,21 @@ Resources:
             #!/bin/bash -ex
             # Update yum
             yum -y update
-            # Add node's source repo
-            curl -sL https://rpm.nodesource.com/setup_15.x | bash -
             #Install nodejs
             yum -y install nodejs
-            #Install Amazon Linux extras
-            amazon-linux-extras install epel
             #Install stress tool (for load balancing testing)
             yum -y install stress
             # Create a dedicated directory for the application
             mkdir -p /var/app
             # Get the app from S3
-            wget https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-100-TECESS-5/app/app.zip
+            wget https://kk-courses.s3.amazonaws.com/aws-tech-ess-5/tech-essentials-nodejs-app.zip
             # Unzip it into a specific folder
-            unzip app.zip -d /var/app/
+            unzip tech-essentials-nodejs-app.zip -d /var/app/
             cd /var/app/
             # Configure S3 bucket details
             export PHOTOS_BUCKET=${S3Bucket}
             # Configure default AWS Region
-            export DEFAULT_AWS_REGION=`curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|grep region|awk -F\" '{print $4}'`
+            export DEFAULT_AWS_REGION=${AWS::Region}
             # Enable admin tools for stress testing
             export SHOW_ADMIN_TOOLS=1
             # Install dependencies
@@ -557,7 +551,7 @@ Resources:
 # Finally, what we should see when we are all done.  The ELB's DNS name is the URL of our website:
 Outputs:
   Ec2InstanceIPAddress:
-    Description: IP Address of web server for labs 2, 3, 4, and 5
+    Description: IP Address of web server for labs 2, 3, and 4
     Value: !Sub http://${WebInstance.PublicIp}
 
   ELBEndpoint:
