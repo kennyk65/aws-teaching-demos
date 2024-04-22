@@ -44,7 +44,7 @@ Resources:
       MemorySize: 128
       Timeout: 10
       Role: !GetAtt LambdaFunctionRole.Arn 
-      Runtime: python3.8
+      Runtime: python3.12
       Handler: index.lambda_handler
       Environment:
         Variables:

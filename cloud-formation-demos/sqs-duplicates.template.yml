@@ -1,0 +1,368 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# This template demonstrates how duplicate message processing can occur with SQS FIFO queues, if one is not careful
+
+# Parameters:
+
+#   QueueType:
+#     Description:  Demonstrate FIFO or standard queue
+#     Type: String
+#     AllowedValues: 
+#     - Standard
+#     - FIFO
+#     Default:  Standard
+
+# Conditions:
+#   BuildFifo:          !Equals [ !Ref QueueType, "FIFO" ]
+#   BuildStandard:      !Equals [ !Ref QueueType, "Standard" ]
+
+Resources:
+
+  # Queues:
+  FifoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub  ${AWS::StackName}_queue.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 4
+  
+  StandardQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}_queue_standard
+      VisibilityTimeout: 4
+
+  StandardDynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}_table_standard
+      AttributeDefinitions:
+      - AttributeName: id
+        AttributeType: S
+      # - AttributeName: messageCount
+      #   AttributeType: N
+      KeySchema:
+      - AttributeName: id
+        KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  FifoDynamoDbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}_table_fifo
+      AttributeDefinitions:
+      - AttributeName: id
+        AttributeType: S
+      # - AttributeName: messageCount
+      #   AttributeType: N
+      KeySchema:
+      - AttributeName: id
+        KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # This Role gives permission to our Lambdas.
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-LambdaRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the Role.
+  # Basic permissions for CloudWatch Logs, plus Cognito.
+  LambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-LambdaPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+          - sqs:*
+          - logs:*
+          - dynamodb:*
+          Resource: "*"
+      Roles: 
+        -  !Ref LambdaRole   
+
+  # This custom resource calls our Lambda function:
+  CustomResourcePopulateQueues:
+    Type: Custom::helper
+    Properties:
+      ServiceToken: !GetAtt CustomResourcePopulateQueuesFunction.Arn
+
+  # This function will setup the web content in our S3 web bucket
+  CustomResourcePopulateQueuesFunction:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-CustomResource
+      Description: Populate SQS Queue with sample messages
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 128     
+      Timeout:  60        # Lots of messages
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          import boto3
+          sqs = boto3.client('sqs')
+          def lambda_handler(event, context):
+            responseData = {}
+
+            # Get the CloudFormation request type
+            requestType = event['RequestType']
+            standard_queue_url = '${StandardQueue}'
+            fifo_queue_url = '${FifoQueue}'
+
+            if requestType == 'Create':
+
+              i = 0
+              while i < 100:
+                i += 1
+                response = sqs.send_message(
+                    QueueUrl=standard_queue_url,
+                    MessageBody=(str(i))
+                )
+                response = sqs.send_message(
+                    QueueUrl=fifo_queue_url,
+                    MessageBody=(str(i)),
+                    MessageGroupId='1'
+                )
+
+                print(response['MessageId']) 
+            
+            if requestType == 'Delete':
+              print ('Purge queue... ' )
+              sqs.purge_queue(QueueUrl=standard_queue_url)
+              sqs.purge_queue(QueueUrl=fifo_queue_url)
+
+            # Unless something blew up, we should wander into this code:
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+
+  # # This function will process messages in the standard queue:
+  # LambdaProcessQueueStandard:
+  #   Type: AWS::Lambda::Function
+  #   Properties: 
+  #     FunctionName: !Sub ${AWS::StackName}-MessageProcessorStandard
+  #     Role: !GetAtt LambdaRole.Arn
+  #     MemorySize: 128     
+  #     Timeout:  3        # Lots of messages
+  #     Runtime: python3.12
+  #     Handler: index.lambda_handler
+  #     Code:
+  #       ZipFile: !Sub |
+  #         import boto3
+  #         import time          
+          
+  #         ddb = boto3.client('dynamodb')
+  #         tableName = '${StandardDynamoDbTable}'
+
+  #         def lambda_handler(event, context):
+  #           for record in event['Records']:
+  #               payload = record["body"]
+  #               payloadstring = str(payload)
+  #               print(payloadstring)
+  #               response = ddb.update_item(
+  #                   TableName=tableName,
+  #                   Key={'id': { 'S': payloadstring }},
+  #                   UpdateExpression='ADD #Y :i',
+  #                   ExpressionAttributeNames={'#Y': 'messageCount'},
+  #                   ExpressionAttributeValues={
+  #                       ':i': {
+  #                           'N': '1',
+  #                       },
+  #                   },
+  #               )
+  #               time.sleep(1)  # Delay occurs after processing, before delete              
+
+  # # This function will process messages in the fifo queue:
+  # LambdaProcessQueueFifo:
+  #   Type: AWS::Lambda::Function
+  #   Properties: 
+  #     FunctionName: !Sub ${AWS::StackName}-MessageProcessorFifo
+  #     Role: !GetAtt LambdaRole.Arn
+  #     MemorySize: 128     
+  #     Timeout:  3        # Lots of messages
+  #     Runtime: python3.12
+  #     Handler: index.lambda_handler
+  #     Code:
+  #       ZipFile: !Sub |
+  #         import boto3
+  #         import time          
+          
+  #         ddb = boto3.client('dynamodb')
+  #         tableName = '${FifoDynamoDbTable}'
+
+  #         def lambda_handler(event, context):
+  #           for record in event['Records']:
+  #               payload = record["body"]
+  #               payloadstring = str(payload)
+  #               print(payloadstring)
+  #               response = ddb.update_item(
+  #                   TableName=tableName,
+  #                   Key={'id': { 'S': payloadstring }},
+  #                   UpdateExpression='ADD #Y :i',
+  #                   ExpressionAttributeNames={'#Y': 'messageCount'},
+  #                   ExpressionAttributeValues={
+  #                       ':i': {
+  #                           'N': '1',
+  #                       },
+  #                   },
+  #               )
+  #               time.sleep(1)  # Delay occurs after processing, before delete              
+
+
+
+  # LambdaEventSourceMappingStandard:
+  #   Type: AWS::Lambda::EventSourceMapping
+  #   Properties:
+  #     BatchSize: 10
+  #     EventSourceArn: !GetAtt StandardQueue.Arn
+  #     FunctionName: !GetAtt LambdaProcessQueueStandard.Arn
+  #     Enabled: true
+  #     MaximumBatchingWindowInSeconds: 1
+
+  # LambdaEventSourceMappingFifo:
+  #   Type: AWS::Lambda::EventSourceMapping
+  #   Properties:
+  #     BatchSize: 10
+  #     EventSourceArn: !GetAtt FifoQueue.Arn
+  #     FunctionName: !GetAtt LambdaProcessQueueFifo.Arn
+  #     Enabled: true
+
+
+  # This function will process messages in the fifo queue:
+  LambdaProcessQueueFifo:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-MessageProcessorFifo
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 128     
+      Timeout:  3        # Too little time to process a batch of ten.
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import time
+          import boto3
+
+          ddb = boto3.client('dynamodb')
+          sqs = boto3.resource('sqs')
+          queue = sqs.get_queue_by_name(QueueName='${FifoQueue.QueueName}')
+          tableName = '${FifoDynamoDbTable}'
+
+
+          def lambda_handler(event, context):
+            num_msgs = 1
+            while num_msgs > 0:
+              mesgs = queue.receive_messages(
+                AttributeNames=['All'],
+                MaxNumberOfMessages=10)   # Too many messages for 3 seconds.
+
+              num_msgs = len(mesgs)
+              if not num_msgs:
+                print("There are no messages in Queue to display")
+            
+              for mesg in mesgs:
+                payload = mesg.body
+                payloadstring = str(payload)
+                print(payloadstring)
+                response = ddb.update_item(
+                    TableName=tableName,
+                    Key={'id': { 'S': payloadstring }},
+                    UpdateExpression='ADD #Y :i',
+                    ExpressionAttributeNames={'#Y': 'messageCount'},
+                    ExpressionAttributeValues={
+                        ':i': {
+                            'N': '1',
+                        },
+                    },
+                )
+                time.sleep(0.5)  # Delay occurs after processing, before delete              
+                mesg.delete()
+
+
+  # This function will process messages in the standard queue:
+  LambdaProcessQueueStandard:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-MessageProcessorStandard
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 128     
+      Timeout:  3        # Too little time to process a batch of ten.
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          import time
+          import boto3
+
+          ddb = boto3.client('dynamodb')
+          sqs = boto3.resource('sqs')
+          queue = sqs.get_queue_by_name(QueueName='${StandardQueue.QueueName}')
+          tableName = '${StandardDynamoDbTable}'
+
+
+          def lambda_handler(event, context):
+            num_msgs = 1
+            while num_msgs > 0:
+              mesgs = queue.receive_messages(
+                AttributeNames=['All'],
+                MaxNumberOfMessages=10)   # Too many messages for 3 seconds.
+
+              num_msgs = len(mesgs)
+              if not num_msgs:
+                print("There are no messages in Queue to display")
+            
+              for mesg in mesgs:
+                payload = mesg.body
+                payloadstring = str(payload)
+                print(payloadstring)
+                response = ddb.update_item(
+                    TableName=tableName,
+                    Key={'id': { 'S': payloadstring }},
+                    UpdateExpression='ADD #Y :i',
+                    ExpressionAttributeNames={'#Y': 'messageCount'},
+                    ExpressionAttributeValues={
+                        ':i': {
+                            'N': '1',
+                        },
+                    },
+                )
+                time.sleep(0.5)  # Delay occurs after processing, before delete              
+                mesg.delete()
+
+
+  DoWorkLambdaSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: {
+          "Ref": "ExecutionRate"
+        },
+        "Targets": [
+          {
+            "Id": "DoWorkLambdaScheduleLambdaTarget",
+            "Arn": {
+              "Fn::GetAtt": [
+                "DoWorkLambda",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
