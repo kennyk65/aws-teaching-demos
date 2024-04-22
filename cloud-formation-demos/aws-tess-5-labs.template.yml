@@ -527,7 +527,7 @@ Resources:
             cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
       MemorySize: 128     
       Timeout: 15         # Uploads and downloads take a bit of time.
-      Runtime: python3.8
+      Runtime: python3.12
       Handler: index.lambda_handler
 
   CustomResourceS3Content:
