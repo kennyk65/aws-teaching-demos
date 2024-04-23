@@ -147,7 +147,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt RoleBoredomLambda.Arn
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Handler: index.handler
       InlineCode: !Sub |
         console.log('Loading function');
