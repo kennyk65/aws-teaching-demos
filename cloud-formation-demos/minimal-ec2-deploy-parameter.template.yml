@@ -71,9 +71,10 @@ Resources:
           yum -y update
           yum install -y wget java
           # Download and start Java/Spring app:
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-17.jar
+          mv *.jar app.jar
           /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
-          java -jar spring-cloud-aws-environment-demo-1.jar --server.port=80
+          java -jar app.jar --server.port=80
     CreationPolicy:
       ResourceSignal:
         Count: 1
