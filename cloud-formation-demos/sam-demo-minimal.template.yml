@@ -6,8 +6,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: s3://kk-uploads-oregon/lambda-helloworld.js.zip
-      Handler: lambda-helloworld.justatest
-      Runtime: nodejs18.x
+      Handler: lambda-helloworld.entrypoint
+      Runtime: nodejs20.x
       Environment:
         Variables: 
           S3_BUCKET: bucket-name
