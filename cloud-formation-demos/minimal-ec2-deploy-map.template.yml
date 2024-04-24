@@ -53,7 +53,7 @@ Resources:
           yum -y update
           yum install -y wget java
           # Download Java/Spring app:
-          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-17.jar
           mv *.jar app.jar
           chmod +x app.jar
           # Move app to var folders:
