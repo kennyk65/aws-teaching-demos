@@ -52,7 +52,7 @@ Resources:
       MemorySize: 256
       Timeout: 8
       Role: !GetAtt RoleSlotMachineLambda.Arn
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Handler: index.handler
       InlineCode: !Sub |
         /*
