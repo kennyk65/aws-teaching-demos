@@ -47,7 +47,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs18.x
+      Runtime: nodejs20.x
       Handler: index.handler
       Code:
         ZipFile: !Sub |
@@ -73,7 +73,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs20.x
       Handler: index.handler
       Code:
         ZipFile: !Sub |
@@ -99,7 +99,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs20.x
       Handler: index.handler
       Code:
         ZipFile: !Sub |
@@ -125,7 +125,7 @@ Resources:
       MemorySize: 128
       Timeout: 4
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs20.x
       Handler: index.handler
       Code:
         ZipFile: !Sub |
