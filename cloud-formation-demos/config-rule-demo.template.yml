@@ -73,7 +73,7 @@ Resources:
       Description: Function which checks our security groups for unauthorized ports
       Handler: index.lambda_handler
       Role: !GetAtt LambdaFunctionRole.Arn
-      Runtime: python3.7
+      Runtime: python3.12
       MemorySize: 128
       Timeout: 3
       InlineCode: !Sub |
