@@ -12,13 +12,13 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 3 subnets in your selected VPC.
 
-  CreateNodeGroup:
-    Type: String 
-    AllowedValues: 
-    - True
-    - False
-    Default: True
-    Description: Do you want to create some cluster nodes?  Probably you do unless you wish to do this manually.
+  # CreateNodeGroup:
+  #   Type: String 
+  #   AllowedValues: 
+  #   - True
+  #   - False
+  #   Default: True
+  #   Description: Do you want to create some cluster nodes?  Probably you do unless you wish to do this manually.
 
   ClusterSize:
     Type: String
