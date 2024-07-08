@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Doesn't really work because cloudtrail is json and can't really be translated into columns.
+# HIVE_PARTITION_SCHEMA_MISMATCH: There is a mismatch between the table and partition schemas. The types are incompatible and cannot be coerced. The column 'useridentity' in table 'cloudtrail-athena-table-kk-admin-db.cloudtrail_cloudtrail' is declared as type 'struct<type:string,invokedby:string,principalid:string,arn:string,accountid:string,accesskeyid:string,sessioncontext:struct<sessionissuer:struct<type:string,principalid:string,arn:string,accountid:string,username:string>,webidfederationdata:string,attributes:struct<creationdate:string,mfaauthenticated:string>>>', but partition 'partition_0=us-east-1/partition_1=2024/partition_2=06/partition_3=07' declared column 'useridentity' as type
+# But it would be really neat if it did work.
+
+Resources:
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput: 
+        Name: !Sub ${AWS::StackName}-kk-admin-db
+
+  GlueCrawler:
+    Type: AWS::Glue::Crawler
+    Properties: 
+      # NOTE: Glue offers different workers, but no idea how to select one.
+      Name: !Sub ${AWS::StackName}-crawler
+      Role: !GetAtt GlueServiceRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Targets: 
+        S3Targets: 
+          - Path: s3://kk-admin/cloud-trail/AWSLogs/
+      TablePrefix: "cloudtrail_"
+      SchemaChangePolicy: 
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+  GlueServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: GlueS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource: 
+                  - arn:aws:s3:::kk-admin
+                  - arn:aws:s3:::kk-admin/*
+
+Outputs:
+  GlueDatabaseName:
+    Description: "Name of the Glue database"
+    Value: !Ref GlueDatabase
+  GlueCrawlerName:
+    Description: "Name of the Glue crawler"
+    Value: !Ref GlueCrawler
+  GlueServiceRoleArn:
+    Description: "ARN of the Glue service role"
+    Value: !GetAtt GlueServiceRole.Arn
