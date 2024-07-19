@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Batch Setup with Amazon Linux and AWS CLI
+# This is a VERY simple demonstration of AWS Batch.
+# Mainly it demonstrates setting up the job definition, queue, compute resources, etc. to do a batch job.
+# The batch job itself is just copying one S3 object somewhere else - completely trivial and best replaced with something else.
+# After running the stack, look in output to find the command to submit a job.
+
+Parameters:
+  DockerImage:
+    Description: The Docker container image to use for the job definition.
+    Type: String
+    Default: amazonlinux:latest
+
+  SubnetId:
+    Description: The subnet ID for the compute environment.
+    Type: AWS::EC2::Subnet::Id
+
+  VpcId:
+    Description: The VPC ID for the security group.
+    Type: AWS::EC2::VPC::Id
+
+  S3Bucket:
+    Description: The S3 bucket for input and output files.
+    Type: String
+    Default: kennyk
+
+Resources:
+  # IAM Role for AWS Batch Service
+  BatchServiceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: batch.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+
+  # IAM Role for Job Definition
+  JobDefinitionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        
+  # IAM Role for EC2 Instances
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+        
+  # Security Group
+  BatchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AWS Batch compute environment
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+
+  # Compute Environment
+  ComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      ComputeEnvironmentName: !Sub ${AWS::StackName}-compute-env
+      Type: MANAGED
+      ServiceRole: !GetAtt BatchServiceRole.Arn
+      ComputeResources:
+        Type: EC2
+        AllocationStrategy: BEST_FIT
+        MinvCpus: 0
+        MaxvCpus: 16
+        DesiredvCpus: 8
+        InstanceTypes:
+          - m5.large
+        InstanceRole: !GetAtt InstanceProfile.Arn
+        Subnets:
+          - !Ref SubnetId
+        SecurityGroupIds:
+          - !GetAtt BatchSecurityGroup.GroupId
+        Tags:
+          Name: genomic-compute-environment
+
+  # Job Queue
+  JobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${AWS::StackName}-job-queue
+      State: ENABLED
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref ComputeEnvironment
+
+  # Job Definition
+  JobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      JobDefinitionName: !Sub ${AWS::StackName}-job-definition
+      Type: container
+      ContainerProperties:
+        Image: !Ref DockerImage
+        Vcpus: 1
+        Memory: 512
+        Command:
+          - sh
+          - -c
+          - |
+            yum install -y aws-cli && \
+            aws s3 cp s3://${S3_BUCKET}/bryce.jpg /tmp/input.jpg && \
+            cp /tmp/input.jpg /tmp/output.jpg && \
+            aws s3 cp /tmp/output.jpg s3://${S3_BUCKET}/output.jpg
+        Environment:
+          - Name: S3_BUCKET
+            Value: !Ref S3Bucket
+        JobRoleArn: !GetAtt JobDefinitionRole.Arn
+      RetryStrategy:
+        Attempts: 3
+
+Outputs:
+  ComputeEnvironmentArn:
+    Description: ARN of the Compute Environment
+    Value: !GetAtt ComputeEnvironment.ComputeEnvironmentArn
+
+  JobQueueArn:
+    Description: ARN of the Job Queue
+    Value: !GetAtt JobQueue.JobQueueArn
+
+  JobDefinitionArn:
+    Description: ARN of the Job Definition
+    Value: !Ref JobDefinition
+
+  JobSubmissionCommand:
+    Description: Run this from the command line
+    Value: !Sub aws batch submit-job --job-name sample-job --job-queue ${AWS::StackName}-job-queue --job-definition ${AWS::StackName}-job-definition
+    
