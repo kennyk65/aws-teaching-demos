@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
 # Re-creates lab 5 from AWS Architecting
-# TODO: UPGRADE PYTHON FROM 3.7 TO 3.11.  THIS WILL REQUIRE NEW CODE FROM THE LAB ENVIRONMENT AS THERE ARE CHANGES IN THE PIL "PILLOW" LIBRARIES.
+# TODO: THE PYTHON CODE THROWS ERRORS FROM TIME TO TIME - IT APPEARS THAT THE STRUCTURE OF THE INCOMING EVENT VARIES, CAUSING THE CODE TO WORK INTERMITTENTLY.
 
 Parameters:
 
@@ -24,12 +24,6 @@ Resources:
     Properties:
       QueueName: !Sub ${AWS::StackName}-mobile-queue
 
-  WebQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub ${AWS::StackName}-web-queue
-
-
   ImageResizeTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -38,8 +32,6 @@ Resources:
       - Endpoint: !GetAtt ThumbnailQueue.Arn
         Protocol: sqs
       - Endpoint: !GetAtt MobileQueue.Arn
-        Protocol: sqs
-      - Endpoint: !GetAtt WebQueue.Arn
         Protocol: sqs
 
   ImageResizeTopicPolicy:
@@ -77,7 +69,6 @@ Resources:
       Queues:
       - !Ref ThumbnailQueue
       - !Ref MobileQueue
-      - !Ref WebQueue
 
 
   # S3 buckets.  
@@ -130,9 +121,9 @@ Resources:
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateThumbnail
       Role: !GetAtt LambdaResizeRole.Arn
-      Runtime: python3.7
-      Handler: CreateThumbnail.handler
-      CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
+      Runtime: python3.9
+      Handler: ResizeImage.handler
+      CodeUri: s3://kk-courses/aws-arch/ResizeImage.zip
       Environment:
         Variables:
           IMAGE_WIDTH: 128
@@ -151,9 +142,9 @@ Resources:
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateMobile
       Role: !GetAtt LambdaResizeRole.Arn
-      Runtime: python3.7
-      Handler: CreateThumbnail.handler
-      CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
+      Runtime: python3.9
+      Handler: ResizeImage.handler
+      CodeUri: s3://kk-courses/aws-arch/ResizeImage.zip
       Environment:
         Variables:
           IMAGE_WIDTH: 640
@@ -167,26 +158,6 @@ Resources:
             Queue: !GetAtt MobileQueue.Arn
             BatchSize: 10
 
-  LambdaWeb:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub ${AWS::StackName}-CreateWeb
-      Role: !GetAtt LambdaResizeRole.Arn
-      Runtime: python3.7
-      Handler: CreateThumbnail.handler
-      CodeUri: s3://kk-courses/aws-arch/CreateThumbnail.zip
-      Environment:
-        Variables:
-          IMAGE_WIDTH: 1920
-          IMAGE_HEIGHT: 1080
-          IMAGE_TYPE: web
-      Timeout: 15         
-      Events:
-        MySQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt WebQueue.Arn
-            BatchSize: 10
 
   # This role is shared by the resize functions:
   LambdaResizeRole:
@@ -237,7 +208,7 @@ Resources:
             cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
       MemorySize: 128     
       Timeout: 15         
-      Runtime: python3.7
+      Runtime: python3.9
       Handler: index.lambda_handler
 
   CleanupCustomResource:
