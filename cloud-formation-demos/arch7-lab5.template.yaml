@@ -2,12 +2,13 @@ AWSTemplateFormatVersion: 2010-09-09
 Transform: AWS::Serverless-2016-10-31
 
 # Re-creates lab 5 from AWS Architecting
+# Needs to run in us-east-1 due to code location.
 # TODO: THE PYTHON CODE THROWS ERRORS FROM TIME TO TIME - IT APPEARS THAT THE STRUCTURE OF THE INCOMING EVENT VARIES, CAUSING THE CODE TO WORK INTERMITTENTLY.
 
 Parameters:
 
   S3BucketPrefix:
-    Description:  The prefix of the S3 buckets.  "input" and "output" will be added to this  
+    Description:  The prefix of the S3 buckets.  "ingest", "mobile" and "thumbnail" will be added to this  
     Type:  String
     Default:  lab5-kk
 
