@@ -179,6 +179,8 @@ Resources:
           Ebs:
             VolumeSize: '20'
             VolumeType: gp2
+        MetadataOptions:
+          HttpTokens: optional  # Allow IMDSv1 or IMDSv2
         UserData:      #  Install AWS Systems Manager, eksctl, kubectl, helm, etc..:
           Fn::Base64: !Sub |
             #!/bin/bash
@@ -194,11 +196,11 @@ Resources:
             eksctl version
             # Kubectl
             echo Installing Kubectl
-            curl --silent -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.3/2023-11-14/bin/linux/amd64/kubectl
+            curl --silent -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.31.0/2024-09-12/bin/linux/amd64/kubectl
             chmod +x ./kubectl
             sudo mv ./kubectl /usr/local/bin
             kubectl version --short --client
-            # setup kubeconfig:
+            # setup kubeconfig (this needs to be done for each user):
             aws eks update-kubeconfig --name ${AWS::StackName} --alias admin --region ${AWS::Region}
             # Helm
             echo Installing Helm
@@ -215,6 +217,7 @@ Resources:
             # Note: you will need to run this command on the node when you connect to it:
             # aws eks update-kubeconfig --name primary --alias admin
             # It cannot be done in this script because it needs to be user-specific.
+            # Also consider running: git clone https://github.com/kennyk65/k8s-teaching-demos.git
 
   EC2Instance:
     Type: AWS::EC2::Instance
