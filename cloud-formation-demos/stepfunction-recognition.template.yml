@@ -72,6 +72,7 @@ Resources:
 
 
   # When triggered by the EventBridge rule, use rekognition to detect-labels.
+  # Reject any non-image file types
   # See if any labels indicate human, send a text message if so.
   # Rekognition and SNS are called directly without Lambda functions
   # The ResultSelector simplifies the output from Rekognition so the Choice can handle it.
@@ -81,9 +82,26 @@ Resources:
       StateMachineName:  !Sub recognition-state-machine-${AWS::StackName}
       DefinitionString: !Sub |-
         {
-          "StartAt": "Detect Human",
+          "StartAt": "Check File Extension",
           "TimeoutSeconds": 300,
           "States": {
+            "Check File Extension": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Or": [
+                    { "Variable": "$.detail.object.key", "StringMatches": "*.jpg" },
+                    { "Variable": "$.detail.object.key", "StringMatches": "*.jpeg" },
+                    { "Variable": "$.detail.object.key", "StringMatches": "*.png" },
+                    { "Variable": "$.detail.object.key", "StringMatches": "*.bmp" },
+                    { "Variable": "$.detail.object.key", "StringMatches": "*.gif" },
+                    { "Variable": "$.detail.object.key", "StringMatches": "*.tiff" }
+                  ],
+                  "Next": "Detect Human"
+                }
+              ],
+              "Default": "Failure"
+            },
             "Detect Human": {
               "Type": "Task",
               "Resource": "arn:aws:states:::aws-sdk:rekognition:detectLabels",
@@ -118,6 +136,11 @@ Resources:
               },
               "Next": "Success"
             },
+            "Failure": {
+              "Type": "Fail",
+              "Error": "UnsupportedFileExtension",
+              "Cause": "The file extension is not a supported image type."
+            },            
             "Success": {
               "Type": "Succeed"
             }
