@@ -1,0 +1,113 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+# This downloads and runs a Spring Boot app on an EC2 instance.  This is a minimalistic approach, it does not run as a service.
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Please supply the following"
+        Parameters: 
+          - VPC
+          - PublicSubnet
+
+Parameters:
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC, one with public subnets
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in your selected VPC.  The web server will run here.
+
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.medium
+      - m8g.4xlarge
+      - g6.4xlarge
+    Description: Select an EC2 instance type
+
+
+Resources:
+
+  # Security Group for the web server.  Allow HTTP from anywhere:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web server
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: WebServerSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  # web server:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref SSMInstanceProfile    # Allow remote connection via systems manager.
+      NetworkInterfaces:
+      - DeviceIndex: 0
+        AssociatePublicIpAddress: true            # We will need a public IP address
+        SubnetId: !Ref PublicSubnet               # We should sit in a public subnet.
+        GroupSet: [ !Ref WebServerSecurityGroup ] # Attach the security group
+      UserData:      #  This code installs a demo Java/Spring app.  Then it signals completion:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update the OS and get Java 
+          yum -y update
+          amazon-linux-extras install java-openjdk11 -y
+          # Download and start Java/Spring app:
+          wget https://kk-uploads-oregon.s3.amazonaws.com/spring-cloud-aws-environment-demo-1.jar
+          mv *.jar app.jar
+          # Must signal completion before actually starting the app:
+          /opt/aws/bin/cfn-signal --resource WebServer --stack ${AWS::StackName}  --region ${AWS::Region}
+          java -jar app.jar --server.port=80
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT3M
+        
+
+  # Attach AmazonEC2RoleforSSM's permissions to each EC2 Instance in the ASG.
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref SSMRole]
+
+  # Allow EC2 instance to make calls to SSM.
+  SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-EC2SSMRole
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      # Note that any other policies required for the instance to do its job would be defined here as well.  
+
+
+# Finally, what we should see when we are all done.  IP address of our website:
+Outputs:
+  WebServerIpAddress:
+    Description: IP Address of the web server
+    Value: !Sub http://${WebServer.PublicIp}
+
+  SessionManagerLink:
+    Description: Link to AWS Systems Manager Session Manager
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${WebServer.InstanceId}?region=${AWS::Region}
