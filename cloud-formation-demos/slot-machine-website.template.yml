@@ -73,13 +73,12 @@ Resources:
             Federated: cognito-identity.amazonaws.com
           Action: sts:AssumeRoleWithWebIdentity
           # AWS requires that roles associated with unauthenticated principals in Cognito identity pools 
-          # have a condition element defined.  The condition does not have to be meaningful or relevant 
-          # to anything, it merely needs to exist.  This condition is checking that the current date 
-          # is > the year 2000, which is true unless you have a time machine.
+          # have a condition element defined.  
           Condition:
-            NumericGreaterThan:
-              aws:EpochTime: 946684800  # Jan 1 2000         
-
+            StringEquals:
+              cognito-identity.amazonaws.com:aud: !Ref CognitoIdentityPool
+            ForAnyValue:StringLike:
+              cognito-identity.amazonaws.com:amr: unauthenticated
 
   AllowInvokeFunction:
     Type: AWS::IAM::Policy
