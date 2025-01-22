@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # Simple Lambda demo.
 
+Parameters:
+
+  Runtime:
+    Description:  Language runtime to use for the Lambda 
+    Type:  String
+    AllowedValues: 
+    - nodejs18.x
+    - nodejs20.x
+    - nodejs22.x
+    Default: nodejs22.x
+
 Resources:
 
   # This is a simple inline NodeJS "hello world" style Lambda function.
@@ -16,7 +27,7 @@ Resources:
       Runtime: nodejs20.x
       Handler: index.justatest
       Code:
-        ZipFile: !Sub |
+        ZipFile:  |
           'use strict';
           console.log('Loading function');
           console.log('just a test');
@@ -34,7 +45,7 @@ Resources:
   LambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: BasicLambdaRole  
+      RoleName: !Sub BasicLambdaRole-${AWS::StackName}  
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement: 
@@ -48,7 +59,7 @@ Resources:
   LambdaFunctionPolicy:
     Type: AWS::IAM::Policy
     Properties: 
-      PolicyName: LambdaFunctionPolicy
+      PolicyName: !Sub LambdaFunctionPolicy-${AWS::StackName}
       PolicyDocument: 
         Version: "2012-10-17"
         Statement: 
@@ -60,3 +71,8 @@ Resources:
           Resource: "*"
       Roles: 
         -  !Ref LambdaFunctionRole   
+
+Outputs:
+  LambdaConsole:
+    Description:  Link to the Lambda console
+    Value: !Sub https://${AWS::AccountId}.${AWS::Region}.console.aws.amazon.com/lambda/home?region=${AWS::Region}#/functions/${MyLambda}?tab=code
