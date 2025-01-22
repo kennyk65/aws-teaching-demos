@@ -1,0 +1,46 @@
+
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+# This demonstrates an explicit definition of an API Gateway.  Also a mock response.
+
+Resources:
+
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: MyApi
+      StageName: prod
+      DefinitionBody: # Define the API structure inline
+        swagger: "2.0"
+        info:
+          title: MyApi
+        paths:
+          /hello:
+            get:
+              responses:
+                "200":
+                  description: Successful GET request
+                  headers:
+                    Content-Type:
+                      type: string
+                  schema:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+              x-amazon-apigateway-integration: # Mock integration
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseTemplates:
+                      application/json: '{"message": "hello world"}'
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: when_no_match
+                type: mock
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for Prod stage
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/prod/hello"
