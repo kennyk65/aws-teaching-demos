@@ -1,0 +1,92 @@
+
+AWSTemplateFormatVersion: 2010-09-09
+
+# CloudFront Distribution with an API Gateway backend.
+# WARNING:  CloudFront distributions take about 5-10 minutes to create / update.  
+
+Resources:
+  # API Gateway Rest API
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: "MyApi"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # API Gateway Resource for /hello
+  ApiGatewayHelloResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "hello"
+  
+  # Modify the definition below so that the resulting Method contains a Method Response with the Content-Type header:
+
+  # API Gateway GET Method for /hello
+  ApiGatewayHelloMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref ApiGatewayHelloResource
+      RestApiId: !Ref ApiGateway
+      Integration:
+        IntegrationHttpMethod: GET
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseTemplates:
+            application/json: '{"message": "hello world"}'
+      MethodResponses:
+      - StatusCode: 200
+        ResponseParameters:
+          method.response.header.Content-Type: true
+        ResponseModels:
+          application/json: "Empty"  
+
+  # API Gateway Deployment
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiGatewayHelloMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: prod
+
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: "CloudFront Distribution for API Gateway"
+        Enabled: true
+        Origins:
+          - Id: ApiGatewayOrigin
+            DomainName: !Sub "${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
+            OriginPath: "/prod"
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+        DefaultCacheBehavior:
+          TargetOriginId: ApiGatewayOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [ "GET", "HEAD", "OPTIONS"]
+          CachedMethods: [ "GET", "HEAD", "OPTIONS"]
+          CachePolicyId:  4135ea2d-6df8-44a3-9df3-4b5a84be39ad   # "CachingDisabled" on the console.
+          OriginRequestPolicyId:  b689b0a8-53d0-40ab-baf2-68738e2966ac  # "AllViewerExceptHostHeader" on the console.
+      
+
+Outputs:
+  TheURL:
+    Description:  WARNING - There may be a delay until this URL is available
+    Value: !Sub https://${CloudFrontDistribution.DomainName}/hello
+
+  # They don't give you the URL, you have to EARN it.
+  # This output depends on the names of the SAM-generated resources.  
+  # If they change the generated resource names, this code won't work:
+  RestAPIProdStageURL:
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/hello
+    Description: URL of the Prod Stage of the generated REST API.  This is the thing you call.
+                   
