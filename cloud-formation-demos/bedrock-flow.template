@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to create an Amazon Bedrock Flow with SNS notification, with input parameters'
+
+#  NOT WORKING - NOT SURE HOW TO MAKE THE FLOW DOCUMENT.
+
+Parameters:
+  EmailAddress:
+    Type: String
+    Default: "kenkrueger65@gmail.com"
+    Description: Email address to receive SNS notifications (must confirm the subscription)
+  
+  ModelId:
+    Type: String
+    Default: anthropic.claude-3-sonnet-20240229-v1:0
+    Description: The foundational model to use for the agent.  Make sure it is enabled.
+
+Resources:
+
+  BedrockFlowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-BedrockFlowExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "bedrock.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-BedrockFlowPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref BedrockSNSTopic
+
+  # SNS Topic
+  BedrockSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-BedrockFlowTopic
+
+  # SNS Subscription (Email Address as Input Parameter)
+  BedrockSNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref BedrockSNSTopic
+      Protocol: email
+      Endpoint: !Ref EmailAddress  # User-provided email
+
+  # Amazon Bedrock Flow
+  BedrockFlow:
+    Type: AWS::Bedrock::Flow
+    Properties:
+      Name: !Sub ${AWS::StackName}-DemoFlow
+      Description: A Bedrock Flow that invokes a model and sends the result to SNS
+      ExecutionRoleArn: !GetAtt BedrockFlowRole.Arn
+      DefinitionString: !Sub |
+        {"Nodes": [
+          {
+            "Name": "InvokeModelNode",
+            "Type": "Prompt",
+            "Configuration": {
+                "Prompt": {
+                "SourceConfiguration": {
+                    "Inline": {
+                    "ModelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+                    "InferenceConfiguration": {
+                        "Text": {
+                        "MaxTokens": 100,
+                        "Temperature": 0.7,
+                        "TopP": 0.9
+                        }
+                    },
+                    "TemplateType": "TEXT",
+                    "TemplateConfiguration": {
+                        "Text": {
+                        "InputVariables": [
+                            {
+                            "Name": "InputText"
+                            }
+                        ],
+                        "Text": "Tell a joke based on the topic: {{InputText}}"
+                        }
+                    }
+                    }
+                }
+                }
+            },
+            "Inputs": [
+                {
+                "Expression": "$data.InputText",
+                "Name": "InputText",
+                "Type": "String"
+                }
+            ],
+            "Outputs": [
+                {
+                "Name": "GeneratedText",
+                "Type": "String"
+                }
+            ]
+            }
+            ]
+          }
+        ]}
+
+            # ,
+            # {
+            # "Name": "PublishToSNSNode",
+            # "Type": "SNSPublish",
+            # "Configuration": {
+            #     "TopicArn": "${BedrockSNSTopic.TopicArn}"
+            # },
+            # "Inputs": [
+            #     {
+            #     "Expression": "$data.GeneratedText",
+            #     "Name": "GeneratedText",
+            #     "Type": "String"
+            #     }
+
+
+
+Outputs:
+  FlowId:
+    Description: "The ID of the created Bedrock Flow"
+    Value: !Ref BedrockFlow
+
+  SNSTopicArn:
+    Description: "The ARN of the SNS Topic"
+    Value: !Ref BedrockSNSTopic
