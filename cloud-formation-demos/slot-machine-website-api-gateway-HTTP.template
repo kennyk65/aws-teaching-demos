@@ -1,0 +1,359 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+# This version uses the HTTP version of the API Gateway.
+
+Parameters:
+  WebsiteS3BucketName:
+    Description: The name of the S3 bucket for your website. Must be globally unique.
+    Type: String
+    Default: kk-slotmachine-api-http
+
+Globals:
+  HttpApi:
+    CorsConfiguration:
+      AllowMethods: ['*']
+      AllowHeaders: ['*']
+      AllowOrigins: ['*']
+
+Resources:
+  WebsiteS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${WebsiteS3BucketName}
+      WebsiteConfiguration:
+        IndexDocument: index-apigateway.html
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
+
+  WebsiteS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteS3Bucket
+      PolicyDocument:
+        Statement:
+          Effect: Allow
+          Action: s3:GetObject
+          Resource: !Sub ${WebsiteS3Bucket.Arn}/*
+          Principal: "*"
+
+  SlotMachineLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: slotpull-api
+      Description: Slot Machine function, fired by HTTP API Gateway when called from website.
+      MemorySize: 256
+      Timeout: 8
+      Role: !GetAtt RoleSlotMachineLambda.Arn
+      Runtime: nodejs20.x
+      Handler: index.handler
+      InlineCode: !Sub |
+        /*
+        Copyright 2010-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+        This file is licensed under the Apache License, Version 2.0 (the "License").
+        You may not use this file except in compliance with the License. A copy of
+        the License is located at
+            http://aws.amazon.com/apache2.0/
+        This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+        CONDITIONS OF ANY KIND, either express or implied. See the License for the
+        specific language governing permissions and limitations under the License.
+        */
+        'use strict';
+
+        var faceCards = [
+        'spad_a.png',  'spad_k.png',  'spad_q.png',  'spad_j.png',
+        'hart_a.png',  'hart_k.png',  'hart_q.png',  'hart_j.png',
+        'diam_a.png',  'diam_k.png',  'diam_q.png',  'diam_j.png',
+        'club_a.png',  'club_k.png',  'club_q.png',  'club_j.png'
+        ];
+
+        exports.handler = (event, context, callback) => {
+        // Define the object that will hold the data values returned
+        var slotResults = {
+                'isWinner' : false,
+                'leftWheelImage' : {'file' : {S: ''}},
+                'middleWheelImage' : {'file' : {S: ''}},
+                'rightWheelImage' : {'file' : {S: ''}}
+        };
+
+        // Improve odds with 3 pulls:
+        var step;
+        for (let step = 1; step < 3; step++) {
+
+            // set a random number 0-15 for each slot position
+            var slot1 = Math.floor(Math.random()*16);
+            var slot2 = Math.floor(Math.random()*16);
+            var slot3 = Math.floor(Math.random()*16);
+
+            slotResults.leftWheelImage.file.S = faceCards[slot1];
+            slotResults.middleWheelImage.file.S = faceCards[slot2];
+            slotResults.rightWheelImage.file.S = faceCards[slot3];
+
+            // if all three values are identical, the spin is a winner!
+            if ((slot1 === slot2) && (slot2 === slot3)) {
+                console.log('Winner!');
+                slotResults.isWinner = true;
+                break;
+            }
+        }
+        // return the JSON result to the caller of the Lambda function.
+        // Since API Gateway calls Lambda using Proxy mode, this code must set the CORS headers.
+        callback(
+            null, 
+            {   "statusCode": 200,
+                "headers": {
+                    "Access-Control-Allow-Headers": '*',
+                    "Access-Control-Allow-Origin": '*',
+                    "Access-Control-Allow-Methods": 'GET,OPTIONS'		    
+                },
+                "body": JSON.stringify(slotResults) 
+            }
+            );
+        };
+      Events:
+        MyHttpApi:
+          Type: HttpApi
+          Properties:
+            Path: /pull
+            Method: GET
+
+  HttpApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SlotMachineLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SlotMachineHttpApi}/*/*"
+
+  SlotMachineHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: SlotMachineHttpApi
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowMethods: 
+          - "*"
+        AllowHeaders: 
+          - "*"
+        AllowOrigins: 
+          - "*"
+
+  SlotMachineHttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SlotMachineHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt SlotMachineLambda.Arn
+      PayloadFormatVersion: "2.0"
+
+  SlotMachineHttpApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SlotMachineHttpApi
+      RouteKey: GET /pull
+      Target: !Sub integrations/${SlotMachineHttpApiIntegration}
+      AuthorizationType: NONE  # Ensure unauthenticated access
+
+  RoleSlotMachineLambda:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-SlotMachineLambdaRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+  PolicySlotMachineLambda:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-SlotMachineLambdaPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:PutObject
+          Resource: "*"
+      Roles:
+        - !Ref RoleSlotMachineLambda
+
+  # This function will setup the web content in our S3 web bucket
+  CustomResourceWebContentLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: CloudwatchLogsGroupCustomResource
+    Properties: 
+      FunctionName: !Sub ${AWS::StackName}-WebContentCustomResource
+      Description: Populates S3 bucket with web content for our slot machine.
+      Role: !GetAtt CustomResourceRole.Arn
+      MemorySize: 128     
+      Timeout: 15         # Uploads and downloads take a bit of time.
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: !Sub |
+          from zipfile import ZipFile 
+          import json
+          import os
+          import cfnresponse
+          import mimetypes
+          import boto3
+          import urllib.request
+
+          print('Loading function')
+
+          # Entry point:
+          def lambda_handler(event, context):
+              # print("Received event: " + json.dumps(event, indent=2))
+
+              # Get the CloudFormation request type
+              requestType = event['RequestType']
+              rp          = event['ResourceProperties']
+              region        = rp['region']
+              downloadUrl     = rp['downloadUrl']
+              apiGatewayUrl     = rp['apiGatewayUrl']
+              destinationBucket   = rp['destinationBucket']
+
+              unzip_location  = "/tmp/web"
+              responseData = {}
+              s3 = boto3.client('s3')
+
+              if requestType == 'Create' or requestType == 'Update':
+                try:
+                    print ('Downloading... ' )
+                    zip_file_name, headers = urllib.request.urlretrieve(downloadUrl)          
+
+                    print ('Unzipping...' )
+                    try:
+                        with ZipFile(zip_file_name, 'r') as zip: 
+                            zip.extractall(unzip_location) 
+                    except Exception as e:
+                        msg = 'Error extracting {} to {}.  Exception is {}.'.format(zip_file_name,unzip_location,e)
+                        print(msg)
+                        responseData['Reason'] = msg
+                        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                        return
+
+                    html_file_name = "/tmp/web/index-apigateway.html"
+                    print('Altering contents of {}...'.format(html_file_name))
+                    data = ""
+                    # Read the file contents into memory:
+                    with open(html_file_name,'r') as f:
+                        data = f.read()
+
+                    # Search and replace:
+                    print('Altering...')
+                    data = data.replace("API_GATEWAY_URL",apiGatewayUrl)
+                    data = data.replace("us-west-2",region)
+
+                    # Save
+                    print('Saving...')
+                    with open(html_file_name,'w') as f:
+                        f.write(data)
+
+                    print ('Uploading {} to {}'.format(unzip_location,destinationBucket))
+                    for root,dirs,files in os.walk(unzip_location):
+                        for file in files:
+                            mime_type = mimetypes.guess_type(file)[0]
+                            if mime_type is None:
+                                mime_type = "binary/octet-stream"
+                            prefix = root.replace(unzip_location,"",1)
+                            if len(prefix) > 0:
+                                prefix = prefix + '/'
+                            print("uploading from {} to {}".format(os.path.join(root,file),prefix+file))
+                            s3.upload_file(os.path.join(root,file),destinationBucket,prefix + file,ExtraArgs={'ContentType': mime_type})
+                    print ('Upload complete.')
+
+                except Exception as e:
+                    msg = 'Error occurred while setting up web content.  Exception is {}.'.format(repr(e))
+                    print(msg)
+                    responseData['Reason'] = msg
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                    return
+
+              if requestType == 'Delete':
+                print ('Clean out bucket to enable delete... ' )
+                boto3.resource('s3').Bucket(destinationBucket).objects.all().delete()
+
+              # Unless something blew up, we should wander into this code:
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+              
+  # This Role gives permission to our custom resource Lambda.
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-CustomResourceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+
+
+  # This Policy is attached to the CustomResourceRole.
+  # Basic permissions for CloudWatch Logs, plus S3.
+  CustomResourcePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: !Sub ${AWS::StackName}-CustomResourcePolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          Effect: Allow
+          Action: 
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:Put*
+            - s3:List*
+            - s3:Delete*
+          Resource: "*"
+      Roles: 
+        -  !Ref CustomResourceRole   
+
+  # This custom resource calls our Lambda function:
+  HelperCustomResourceWebContentLambda:
+    Type: Custom::helper
+    DependsOn: CustomResourcePolicy     # Dont try running the custom resource until the policy is set.
+    Properties:
+      ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
+      region: !Sub ${AWS::Region}
+      apiGatewayUrl: !Sub https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/pull
+      destinationBucket: !Ref WebsiteS3Bucket
+      downloadUrl:  "https://kk-courses.s3.amazonaws.com/aws-arch/slot-machine-website-demo/slotassets.zip"
+
+
+  # CloudWatch Logs Groups are created automatically once Lambdas write output,
+  # but they are easier to cleanup when they are part of the stack.  
+  # So make one for each Lambda function:
+  CloudwatchLogsGroupSlotMachineApi:
+    Type: AWS::Logs::LogGroup
+  # DeletionPolicy: Retain  # Great for debugging, but causes trouble in general use when a stack name is reused within 3 days.
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${SlotMachineLambda}
+      RetentionInDays: 3
+
+  CloudwatchLogsGroupCustomResource:
+    Type: AWS::Logs::LogGroup
+  # DeletionPolicy: Retain  # Great for debugging, but causes trouble in general use when a stack name is reused within 3 days.
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-WebContentCustomResource
+      RetentionInDays: 3
+ 
+
+Outputs:
+  WebsiteURL:
+    Description: URL of the website
+    Value: !Sub "http://${WebsiteS3Bucket}.s3-website-${AWS::Region}.amazonaws.com"
+
+  HttpApiEndpoint:
+    Description: HTTP API Gateway Invoke URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
