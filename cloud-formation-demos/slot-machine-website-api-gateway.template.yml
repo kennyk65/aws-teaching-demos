@@ -47,7 +47,7 @@ Resources:
   SlotMachineLambda:
     Type: AWS::Serverless::Function
     Properties: 
-      FunctionName: slotpull-api 
+      FunctionName: !Sub ${AWS::StackName}-slotpull-api 
       Description: Slot Machine function, fired by API gateway when called from website..
       MemorySize: 256
       Timeout: 8
