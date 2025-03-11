@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  
+  #  Go to Postman.
+  #  enter POST request for the api endpoint in the output section.
+  # Put in a header for x-api-key: <AppSyncAPIKey>
+  # Put in a body for the query:  { "query": "{ getPets { id name type age } }" }
+  # CURRENTLY NOT WORKING - SOME ERROR WITH THE MAPPING TEMPLATES IN AND OUT.
+
+
+
+  # Lambda Function that will serve as the data source for the Pet Shop API
+  PetShopLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt PetShopLambdaExecutionRole.Arn
+      FunctionName: PetShopLambda
+      Runtime: python3.8
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              pets = [
+                  {"id": "1", "name": "Buddy", "type": "Dog"},
+                  {"id": "2", "name": "Mittens", "type": "Cat"},
+                  {"id": "3", "name": "Charlie", "type": "Parrot"}
+              ]
+              
+              return {
+                  "version": "2018-05-29",  # REQUIRED for AppSync to recognize the response
+                  "payload": pets  # The data that AppSync will process
+              } 
+
+  # IAM Role for Lambda function execution (No InvokeFunction permission needed here)
+  PetShopLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: lambda.amazonaws.com
+      Policies:
+        - PolicyName: PetShopLambdaExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: "*"
+
+  # AppSync API with API_KEY authentication type (for anonymous access)
+  PetShopAppSyncAPI:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: PetShopAPI
+      AuthenticationType: API_KEY  # Anonymous access via API key
+      XrayEnabled: true
+
+  # AppSync Schema
+  PetShopGraphQLSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt PetShopAppSyncAPI.ApiId
+      Definition: |
+        type Pet {
+          id: ID!
+          name: String!
+          type: String!
+        }
+
+        type Query {
+          getPets: [Pet]
+        }
+
+  # AppSync Data Source - Lambda function
+  PetShopLambdaDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt PetShopAppSyncAPI.ApiId
+      Name: PetShopLambdaDS
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt PetShopLambdaFunction.Arn  # Corrected property name
+      ServiceRoleArn: !GetAtt PetShopAppSyncExecutionRole.Arn
+
+  # AppSync Resolver for getPets query
+  PetShopResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt PetShopAppSyncAPI.ApiId
+      TypeName: Query
+      FieldName: getPets
+      DataSourceName: !GetAtt PetShopLambdaDataSource.Name
+      # RequestMappingTemplate: "{}"
+      # ResponseMappingTemplate: "$util.toJson($context.result.payload)"
+      RequestMappingTemplate: |
+        {
+          "version": "2018-05-29"
+        }
+      ResponseMappingTemplate: |
+        #set($result = $context.result)
+        $util.toJson($result.payload)
+
+
+  # IAM Role for AppSync to invoke Lambda
+  PetShopAppSyncExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: appsync.amazonaws.com
+      Policies:
+        - PolicyName: PetShopAppSyncLambdaInvokePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt PetShopLambdaFunction.Arn
+
+  # AppSync API Key for anonymous access
+  PetShopAPIKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt PetShopAppSyncAPI.ApiId
+
+Outputs:
+  AppSyncAPIUrl:
+    Description: "The URL for the AppSync API"
+    Value: !GetAtt PetShopAppSyncAPI.GraphQLUrl
+
+  AppSyncAPIKey:
+    Description: "The API key for the AppSync API"
+    Value: !GetAtt PetShopAPIKey.ApiKey
