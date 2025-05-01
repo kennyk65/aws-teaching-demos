@@ -5,6 +5,18 @@ AWSTemplateFormatVersion: 2010-09-09
 # The main difference is the IAM Role
 # It also creates two additional subnets that will be needed later.
 
+Parameters:
+
+  InstanceType:
+    Type: String 
+    AllowedValues: 
+    - t3.micro
+    - t3.small
+    - t3.medium
+    Default: t3.micro
+    Description: Instance Type to run.
+
+
 Resources:
 
   # First, a VPC:
@@ -147,7 +159,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
-      InstanceType: t3.micro                        # Any instance type will do
+      InstanceType: !Ref InstanceType              # Use parameter
       IamInstanceProfile: !Ref EC2InstanceProfile
       NetworkInterfaces:
       - DeviceIndex: '0'
@@ -200,7 +212,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"  # Obtain the AMI from the SSM Parameter
-      InstanceType: t3.micro                        # Any instance type will do
+      InstanceType: !Ref InstanceType              # Use parameter
       IamInstanceProfile: !Ref EC2InstanceProfile
       NetworkInterfaces:
       - DeviceIndex: 0
