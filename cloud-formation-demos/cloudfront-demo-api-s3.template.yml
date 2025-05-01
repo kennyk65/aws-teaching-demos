@@ -81,30 +81,33 @@ Resources:
         Comment: "CloudFront Distribution for API Gateway"
         Enabled: true
         Origins:
-          - Id: ApiGatewayOrigin
-            DomainName: !Sub "${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
-            OriginPath: "/prod"
-            CustomOriginConfig:
-              OriginProtocolPolicy: https-only
-          - Id: S3Origin
-            DomainName: !GetAtt S3Bucket.RegionalDomainName   # Must be region specific to avoid redirect behavior when buckets are new
-            OriginAccessControlId: !Ref OAC
-            S3OriginConfig:
-              OriginAccessIdentity: ''   # This is required, but unneeded when using OAC.  Must supply an empty string.
+        - Id: ApiGatewayOrigin
+          DomainName: !Sub "${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
+          OriginPath: "/prod"
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only
+        - Id: S3Origin
+          DomainName: !GetAtt S3Bucket.RegionalDomainName   # Must be region specific to avoid redirect behavior when buckets are new
+          OriginAccessControlId: !Ref OAC
+          S3OriginConfig:
+            OriginAccessIdentity: ''   # This is required, but unneeded when using OAC.  Must supply an empty string.
 
         DefaultCacheBehavior:
           TargetOriginId: S3Origin # Default to S3
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized, recommended for S3
+          FunctionAssociations:       
+          - EventType: viewer-request
+            FunctionARN: !GetAtt RootRewriteFunction.FunctionARN  # changes "/" requests to "/index.html"
 
         CacheBehaviors: # Use Cache Behaviors for path-based routing
-          - PathPattern: /api/* # Matches paths starting with /api
-            TargetOriginId: ApiGatewayOrigin
-            ViewerProtocolPolicy: redirect-to-https
-            AllowedMethods: [ "GET", "HEAD", "OPTIONS"]
-            CachedMethods: [ "GET", "HEAD", "OPTIONS"]
-            CachePolicyId:  4135ea2d-6df8-44a3-9df3-4b5a84be39ad   # "CachingDisabled" on the console.
-            OriginRequestPolicyId:  b689b0a8-53d0-40ab-baf2-68738e2966ac  # "AllViewerExceptHostHeader" on the console.
+        - PathPattern: /api/* # Matches paths starting with /api
+          TargetOriginId: ApiGatewayOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [ "GET", "HEAD", "OPTIONS"]
+          CachedMethods: [ "GET", "HEAD", "OPTIONS"]
+          CachePolicyId:  4135ea2d-6df8-44a3-9df3-4b5a84be39ad   # "CachingDisabled" on the console.
+          OriginRequestPolicyId:  b689b0a8-53d0-40ab-baf2-68738e2966ac  # "AllViewerExceptHostHeader" on the console.
 
   OAC:
     Type: AWS::CloudFront::OriginAccessControl
@@ -115,6 +118,24 @@ Resources:
           OriginAccessControlOriginType: s3
           SigningBehavior: always
           SigningProtocol: sigv4
+
+  # CloudFront Function used to rewrite "/" requests to "/index.html"
+  RootRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: RewriteRootToIndexHtml
+      AutoPublish: true
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          if (request.uri === "/") {
+            request.uri = "/index.html";
+          }
+          return request;
+        }
+      FunctionConfig:
+        Comment: "Rewrites / to /index.html for S3 origin"
+        Runtime: cloudfront-js-1.0
 
   # Custom resource established placeholder index.html in S3 bucket, and deletes it on stack delete.
   S3BucketDeployment:
@@ -225,7 +246,7 @@ Resources:
 Outputs:
   TheURL:
     Description:  WARNING - There may be a delay until this URL is available
-    Value: !Sub https://${CloudFrontDistribution.DomainName}/index.html
+    Value: !Sub https://${CloudFrontDistribution.DomainName}
 
   # They don't give you the URL, you have to EARN it:
   RestAPIProdStageURL:
