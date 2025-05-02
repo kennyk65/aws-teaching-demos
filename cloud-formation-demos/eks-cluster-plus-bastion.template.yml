@@ -12,14 +12,6 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select 3 subnets in your selected VPC.
 
-  # CreateNodeGroup:
-  #   Type: String 
-  #   AllowedValues: 
-  #   - True
-  #   - False
-  #   Default: True
-  #   Description: Do you want to create some cluster nodes?  Probably you do unless you wish to do this manually.
-
   ClusterSize:
     Type: String
     Description: The Minimum:Desired:Maximum number of EC2 worker nodes in the cluster.  
@@ -48,7 +40,6 @@ Parameters:
 
   AmazonLinux2AMI:
     Type:  AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    #Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: You probably won't need to change this value.  This is looking up the latest Amazon Linux AMI using the Parameter Store...
 
@@ -107,12 +98,19 @@ Resources:
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
-          Action: sts:AssumeRole
+          Action: 
+          - sts:AssumeRole
+          - sts:TagSession   # Only needed if running in EKS Auto Mode 
           Principal:
             Service: eks.amazonaws.com
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
         - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+        - arn:aws:iam::aws:policy/AmazonEKSBlockStoragePolicy   # Only needed if running in EKS Auto Mode 
+        - arn:aws:iam::aws:policy/AmazonEKSComputePolicy        # Only needed if running in EKS Auto Mode 
+        - arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy  # Only needed if running in EKS Auto Mode 
+        - arn:aws:iam::aws:policy/AmazonEKSNetworkingPolicy     # Only needed if running in EKS Auto Mode 
+
 
   # This role is assumed by the worker nodes in our cluster
   EKSNodeRole:
@@ -163,7 +161,7 @@ Resources:
     Properties: 
       LaunchTemplateName: !Sub ${AWS::StackName}-Template
       LaunchTemplateData: 
-        ImageId: !Ref AmazonLinux2AMI        # We lookup AMI using the AWS Systems Manager
+        ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"  # Obtain the AMI from the SSM Parameter
         InstanceType: t3.small             
         IamInstanceProfile: 
           Name: !Ref BastionInstanceProfile      # Allows EC2 Instance to talk with SSM
@@ -181,43 +179,53 @@ Resources:
             VolumeType: gp2
         MetadataOptions:
           HttpTokens: optional  # Allow IMDSv1 or IMDSv2
-        UserData:      #  Install AWS Systems Manager, eksctl, kubectl, helm, etc..:
+        UserData:      #  Install eksctl, kubectl, helm, etc..:
           Fn::Base64: !Sub |
             #!/bin/bash
             yum install git -y
-            # Install SSM Agent for session manager (remote connection)
-            cd /tmp
-            yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-            start amazon-ssm-agent
+
+            # Get current region from instance metadata and set the CLI to use it. It cannot do this automatically:
+            TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+            REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/[a-z]$//')
+            aws configure set region $REGION
+            echo current region is set to `aws configure get region`
+
             # eksctl
             echo Installing eksctl
             curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
             sudo mv /tmp/eksctl /usr/local/bin
             eksctl version
+
             # Kubectl
             echo Installing Kubectl
-            curl --silent -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.31.0/2024-09-12/bin/linux/amd64/kubectl
+            curl --silent -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.32.0/2024-12-20/bin/linux/amd64/kubectl
             chmod +x ./kubectl
             sudo mv ./kubectl /usr/local/bin
             kubectl version --short --client
-            # setup kubeconfig (this needs to be done for each user):
-            aws eks update-kubeconfig --name ${AWS::StackName} --alias admin --region ${AWS::Region}
+
+            # Configure Kubectl so it can be used by all users:
+            mkdir -p /etc/kube
+            aws eks update-kubeconfig --name ${AWS::StackName} --alias admin --kubeconfig /etc/kube/config
+            # Make it readable by all users
+            chmod 644 /etc/kube/config
+            # Set KUBECONFIG globally for all interactive users, and clone some useful demos
+            cat << 'EOF' > /etc/profile.d/kubeconfig.sh
+            export KUBECONFIG=/etc/kube/config
+            alias k="kubectl"
+            if [ ! -d "${!HOME}/git/k8s-teaching-demos" ]; then
+              mkdir -p "${!HOME}/git"
+              git clone ${RepositoryUrl} "${!HOME}/git"
+            fi
+            EOF
+            chmod +x /etc/profile.d/kubeconfig.sh
+            # Ensure ~/.kube/config is a symlink for future users
+            mkdir -p /etc/skel/.kube
+            ln -sf /etc/kube/config /etc/skel/.kube/config
+
             # Helm
             echo Installing Helm
             curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
-            # Set current region.  AWS cannot guess to use the region it is in
-            aws configure set region ${AWS::Region}
-            echo current region is set to `aws configure get region`
-            # Display your current identity in the log 
-            aws sts get-caller-identity 
-            # Helm
-            echo Installing Helm
-            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
-            #
-            # Note: you will need to run this command on the node when you connect to it:
-            # aws eks update-kubeconfig --name primary --alias admin
-            # It cannot be done in this script because it needs to be user-specific.
-            # Also consider running: git clone https://github.com/kennyk65/k8s-teaching-demos.git
+
 
   EC2Instance:
     Type: AWS::EC2::Instance
@@ -267,9 +275,10 @@ Outputs:
     Description: AWS management console screen where you can look at your cluster
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/eks/home?region=${AWS::Region}#/clusters/${Cluster}
 
-  CertificateAuthorityData:
-    Description: The certificate-authority-data for your cluster.
-    Value: !GetAtt  Cluster.CertificateAuthorityData
+  # This makes the output bulky 
+  # CertificateAuthorityData:
+  #   Description: The certificate-authority-data for your cluster.
+  #   Value: !GetAtt  Cluster.CertificateAuthorityData
 
   EKSEndpoint:
     Description: The endpoint for your Kubernetes API server.
