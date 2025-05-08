@@ -48,7 +48,7 @@ Parameters:
     AllowedValues: 
     - true
     - false
-    Default: true
+    Default: false
     Description: Do you want to create a Cloud9 environment?  This will be similar in many ways to a Bastion Host.
     
   RepositoryUrl:
@@ -140,6 +140,18 @@ Resources:
       RoleArn: !GetAtt EKSServiceRole.Arn
       ResourcesVpcConfig: 
         SubnetIds: !Ref SubnetIds
+      AccessConfig:
+         AuthenticationMode: API_AND_CONFIG_MAP  # Allow for the new Access Identity API to be used. 
+  
+  # Optional:  Trying the new 'Pod Identity' feature to associate IAM Roles with Pods.        
+  PodIdentityAgentAddon:
+    Type: AWS::EKS::Addon
+    Properties:
+      ClusterName: !Ref Cluster
+      AddonName: eks-pod-identity-agent
+      AddonVersion:  v1.3.5-eksbuild.2   # Find the latest by running: aws eks describe-addon-versions --addon-name eks-pod-identity-agent --kubernetes-version 1.32
+      ResolveConflicts: OVERWRITE
+
 
   NodeGroup:
     Type: AWS::EKS::Nodegroup
