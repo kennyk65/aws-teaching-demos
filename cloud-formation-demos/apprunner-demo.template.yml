@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy a containerized Spring Boot app to AWS App Runner from Docker Hub or ECR
+
+#  Runs a simple Docker container with a web app in AppRunner.
+#  Takes several minutes to run - not sure why.
+
+
+Parameters:
+  ImageRepositoryType:
+    Type: String
+    Description: Type of image repository (ECR or ECR_PUBLIC or DOCKER_HUB)
+    AllowedValues: [ECR, ECR_PUBLIC, DOCKER_HUB]
+    Default: ECR
+
+  ContainerImageUri:
+    Type: String
+    Description: Full URI of the container image (e.g., 'mydockeruser/myapp:latest' or 'xxxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/myapp:latest')
+    Default: 011673140073.dkr.ecr.us-west-2.amazonaws.com/spring-cloud-aws-environment-demo:latest
+
+  ContainerPort:
+    Type: Number
+    Description: Port your app listens on inside the container
+    Default: 8080
+
+Resources:
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: SpringBootAppRunnerService
+      SourceConfiguration:
+        ImageRepository:
+          ImageIdentifier: !Ref ContainerImageUri
+          ImageRepositoryType: !Ref ImageRepositoryType
+          ImageConfiguration:
+            Port: !Ref ContainerPort
+        AutoDeploymentsEnabled: true
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerECRAccessRole.Arn
+      InstanceConfiguration:
+        Cpu: "1 vCPU"
+        Memory: "2 GB"
+
+  AppRunnerECRAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-AppRunnerECRAccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ "apprunner.amazonaws.com" , "build.apprunner.amazonaws.com", "tasks.apprunner.amazonaws.com" ] 
+            Action: sts:AssumeRole
+      Path: /
+      # ManagedPolicyArns:
+      #   - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly      
+      # TODO: DETERMINE REQUIRED PERMISSIONS.  USING WIDE OPEN PERMISSIONS UNTIL BASICS ARE ESTABLISHED.
+      Policies:
+        - PolicyName: AppRunnerECRAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+
+Outputs:
+  ServiceUrl:
+    Description: URL of the App Runner service
+    Value: !GetAtt AppRunnerService.ServiceUrl
