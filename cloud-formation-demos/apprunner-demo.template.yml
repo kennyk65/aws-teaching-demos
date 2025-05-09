@@ -49,20 +49,12 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: [ "apprunner.amazonaws.com" , "build.apprunner.amazonaws.com", "tasks.apprunner.amazonaws.com" ] 
+              Service: [ "apprunner.amazonaws.com" , "build.apprunner.amazonaws.com" ] 
             Action: sts:AssumeRole
       Path: /
-      # ManagedPolicyArns:
-      #   - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly      
-      # TODO: DETERMINE REQUIRED PERMISSIONS.  USING WIDE OPEN PERMISSIONS UNTIL BASICS ARE ESTABLISHED.
-      Policies:
-        - PolicyName: AppRunnerECRAccessPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: "*"
-                Resource: "*"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess 
+
 
 
 Outputs:
