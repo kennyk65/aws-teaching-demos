@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 instance running VS Code Server (code-server) on port 80
+
+Parameters:
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to launch the instance in
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet to launch the instance in
+
+Resources:
+
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-SecurityGroup"
+      GroupDescription: 'Allow HTTP access to VS Code server'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+
+  VSCodeInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t3.micro
+      ImageId:
+        'Fn::Sub': '{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-VSCodeServer"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+          # Install code-server
+          apt-get update -y
+          apt-get install -y curl
+
+          curl -fsSL https://code-server.dev/install.sh | sh
+
+          # Create symlink for convenience
+          ln -s /usr/lib/code-server/bin/code-server /usr/bin/code-server
+
+          # Create config to disable auth and bind to port 80
+          mkdir -p /root/.config/code-server
+          cat <<EOF > /root/.config/code-server/config.yaml
+          bind-addr: 0.0.0.0:80
+          auth: none
+          EOF
+
+          # Launch code-server as background process
+          nohup /usr/bin/code-server > /var/log/code-server.log 2>&1 &
+
+
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref SSMRole
+      InstanceProfileName: !Sub "${AWS::StackName}-InstanceProfile"
+
+  SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-SSMRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+Outputs:
+
+  InstanceId:
+    Description: EC2 instance ID
+    Value: !Ref VSCodeInstance
+
+  PublicIP:
+    Description: Public IP to access VS Code
+    Value: !Sub http://${VSCodeInstance.PublicIp}
