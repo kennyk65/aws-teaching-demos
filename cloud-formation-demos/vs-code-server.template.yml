@@ -24,13 +24,16 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: '0.0.0.0/0'
 
   VSCodeInstance:
-    Type: 'AWS::EC2::Instance'
+    Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.micro
-      ImageId:
-        'Fn::Sub': '{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
+      ImageId: !Sub '{{resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id}}'
       SubnetId: !Ref SubnetId
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
@@ -47,20 +50,51 @@ Resources:
           apt-get update -y
           apt-get install -y curl
 
-          curl -fsSL https://code-server.dev/install.sh | sh
+          echo "=== Begin code-server download ==="
+          curl -fsSL https://code-server.dev/install.sh -o /tmp/install-code-server.sh
+          echo "=== Begin code-server setup ==="
+          chmod +x /tmp/install-code-server.sh
+          export HOME=/root
+          /tmp/install-code-server.sh
+          
+          echo "=== Ensure correct ownership of code-server files ==="
+          mkdir -p /home/ubuntu/projects
+          mkdir -p /home/ubuntu/.config/code-server
+          chown -R ubuntu:ubuntu /home/ubuntu/projects
+          chown -R ubuntu:ubuntu /home/ubuntu/.config          
 
-          # Create symlink for convenience
-          ln -s /usr/lib/code-server/bin/code-server /usr/bin/code-server
+          echo "=== Set a password (change 'changeme'!)==="
+          mkdir -p /home/ubuntu/.config/code-server
+          echo "password: changeme" > /home/ubuntu/.config/code-server/config.yaml
+          chown -R ubuntu:ubuntu /home/ubuntu/.config/code-server
 
-          # Create config to disable auth and bind to port 80
-          mkdir -p /root/.config/code-server
-          cat <<EOF > /root/.config/code-server/config.yaml
-          bind-addr: 0.0.0.0:80
-          auth: none
+          echo "=== Enable and start code-server as a systemd service ==="
+          sudo -u ubuntu /usr/bin/code-server --install-extension ms-python.python
+
+          cat <<EOF > /tmp/code-server.service
+          [Unit]
+          Description=code-server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=ubuntu
+          ExecStart=/usr/bin/code-server --host 0.0.0.0 --port 8080
+          WorkingDirectory=/home/ubuntu
+          Restart=always
+          Environment=PASSWORD=changeme
+
+          [Install]
+          WantedBy=multi-user.target
           EOF
 
-          # Launch code-server as background process
-          nohup /usr/bin/code-server > /var/log/code-server.log 2>&1 &
+          cp /tmp/code-server.service /etc/systemd/system/code-server.service
+
+          systemctl daemon-reload
+          systemctl enable code-server
+          systemctl start code-server
+
+          echo "=== code-server setup complete ==="
 
 
   SSMInstanceProfile:
@@ -94,4 +128,4 @@ Outputs:
 
   PublicIP:
     Description: Public IP to access VS Code
-    Value: !Sub http://${VSCodeInstance.PublicIp}
+    Value: !Sub http://${VSCodeInstance.PublicIp}:8080
