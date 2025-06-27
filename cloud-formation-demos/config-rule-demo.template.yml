@@ -39,7 +39,6 @@ Resources:
       Tags:
       - Key: Name
         Value: RiskySecurityGroup
-      Tags:
       - Key: Purpose
         Value: Demo
       SecurityGroupIngress:
@@ -56,7 +55,6 @@ Resources:
       Tags:
       - Key: Name
         Value: RiskySecurityGroup
-      Tags:
       - Key: Purpose
         Value: Demo
       SecurityGroupIngress:
