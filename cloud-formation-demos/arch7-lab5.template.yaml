@@ -122,7 +122,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateThumbnail
       Role: !GetAtt LambdaResizeRole.Arn
-      Runtime: python3.9
+      Runtime: python3.13
       Handler: ResizeImage.handler
       CodeUri: s3://kk-courses/aws-arch/ResizeImage.zip
       Environment:
@@ -143,7 +143,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${AWS::StackName}-CreateMobile
       Role: !GetAtt LambdaResizeRole.Arn
-      Runtime: python3.9
+      Runtime: python3.13
       Handler: ResizeImage.handler
       CodeUri: s3://kk-courses/aws-arch/ResizeImage.zip
       Environment:
@@ -209,7 +209,7 @@ Resources:
             cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
       MemorySize: 128     
       Timeout: 15         
-      Runtime: python3.9
+      Runtime: python3.13
       Handler: index.lambda_handler
 
   CleanupCustomResource:

@@ -37,7 +37,7 @@ Resources:
   dictateLambda:
     Type: AWS::Serverless::Function
     Properties:
-      Runtime: python3.9
+      Runtime: python3.13
       MemorySize: 128
       Timeout: 60
       Policies:

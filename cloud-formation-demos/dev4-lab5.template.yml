@@ -8,7 +8,7 @@ Globals:  # This section defines settings that we don't want to repeat over and 
   Function:
     MemorySize: 128
     Timeout: 5         # Usually runs in less than one second.
-    Runtime: python3.9
+    Runtime: python3.13
     Handler: index.lambda_handler
     Environment:
       Variables:

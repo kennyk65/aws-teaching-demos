@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bedrock Agent with Prompt Router (No Action Groups)
+
+# TODO: NOT WORKING YET.  ASSOCIATED JUPYTER NOTEBOOK:
+
+# # prompt_router_test.ipynb
+
+# import boto3
+# import uuid
+
+# # Replace with your values
+# AGENT_ID = "<your-agent-id>"
+# AGENT_ALIAS_ID = "<your-agent-alias-id>"
+# REGION = "us-east-1"
+
+# client = boto3.client("bedrock-agent-runtime", region_name=REGION)
+
+# def invoke_agent(prompt: str):
+#     session_id = str(uuid.uuid4())
+#     print(f"\n=== Prompt: {prompt}\n")
+
+#     response = client.invoke_agent(
+#         agentId=AGENT_ID,
+#         agentAliasId=AGENT_ALIAS_ID,
+#         sessionId=session_id,
+#         input={"text": prompt}
+#     )
+
+#     print("=== Response ===\n")
+#     print(response.get("completion", {}).get("text", "No response"))
+
+# # Try different prompt styles to see model routing in action
+# prompts = [
+#     "What is the square root of 2025?",
+#     "Summarize this article: The quick brown fox jumps over the lazy dog. This sentence is often used...",
+#     "Translate this to French: Hello, how are you doing today?"
+# ]
+
+# for p in prompts:
+#     invoke_agent(p)
+
+
+
+Resources:
+
+  BedrockAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BedrockPromptRouterRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: BedrockPromptRouterPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+
+  PromptRouterAgent:
+    Type: AWS::Bedrock::Agent
+    Properties:
+      AgentName: SmartPromptRouterAgent
+      AgentResourceRoleArn: !GetAtt BedrockAgentRole.Arn
+      Instruction: >
+        You are an AI assistant. Use the best foundation model for each user request.
+      FoundationModel: anthropic.claude-3-sonnet-20240229-v1:0  # Baseline model
+      Description: Bedrock Agent with Prompt Router enabled and no tools.
+      ResponseConfiguration:
+        ResponseGenerationConfig:
+          PromptTemplate: "{input}"
+          ModelRoutingConfiguration:
+            EnablePromptRouter: true
+
+  PromptRouterAgentAlias:
+    Type: AWS::Bedrock::AgentAlias
+    Properties:
+      AgentId: !Ref PromptRouterAgent
+      AgentAliasName: default
+      Description: Default alias for prompt router agent
+
+Outputs:
+
+  AgentId:
+    Value: !Ref PromptRouterAgent
+
+  AgentAliasId:
+    Value: !Ref PromptRouterAgentAlias
+
+  AgentRoleArn:
+    Value: !GetAtt BedrockAgentRole.Arn
