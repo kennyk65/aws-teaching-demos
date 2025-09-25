@@ -1,6 +1,6 @@
 ## Bedrock AgentCore Demo 🤖
 
-This demo establishes a very simple Agent using **Bedrock AgentCore**. It shows the steps to create and deploy a basic “hello world” agent, and demonstrates the **CloudWatch GenAI Observability** feature for AgentCore.
+This demo establishes a very simple Agent using **Bedrock AgentCore**. It shows the steps to create and deploy a basic agent which calls a model, (primatively) manages chat memory, and demonstrates the **CloudWatch GenAI Observability** feature for AgentCore.
 
 ---
 
