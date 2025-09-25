@@ -25,7 +25,7 @@ You will need:
 Run the following from this folder to set everything up:
 
 ```bash
-aws cloudformation deploy --stack-name agentcore-demo --template-file agentcore-demo.yml --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation deploy --stack-name agentcore-demo-v2 --template-file agentcore-demo.yml --capabilities CAPABILITY_NAMED_IAM
 
 for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo --query "Stacks[0].Outputs[?OutputKey=='RoleArn'] | [0].OutputValue" --output text') do set ROLE_ARN=%i
 
@@ -44,7 +44,7 @@ Assuming you are still in the same folder as before, run these commands one at a
 # This establishes a new agent in AgentCore.
 # The name and source file are given, as well as the execution role and
 # ECR repository to use. However, it does not actually build / start the agent.
-agentcore configure -n agentcore_demo -e my_agent.py --execution-role %ROLE_ARN% --ecr %REPO_URI% --requirements-file requirements.txt
+agentcore configure -n agentcore_demo_v2 -e my_agent_v2.py --execution-role %ROLE_ARN% --ecr %REPO_URI% --requirements-file requirements.txt
 
 # This simple command:
 # - builds a Docker container (using CodeBuild),
@@ -53,12 +53,11 @@ agentcore configure -n agentcore_demo -e my_agent.py --execution-role %ROLE_ARN%
 # - creates an endpoint:
 agentcore launch
 
+# Invoke multiple times to demonstrate memory (using IAM for authentication)
+agentcore invoke '{"user_id":"ken","prompt":"Hello"}'
+agentcore invoke '{"user_id":"ken","prompt":"How are you?"}'
+agentcore invoke '{"user_id":"ken","prompt":"Tell me a joke"}'
 
-# Next, run this command a few times to invoke the agent:
-agentcore invoke '{"prompt":"world"}'
-agentcore invoke '{"prompt":"world"}'
-agentcore invoke '{"prompt":"world"}'
-agentcore invoke '{"prompt":"world"}'
 ```
 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
@@ -71,9 +70,9 @@ agentcore invoke '{"prompt":"world"}'
 Assuming you are still in the same folder as before, run these commands:
 
 ```
-agentcore destroy -a agentcore_demo --force
+agentcore destroy -a agentcore_demo_v2 --force
 
-aws cloudformation delete-stack --stack-name agentcore-demo
+aws cloudformation delete-stack --stack-name agentcore-demo-v2
 ```
 
 * **IMPORTANT!! ⚠️ EXPENSIVE!!! ⚠️** Disable CloudWatch Signal Spans:
