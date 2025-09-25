@@ -12,7 +12,7 @@ You will need:
 * The **AWS SDK**.
 * The **agentcore CLI**, installed by running `pip install amazon-bedrock-agentcore-cli`.
 * An IDE like **VSCode** works best, but is not required.
-* Enable CloudWatch Signal Spans: Go to the console for **X-Ray settings** at `https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#xray:settings/transaction-search` (us-west-2 assumed). 
+* Enable CloudWatch Signal Spans: Go to the console for **X-Ray settings** at [CloudWatch Transaction Search settings (us-west-2)](https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#xray:settings/transaction-search) (us-west-2 assumed). 
     * Currently, there is no command-line equivalent: find **‘Transaction Search’**, click **edit**, and **enable** it. Give this a few minutes. *(TODO - FIND CLI EQUIVALENT WHEN AVAILABLE)*
 
 ---

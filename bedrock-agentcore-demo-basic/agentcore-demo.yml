@@ -36,18 +36,11 @@ Resources:
                 Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
               - Effect: Allow
                 Action:
-                  - logs:DescribeLogStreams
-                  - logs:CreateLogGroup
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*
-              - Effect: Allow
-                Action:
-                  - logs:DescribeLogGroups
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*
+                - logs:Describe*
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                Resource: "*"
               - Effect: Allow
                 Action:
                   - ecr:GetAuthorizationToken
