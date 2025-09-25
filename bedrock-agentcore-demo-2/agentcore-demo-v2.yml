@@ -4,7 +4,7 @@ Description: AgentCore Hello World stack - Execution Role + ECR Repo
 Parameters:
   AgentName:
     Type: String
-    Default: agentcore-demo
+    Default: agentcore-demo-2
     Description: Agent name used for resources
 
 Resources:

@@ -12,6 +12,7 @@ You will need:
 * The **AWS SDK**.
 * The **agentcore CLI**, installed by running `pip install amazon-bedrock-agentcore-cli`.
 * An IDE like **VSCode** works best, but is not required.
+* Ability to call the *us.amazon.nova-micro-v1:0* model.
 * Enable CloudWatch Signal Spans: Go to the console for **X-Ray settings** at [CloudWatch Transaction Search settings (us-west-2)](https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#xray:settings/transaction-search) (us-west-2 assumed). 
     * Currently, there is no command-line equivalent: find **‘Transaction Search’**, click **edit**, and **enable** it. Give this a few minutes. *(TODO - FIND CLI EQUIVALENT WHEN AVAILABLE)*
 
@@ -20,16 +21,16 @@ You will need:
 ### Setup
 
 1.  Clone / Copy `https://github.com/kennyk65/aws-teaching-demos`.
-2.  `CD` into the `/bedrock-agentcore-demo-basic` folder.
+2.  `CD` into the `/bedrock-agentcore-demo-2` folder.
 
 Run the following from this folder to set everything up:
 
 ```bash
-aws cloudformation deploy --stack-name agentcore-demo-v2 --template-file agentcore-demo.yml --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation deploy --stack-name agentcore-demo-v2 --template-file agentcore-demo-v2.yml --capabilities CAPABILITY_NAMED_IAM
 
-for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo --query "Stacks[0].Outputs[?OutputKey=='RoleArn'] | [0].OutputValue" --output text') do set ROLE_ARN=%i
+for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs[?OutputKey=='RoleArn'] | [0].OutputValue" --output text') do set ROLE_ARN=%i
 
-for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'] | [0].OutputValue" --output text') do set REPO_URI=%i
+for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'] | [0].OutputValue" --output text') do set REPO_URI=%i
 ```
 
 * This establishes the Role, ECR repository, and environment variables needed later.
@@ -54,9 +55,9 @@ agentcore configure -n agentcore_demo_v2 -e my_agent_v2.py --execution-role %ROL
 agentcore launch
 
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
-agentcore invoke '{"user_id":"ken","prompt":"Hello"}'
-agentcore invoke '{"user_id":"ken","prompt":"How are you?"}'
-agentcore invoke '{"user_id":"ken","prompt":"Tell me a joke"}'
+agentcore invoke '{"user_id":"ken","prompt":"List out the 5 great lakes"}'
+agentcore invoke '{"user_id":"ken","prompt":"Which one is the deepest?"}'
+agentcore invoke '{"user_id":"ken","prompt":"Which states / provinces does it touch?"}'
 
 ```
 

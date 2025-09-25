@@ -1,6 +1,6 @@
 # my_agent_v2.py
 from bedrock_agentcore import BedrockAgentCoreApp
-import boto3, time, os
+import boto3, time, os, json
 from botocore.exceptions import ClientError
 
 # CloudWatch Logs setup
@@ -40,34 +40,53 @@ bedrock = boto3.client("bedrock-runtime")
 
 app = BedrockAgentCoreApp()
 
+
+
+# simple in-memory store keyed by user_id
+memory = {}
+
 @app.entrypoint
 def invoke(payload: dict):
     user_id = payload.get("user_id", "default")
     user_input = payload.get("prompt", "Hello")
 
-    # Initialize memory for this user if not exists
+    # initialize memory for user if not exists
     if user_id not in memory:
         memory[user_id] = []
 
-    # Add user input to memory
-    memory[user_id].append({"role": "user", "content": user_input})
+    # add the new user message to memory
+    memory[user_id].append({
+        "role": "user",
+        "content": [{"text": user_input}]
+    })
 
-    # Construct model input with memory
-    conversation = ""
-    for msg in memory[user_id]:
-        conversation += f"{msg['role']}: {msg['content']}\n"
+    # build messages array for the model (full history)
+    model_input = {"messages": memory[user_id]}
 
-    log(f"Sending conversation to Bedrock model:\n{conversation}")
+    log(f"Sending to model: {json.dumps(model_input)}")
 
     try:
         response = bedrock.invoke_model(
-            modelId="amazon.nova-micro-v1:0",
+            modelId="us.amazon.nova-micro-v1:0",
             contentType="application/json",
             accept="application/json",
-            body=str({"inputText": conversation})
+            body=json.dumps(model_input)
         )
-        model_output = response["body"].read().decode("utf-8")
-        memory[user_id].append({"role": "assistant", "content": model_output})
+
+        # parse JSON response
+        body_str = response["body"].read().decode("utf-8")
+        body = json.loads(body_str)
+
+        # extract assistant message (Nova puts it under output.message)
+        assistant_message = body.get("output", {}).get("message", {})
+        memory[user_id].append(assistant_message)
+
+        # pull text for return convenience
+        model_output = ""
+        for c in assistant_message.get("content", []):
+            if "text" in c:
+                model_output += c["text"]
+
     except Exception as e:
         model_output = f"[Error invoking model: {e}]"
         log(model_output)
@@ -76,6 +95,9 @@ def invoke(payload: dict):
         "result": model_output,
         "conversation_history": memory[user_id]
     }
+
+
+
 
 if __name__ == "__main__":
     app.run()
