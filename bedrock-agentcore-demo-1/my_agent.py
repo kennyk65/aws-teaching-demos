@@ -9,7 +9,9 @@ LOG_GROUP = "/aws/bedrock-agentcore/custom"
 LOG_STREAM = "agentcore_demo"
 _sequence_token = None
 
-
+# IMPORTANT: AgentCore Runtime does not support / forward logging events from your code.
+# This means that messages produced with print() are lost (!)
+# As an alternative, this log() method will publish directly to CloudWatch Logs.
 def log(msg: str):
     global _sequence_token
     ts = int(time.time() * 1000)

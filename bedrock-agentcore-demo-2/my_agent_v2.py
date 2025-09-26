@@ -7,8 +7,12 @@ from botocore.exceptions import ClientError
 logs = boto3.client("logs")
 LOG_GROUP = "/aws/bedrock-agentcore/custom"
 LOG_STREAM = "agentcore_demo_v2"
+BEDROCK_MODEL_ID="us.amazon.nova-micro-v1:0"
 _sequence_token = None
 
+# IMPORTANT: AgentCore Runtime does not support / forward logging events from your code.
+# This means that messages produced with print() are lost (!)
+# As an alternative, this log() method will publish directly to CloudWatch Logs.
 def log(msg: str):
     global _sequence_token
     ts = int(time.time() * 1000)
@@ -67,7 +71,7 @@ def invoke(payload: dict):
 
     try:
         response = bedrock.invoke_model(
-            modelId="us.amazon.nova-micro-v1:0",
+            modelId=BEDROCK_MODEL_ID,
             contentType="application/json",
             accept="application/json",
             body=json.dumps(model_input)
