@@ -78,6 +78,8 @@ Resources:
         import boto3
         import botocore
         import json
+        from dateutil import parser
+
 
         # This logic only applies to these kinds of resources:
         APPLICABLE_RESOURCES = ["AWS::EC2::SecurityGroup"]
@@ -155,17 +157,25 @@ Resources:
 
             # Post findings to AWS Config:
             config = boto3.client('config')
-            response = config.put_evaluations(
-                Evaluations=[
-                    {
-                      'ComplianceResourceType': config_item['resourceType'],
-                      'ComplianceResourceId': config_item['resourceId'],
-                      'ComplianceType': evaluation["compliance_type"],
-                      "Annotation": evaluation["annotation"],
-                      'OrderingTimestamp': config_item['configurationItemCaptureTime']
-                  },
-              ],
-              ResultToken=event['resultToken'])
+            ordering_timestamp = parser.parse(config_item['configurationItemCaptureTime'])
+
+            try:
+              response = config.put_evaluations(
+                    Evaluations=[
+                        {
+                        'ComplianceResourceType': config_item['resourceType'],
+                        'ComplianceResourceId': config_item['resourceId'],
+                        'ComplianceType': evaluation["compliance_type"],
+                        "Annotation": evaluation["annotation"],
+                        'OrderingTimestamp': ordering_timestamp
+                    },
+                ],
+                ResultToken=event['resultToken'])
+            except botocore.exceptions.ClientError as e:
+                print("Error occurred calling config.putEvaluations(): " + e.response['Error']['Message'] + " " + e.response['Error']['Code'])
+                
+            # Explicitly return something so Lambda / new python versions report success
+            return response        
 
 
 
