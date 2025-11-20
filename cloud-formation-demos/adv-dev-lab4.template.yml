@@ -15,7 +15,7 @@ Parameters:
   InputWebCode:
     Description:  URL of the source web code to be downloaded and adjusted
     Type: String
-    Default:  https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-4.zip
+    Default:  https://kk-courses.s3.us-east-1.amazonaws.com/aws/demos/messaging-demo.zip
 
 Resources:
 
@@ -348,6 +348,7 @@ Resources:
               # Get the CloudFormation request type
               requestType = event['RequestType']
               rp          = event['ResourceProperties']
+              region = rp['region']
               queue1 = rp['queue1']
               queue2   = rp['queue2']
               queue3     = rp['queue3']
@@ -392,6 +393,7 @@ Resources:
                         data = f.read()
 
                     # Search and replace:
+                    data = data.replace("REPLACE_WITH_LAB_REGION",region)
                     data = data.replace("REPLACE_WITH_COGNITO_IDENTITY_POOL_ID",identityPoolId)
                     data = data.replace("REPLACE_WITH_QUEUE_URL_1",queue1)
                     data = data.replace("REPLACE_WITH_QUEUE_URL_2",queue2)
@@ -456,9 +458,11 @@ Resources:
         Statement: 
           Effect: Allow
           Action: 
+            - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
             - iot:Describe*
+            - s3:Get*
             - s3:Put*
             - s3:List*
             - s3:Delete*
@@ -472,9 +476,10 @@ Resources:
     DependsOn: CustomResourcePolicy    # Dont try running the custom resource until the policy is set.
     Properties:
       ServiceToken: !GetAtt CustomResourceWebContentLambda.Arn
+      region: !Ref AWS::Region
       identityPoolId: !Ref CognitoIdentityPool
       destinationBucket: !Ref MainS3Bucket
-      downloadUrl: https://kk-courses.s3.amazonaws.com/aws-adv-dev/lab-4.zip
+      downloadUrl: !Ref InputWebCode
       queue1: !Ref DrawQueueStandard1
       queue2: !Ref DrawQueueStandard2
       queue3: !Ref DrawQueueStandard3
