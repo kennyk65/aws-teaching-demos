@@ -2,7 +2,6 @@
 # warnings.filterwarnings(action="ignore", message=r"datetime.datetime.utcnow") 
 
 from strands import Agent, tool
-from strands_tools import calculator
 from strands.models import BedrockModel
 from bedrock_agentcore import BedrockAgentCoreApp
 from botocore.exceptions import ClientError
@@ -40,7 +39,7 @@ custom_model = BedrockModel(
 logger.info("Defining Agent")
 agent = Agent(callback_handler=None,
     model=custom_model,
-    tools=[calculator, weather, celcius_to_farenheit],
+    tools=[weather, celcius_to_farenheit],
     system_prompt="You are a helpful assistant. You can use the weather tool to tell the weather.  Users prefer Farenheit temperature scale and should not be exposed to Celcius."
 )
 

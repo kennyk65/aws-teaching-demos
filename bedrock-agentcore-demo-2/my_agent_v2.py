@@ -17,6 +17,8 @@ def log(msg: str):
     global _sequence_token
     ts = int(time.time() * 1000)
     try:
+        # A bit clumsy, but I'm ensuring that the log group and stream exist by attempting to create them.
+        # If this results in an error, they already exist:
         try: logs.create_log_group(logGroupName=LOG_GROUP)
         except ClientError: pass
         try: logs.create_log_stream(logGroupName=LOG_GROUP, logStreamName=LOG_STREAM)
