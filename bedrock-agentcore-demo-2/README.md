@@ -27,10 +27,11 @@ Run the following from this folder to set everything up:
 
 ```bash
 aws cloudformation deploy --stack-name agentcore-demo-v2 --template-file agentcore-demo-v2.yml --capabilities CAPABILITY_NAMED_IAM
-
-for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs[?OutputKey=='RoleArn'] | [0].OutputValue" --output text') do set ROLE_ARN=%i
-
-for /f "delims=" %i in ('aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'] | [0].OutputValue" --output text') do set REPO_URI=%i
+$outputs = aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
+$env:ROLE_ARN = ($outputs | Where-Object OutputKey -eq 'RoleArn').OutputValue
+$env:REPO_URI = ($outputs | Where-Object OutputKey -eq 'RepositoryUri').OutputValue
+Write-Host "The role is $env:ROLE_ARN"
+Write-Host "The ECR Repository URI is $env:REPO_URI"
 ```
 
 * This establishes the Role, ECR repository, and environment variables needed later.
