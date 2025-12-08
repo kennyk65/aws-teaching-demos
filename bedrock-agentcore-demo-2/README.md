@@ -70,13 +70,13 @@ agentcore invoke '{"user_id":"ken","prompt":"Were there any noteable shipwrecks 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
 
 * **Observability:** Open the [CloudWatch GenAI Observability](https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#/gen-ai-observability/agent-core/agents), (again, assuming you are running in us-west-2.)
-# With the "Agents" tab selected, you can: 
-## Expand "view details" and see "Agent metrics".  Basic.
-## Expand "Runtime metrics" and see better metrics.  (no idea why they are separated).
-## **Traces** Down in the list of Agents, click the **DEFAULT** link.  
-### Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
-#### Click the "Timeline" tab, show the order of events
-#### Expand "Trajectory" and see a call graph. 
+* With the "Agents" tab selected, you can: 
+** Expand "view details" and see "Agent metrics".  Basic.
+** Expand "Runtime metrics" and see better metrics.  (no idea why they are separated).
+** **Traces** Down in the list of Agents, click the **DEFAULT** link.  
+*** Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
+**** Click the "Timeline" tab, show the order of events
+**** Expand "Trajectory" and see a call graph. 
 
 ---
 
