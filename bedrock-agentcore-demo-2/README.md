@@ -28,10 +28,10 @@ Run the following from this folder to set everything up:
 ```bash
 aws cloudformation deploy --stack-name agentcore-demo-v2 --template-file agentcore-demo-v2.yml --capabilities CAPABILITY_NAMED_IAM
 $outputs = aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
-$env:ROLE_ARN = ($outputs | Where-Object OutputKey -eq 'RoleArn').OutputValue
-$env:REPO_URI = ($outputs | Where-Object OutputKey -eq 'RepositoryUri').OutputValue
-Write-Host "The role is $env:ROLE_ARN"
-Write-Host "The ECR Repository URI is $env:REPO_URI"
+$role_arn = ($outputs | Where-Object OutputKey -eq 'RoleArn').OutputValue
+$repo_uri = ($outputs | Where-Object OutputKey -eq 'RepositoryUri').OutputValue
+Write-Host "The role is $role_arn"
+Write-Host "The ECR Repository URI is $repo_uri"
 ```
 
 * This establishes the Role, ECR repository, and environment variables needed later.
@@ -46,7 +46,12 @@ Assuming you are still in the same folder as before, run these commands one at a
 # This establishes a new agent in AgentCore.
 # The name and source file are given, as well as the execution role and
 # ECR repository to use. However, it does not actually build / start the agent.
-agentcore configure -n agentcore_demo_v2 -e my_agent_v2.py --execution-role %ROLE_ARN% --ecr %REPO_URI% --requirements-file requirements.txt
+agentcore configure -n agentcore_demo_v2 -e my_agent_v2.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+```
+When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
+
+Then run these commands one at a time:
+```
 
 # This simple command:
 # - builds a Docker container (using CodeBuild),
@@ -56,15 +61,22 @@ agentcore configure -n agentcore_demo_v2 -e my_agent_v2.py --execution-role %ROL
 agentcore launch
 
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
-agentcore invoke '{"user_id":"ken","prompt":"List out the 5 great lakes"}'
-agentcore invoke '{"user_id":"ken","prompt":"Which one is the deepest?"}'
-agentcore invoke '{"user_id":"ken","prompt":"Which states / provinces does it touch?"}'
-
+agentcore invoke '{"user_id":"ken","prompt":"List out the 5 great lakes"}' 
+agentcore invoke '{"user_id":"ken","prompt":"Which one is the deepest?"}' 
+agentcore invoke '{"user_id":"ken","prompt":"Which states / provinces does it touch?"}' 
+agentcore invoke '{"user_id":"ken","prompt":"Were there any noteable shipwrecks on this lake?"}' 
 ```
 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
 
-* **Observability:** Open the CloudWatch GenAI Observability link: https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#/gen-ai-observability/model-invocation
+* **Observability:** Open the [CloudWatch GenAI Observability](https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#/gen-ai-observability/agent-core/agents), (again, assuming you are running in us-west-2.)
+# With the "Agents" tab selected, you can: 
+## Expand "view details" and see "Agent metrics".  Basic.
+## Expand "Runtime metrics" and see better metrics.  (no idea why they are separated).
+## **Traces** Down in the list of Agents, click the **DEFAULT** link.  
+### Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
+#### Click the "Timeline" tab, show the order of events
+#### Expand "Trajectory" and see a call graph. 
 
 ---
 
