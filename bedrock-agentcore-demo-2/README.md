@@ -1,6 +1,6 @@
 ## Bedrock AgentCore Demo 🤖
 
-This demo establishes a very simple Agent using **Bedrock AgentCore**. It shows the steps to create and deploy a basic agent which calls a model, (primatively) manages chat memory, and demonstrates the **CloudWatch GenAI Observability** feature for AgentCore.
+This demo establishes a very simple Agent built with the **Strands** framework, utilizing an Amazon Bedrock model.  The main purpose is to highlight **Bedrock AgentCore**. It shows the steps to create and deploy a basic agent which calls a model, (primatively) manages chat memory, and demonstrates the **CloudWatch GenAI Observability** feature for AgentCore.
 
 ---
 
@@ -39,6 +39,24 @@ Write-Host "The ECR Repository URI is $repo_uri"
 ---
 
 ### Demo
+
+#### Local Deployment (optional)
+
+If you want to run the agent locally (no real reason to, other than to prove that it works), run this command:
+```
+python .\weather_agent.py
+```
+
+In a separate command shell, post this:
+```
+curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d "{\"user_id\": \"ken\", \"prompt\": \"What is the current temperature in Seattle, WA?  Use Farenheit temperature scale.\"}"
+
+```
+
+Stop the python execution when done.
+
+#### AgentCore Runtime Deployment
+
 Assuming you are still in the same folder as before, run these commands one at a time. See the comments for explanation on what each is doing:
 
 
@@ -46,7 +64,7 @@ Assuming you are still in the same folder as before, run these commands one at a
 # This establishes a new agent in AgentCore.
 # The name and source file are given, as well as the execution role and
 # ECR repository to use. However, it does not actually build / start the agent.
-agentcore configure -n agentcore_demo_v2 -e my_agent_v2.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore configure -n weather_demo -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
 ```
 When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
 
@@ -61,10 +79,8 @@ Then run these commands one at a time:
 agentcore launch
 
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
-agentcore invoke '{"user_id":"ken","prompt":"List out the 5 great lakes"}' 
-agentcore invoke '{"user_id":"ken","prompt":"Which one is the deepest?"}' 
-agentcore invoke '{"user_id":"ken","prompt":"Which states / provinces does it touch?"}' 
-agentcore invoke '{"user_id":"ken","prompt":"Were there any noteable shipwrecks on this lake?"}' 
+agentcore invoke '{"user_id":"ken","prompt":"What is the weather in Seattle, WA?"}' 
+agentcore invoke '{"user_id":"ken","prompt":"Do you think water will freeze there?"}' 
 ```
 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
@@ -73,17 +89,17 @@ agentcore invoke '{"user_id":"ken","prompt":"Were there any noteable shipwrecks 
 
 * With the "Agents" tab selected, you can: 
 
-** Expand "view details" and see "Agent metrics".  Basic.
+    * Expand "view details" and see "Agent metrics".  Basic.
 
-** Expand "Runtime metrics" and see better metrics.  (no idea why they are separated).
+    * Expand "Runtime metrics" and see better metrics.  (no idea why they are separated).
 
-** **Traces** Down in the list of Agents, click the **DEFAULT** link.  
+    * **Traces** Down in the list of Agents, click the **DEFAULT** link.  
 
-*** Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
+        * Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
 
-**** Click the "Timeline" tab, show the order of events
+            * Click the "Timeline" tab, show the order of events
 
-**** Expand "Trajectory" and see a call graph. 
+            * Expand "Trajectory" and see a call graph. 
 
 ---
 
