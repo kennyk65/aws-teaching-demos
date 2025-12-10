@@ -26,8 +26,8 @@ You will need:
 Run the following from this folder to set everything up:
 
 ```bash
-aws cloudformation deploy --stack-name agentcore-demo-v2 --template-file agentcore-demo-v2.yml --capabilities CAPABILITY_NAMED_IAM
-$outputs = aws cloudformation describe-stacks --stack-name agentcore-demo-v2 --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
+aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.yml --capabilities CAPABILITY_NAMED_IAM
+$outputs = aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
 $role_arn = ($outputs | Where-Object OutputKey -eq 'RoleArn').OutputValue
 $repo_uri = ($outputs | Where-Object OutputKey -eq 'RepositoryUri').OutputValue
 Write-Host "The role is $role_arn"
@@ -64,7 +64,7 @@ Assuming you are still in the same folder as before, run these commands one at a
 # This establishes a new agent in AgentCore.
 # The name and source file are given, as well as the execution role and
 # ECR repository to use. However, it does not actually build / start the agent.
-agentcore configure -n weather_demo -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
 ```
 When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
 
@@ -107,9 +107,9 @@ agentcore invoke '{"user_id":"ken","prompt":"Do you think water will freeze ther
 Assuming you are still in the same folder as before, run these commands:
 
 ```
-agentcore destroy -a agentcore_demo_v2 --force
+agentcore destroy -a weather_agent --force
 
-aws cloudformation delete-stack --stack-name agentcore-demo-v2
+aws cloudformation delete-stack --stack-name agentcore-weather-demo
 ```
 
 * **IMPORTANT!! ⚠️ EXPENSIVE!!! ⚠️** Disable CloudWatch Signal Spans:

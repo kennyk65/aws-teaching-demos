@@ -1,0 +1,30 @@
+default_agent: weather_demo
+agents:
+  weather_demo:
+    name: weather_demo
+    entrypoint: weather_agent.py
+    platform: linux/arm64
+    container_runtime: docker
+    aws:
+      execution_role: arn:aws:iam::011673140073:role/BedrockAgentCoreExec-agentcore-demo-2
+      execution_role_auto_create: true
+      account: '011673140073'
+      region: us-west-2
+      ecr_repository: 011673140073.dkr.ecr.us-west-2.amazonaws.com/bedrock-agentcore-agentcore-demo-2
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+    bedrock_agentcore:
+      agent_id: null
+      agent_arn: null
+      agent_session_id: null
+    codebuild:
+      project_name: null
+      execution_role: null
+      source_bucket: null
+    authorizer_configuration: null
+    oauth_configuration: null
