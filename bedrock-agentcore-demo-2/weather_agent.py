@@ -1,6 +1,3 @@
-# import warnings
-# warnings.filterwarnings(action="ignore", message=r"datetime.datetime.utcnow") 
-
 from strands import Agent, tool
 from strands.models import BedrockModel
 from bedrock_agentcore import BedrockAgentCoreApp
@@ -9,14 +6,14 @@ from memory import AgentCoreMemory    # See memory.py for details
 import logging, boto3, time, os, json, sys
 
 
-
 # Create a logger
 logger = logging.getLogger("agent_activity")
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-# Create an agent with logging enabled
-logger.info("Creating new agent with Nova Lite model")
+# Initialize Bedrock client
+bedrock = boto3.client("bedrock-runtime")
+
 
 logger.info("Defining Tools")
 
@@ -31,9 +28,10 @@ def celcius_to_farenheit(celcius):
     return (float(celcius) * 9/5) + 32
 
 
-logger.info("Defining custom model")
+model_id="us.amazon.nova-lite-v1:0"
+logger.info(f"Defining custom model using: {model_id}")
 custom_model = BedrockModel(
-    model_id="us.amazon.nova-lite-v1:0",
+    model_id=model_id,
     temperature=0.3  # Lower temperature = more consistent responses
 )
 
@@ -49,10 +47,10 @@ agent = Agent(callback_handler=None,
 logger.info("Defining Memory")
 memory = AgentCoreMemory()
 
-# Initialize Bedrock client
-bedrock = boto3.client("bedrock-runtime")
-
+# Define the Bedrock AgentCore Runtime interface.  
+# This object provides an HTTP server, handles request/response, etc.
 app = BedrockAgentCoreApp()
+
 
 @app.entrypoint
 def invoke(payload: dict):
@@ -100,8 +98,15 @@ def invoke(payload: dict):
         "user_id": user_id
     }
 
-logger.info("Starting Agent")
+@app.on_event("startup")
+def startup_handler():
+    logger.info("=" * 60)
+    logger.info("Agent startup complete - ready for requests")
+    logger.info("=" * 60)
+
+
 
 if __name__ == "__main__":
+    logger.info("Starting Agent...")
     app.run()
 
