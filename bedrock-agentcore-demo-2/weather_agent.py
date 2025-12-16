@@ -5,6 +5,7 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 from bedrock_agentcore import BedrockAgentCoreApp
 from botocore.exceptions import ClientError
+from memory import AgentCoreMemory    # See memory.py for details
 import logging, boto3, time, os, json, sys
 
 
@@ -44,9 +45,9 @@ agent = Agent(callback_handler=None,
 )
 
 
-# Minimal memory dictionary to store conversation history
+# Initialize Bedrock AgentCore Memory
 logger.info("Defining Memory")
-memory = {}
+memory = AgentCoreMemory()
 
 # Initialize Bedrock client
 bedrock = boto3.client("bedrock-runtime")
@@ -58,22 +59,21 @@ def invoke(payload: dict):
     assistant_response = ""
     user_id = payload.get("user_id", "default")
     user_input = payload.get("prompt", "Hello")
-
-    # initialize memory for user if not exists
-    if user_id not in memory:
-        memory[user_id] = []
-
-    # add the new user message to memory
-    memory[user_id].append({
-        "role": "user",
-        "content": [{"text": user_input}]
-    })
-
-    # build messages array for the model (full history)
-    model_input = {"messages": memory[user_id]}
-    assistant_response = {}
-
+    session_id = payload.get("session_id", user_id)
+    
     try:
+        # Retrieve conversation history from memory
+        conversation_history = memory.get_conversation_history(user_id, session_id)
+        
+        # Add the new user message
+        conversation_history.append({
+            "role": "user",
+            "content": [{"text": user_input}]
+        })
+
+        # build messages array for the model (full history)
+        model_input = {"messages": conversation_history}
+        
         logger.info(f"Sending to model: {json.dumps(model_input)}")
         response = agent(json.dumps(model_input))
 
@@ -81,11 +81,14 @@ def invoke(payload: dict):
         assistant_response = response.message['content'][0]['text']
         logger.info(f"Assistant response: {assistant_response}")
 
-        memory[user_id].append({
+        # Add assistant response
+        conversation_history.append({
             "role": "assistant",
             "content": [{"text": assistant_response}]
         })
-
+        
+        # Store updated conversation history
+        memory.set_conversation_history(user_id, conversation_history, session_id)
 
     except Exception as e:
         assistant_response = f"[Error invoking model: {e}]"
@@ -93,7 +96,8 @@ def invoke(payload: dict):
 
     return {
         "result": assistant_response,
-        "conversation_history": memory[user_id]
+        "session_id": session_id,
+        "user_id": user_id
     }
 
 logger.info("Starting Agent")

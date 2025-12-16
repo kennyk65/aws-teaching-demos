@@ -6,6 +6,10 @@ Parameters:
     Type: String
     Default: weather-agent
     Description: Agent name used for resources
+  MemoryName:
+    Type: String
+    Default: weather_memory
+    Description: Name for the Bedrock AgentCore Memory resource
 
 Resources:
   AgentCoreExecutionRole:
@@ -74,6 +78,12 @@ Resources:
                 Resource:
                   - !Sub arn:aws:bedrock:*::foundation-model/*
                   - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:*Memory
+                  - bedrock-agentcore:*Memories
+                  - bedrock-agentcore:*Event
+                Resource: "*"
 
   AgentCoreECRRepo:
     Type: AWS::ECR::Repository
@@ -99,6 +109,13 @@ Resources:
             ]
           }
 
+  AgentCoreMemory:
+    Type: AWS::BedrockAgentCore::Memory
+    Properties:
+      Name: !Ref MemoryName
+      Description: Weather agent conversation memory
+      EventExpiryDuration: 7
+
 Outputs:
   RoleArn:
     Description: Execution role ARN for AgentCore runtime
@@ -109,3 +126,6 @@ Outputs:
   RepositoryUri:
     Description: URI of the ECR repository
     Value: !GetAtt AgentCoreECRRepo.RepositoryUri
+  MemoryId:
+    Description: ID of the Bedrock AgentCore Memory resource
+    Value: !GetAtt AgentCoreMemory.MemoryId
