@@ -26,7 +26,7 @@ You will need:
 Run the following from this folder to set everything up:
 
 ```bash
-aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.yml --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM
 $outputs = aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
 $role_arn = ($outputs | Where-Object OutputKey -eq 'RoleArn').OutputValue
 $repo_uri = ($outputs | Where-Object OutputKey -eq 'RepositoryUri').OutputValue
