@@ -47,10 +47,14 @@ If you want to run the agent locally (no real reason to, other than to prove tha
 python .\weather_agent.py
 ```
 
-In a separate command shell, post this:
+In a separate COMMAND shell, post this:
 ```
 curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d "{\"user_id\": \"ken\", \"prompt\": \"What is the current temperature in Seattle, WA?  Use Farenheit temperature scale.\"}"
 
+```
+If you want to use POWERSHELL, post this:
+```
+Invoke-RestMethod -Uri "http://localhost:8080/invocations" -Method Post -ContentType "application/json" -Body '{"user_id": "ken", "prompt": "What is the current temperature in Seattle, WA? Use Farenheit temperature scale."}'
 ```
 
 Stop the python execution when done.
@@ -76,7 +80,7 @@ Then run these commands one at a time:
 # - pushes an image to our ECR repository,
 # - launches the agent,
 # - creates an endpoint:
-agentcore launch
+agentcore launch --auto-update-on-conflict
 
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
 agentcore invoke '{"user_id":"ken","prompt":"What is the weather in Seattle, WA?"}' 
@@ -85,7 +89,7 @@ agentcore invoke '{"user_id":"ken","prompt":"Do you think water will freeze ther
 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
 
-* **Observability:** Open the [CloudWatch GenAI Observability](https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#/gen-ai-observability/agent-core/agents), (again, assuming you are running in us-west-2.)
+* **Observability:** Open the CloudWatch GenAI Observability: https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#/gen-ai-observability/agent-core/agents, (again, assuming you are running in us-west-2.)
 
 * With the "Agents" tab selected, you can: 
 
