@@ -2,7 +2,7 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 from bedrock_agentcore import BedrockAgentCoreApp
 from botocore.exceptions import ClientError
-from memory import AgentCoreMemory    # See memory.py for details
+from memory import AgentCoreMemory, AgentCoreSessionManager
 import logging, boto3, time, os, json, sys
 
 
@@ -35,17 +35,21 @@ custom_model = BedrockModel(
     temperature=0.3  # Lower temperature = more consistent responses
 )
 
-logger.info("Defining Agent")
-agent = Agent(callback_handler=None,
-    model=custom_model,
-    tools=[weather, celcius_to_farenheit],
-    system_prompt="You are a helpful assistant. You can use the weather tool to tell the weather.  Users prefer Farenheit temperature scale and should not be exposed to Celcius."
-)
-
-
 # Initialize Bedrock AgentCore Memory
 logger.info("Defining Memory")
 memory = AgentCoreMemory()
+
+# Setup the a Strands Agent SessionManager.  This will integrate AgentCore Memory into the Strands Agent.
+session_manager = AgentCoreSessionManager(memory.client, memory.memory_id)
+
+logger.info("Defining Agent")
+agent = Agent(
+    callback_handler=None,
+    model=custom_model,
+    tools=[weather, celcius_to_farenheit],
+    session_manager=session_manager,   
+    system_prompt="You are a helpful assistant. You can use the weather tool to tell the weather.  Users prefer Farenheit temperature scale and should not be exposed to Celcius."
+)
 
 # Define the Bedrock AgentCore Runtime interface.  
 # This object provides an HTTP server, handles request/response, etc.
@@ -60,37 +64,25 @@ def invoke(payload: dict):
     session_id = payload.get("session_id", user_id)
     
     try:
-        # Retrieve conversation history from memory
-        conversation_history = memory.get_conversation_history(user_id, session_id)
+        # Initialize session to restore history
+        session_manager.initialize(agent, session_id=session_id)
         
-        # Add the new user message
-        conversation_history.append({
-            "role": "user",
-            "content": [{"text": user_input}]
-        })
-
-        # build messages array for the model (full history)
-        model_input = {"messages": conversation_history}
-        
-        logger.info(f"Sending to model: {json.dumps(model_input)}")
-        response = agent(json.dumps(model_input))
+        # Call the agent using user input:
+        logger.info(f"User input: {user_input}")
+        response = agent(user_input)
 
         logger.debug(f"Received response: {response}")
         assistant_response = response.message['content'][0]['text']
         logger.info(f"Assistant response: {assistant_response}")
-
-        # Add assistant response
-        conversation_history.append({
-            "role": "assistant",
-            "content": [{"text": assistant_response}]
-        })
         
-        # Store updated conversation history
-        memory.set_conversation_history(user_id, conversation_history, session_id)
+        # Manually save the conversation (only user and assistant messages)
+        session_manager.save_conversation(agent, session_id)
 
     except Exception as e:
+        import traceback
         assistant_response = f"[Error invoking model: {e}]"
         logger.error(assistant_response)
+        logger.error(traceback.format_exc())
 
     return {
         "result": assistant_response,

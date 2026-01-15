@@ -1,9 +1,11 @@
 """
 Memory module for Bedrock AgentCore
-Provides simple get/set interface for conversation history storage using AWS Bedrock AgentCore Memory
+Provides SessionManager implementation for Strands using AWS Bedrock AgentCore Memory
 """
 
 from bedrock_agentcore.memory import MemoryClient
+from strands.session import SessionManager
+from typing import Any
 import logging
 import time
 
@@ -11,7 +13,12 @@ logger = logging.getLogger("agent_activity")
 
 
 class AgentCoreMemory:
-    """Wrapper for Bedrock AgentCore Memory with simple get/set interface"""
+    """
+    Initializer for Bedrock AgentCore Memory.
+    
+    Creates or finds an existing AgentCore Memory resource and ensures it's active before use.
+    Provides the memory client and ID for use by AgentCoreSessionManager.
+    """
     
     def __init__(self, memory_name: str = "weather_memory", region_name: str = "us-west-2"):
         self.memory_name = memory_name
@@ -105,92 +112,168 @@ class AgentCoreMemory:
             except Exception as e:
                 logger.debug(f"Error checking memory status: {e}")
                 time.sleep(10)
+
+
+class AgentCoreSessionManager(SessionManager):
+    """
+    SessionManager implementation for Strands that integrates with Bedrock AgentCore Memory.
     
-    def get_conversation_history(self, user_id: str, session_id: str = None) -> list:
+    This class automatically persists conversation history and agent state to AgentCore Memory,
+    eliminating the need for manual memory management in agent code.
+    
+    Note: This implementation doesn't use the automatic hook-based persistence because
+    hooks fire on every message addition (including tool calls), which causes duplicates.
+    Instead, we manually save the conversation after each agent invocation.
+    """
+    
+    def __init__(self, memory_client: MemoryClient, memory_id: str):
         """
-        Retrieve conversation history for a user session
+        Initialize the session manager.
         
         Args:
-            user_id: Unique identifier for the user (actor_id)
-            session_id: Optional session identifier (defaults to user_id)
-            
-        Returns:
-            List of conversation messages in format:
-            [{"role": "user", "content": [{"text": "..."}]}, ...]
+            memory_client: Initialized MemoryClient instance
+            memory_id: The AgentCore Memory ID to use for storage
         """
-        if session_id is None:
-            session_id = user_id
-        
-        if not self.memory_id:
-            logger.warning("Memory ID not available")
-            return []
-        
-        try:
-            # Retrieve memories for this session
-            namespace = f"/sessions/{user_id}/{session_id}"
-            memories = self.client.retrieve_memories(
-                memory_id=self.memory_id,
-                namespace=namespace,
-                query="conversation history"
-            )
-            
-            # Parse and return conversation history
-            # The memories are stored as events, we need to reconstruct the conversation
-            conversation_history = []
-            for memory in memories.get('memories', []):
-                content = memory.get('content', '')
-                role = memory.get('metadata', {}).get('role', 'user')
-                conversation_history.append({
-                    "role": role,
-                    "content": [{"text": content}]
-                })
-            
-            if conversation_history:
-                logger.info(f"Retrieved {len(conversation_history)} messages from memory")
-            return conversation_history
-            
-        except Exception as e:
-            logger.debug(f"No existing session found or error retrieving: {e}")
-            return []
+        # Don't call super().__init__() to avoid registering hooks
+        self.memory_client = memory_client
+        self.memory_id = memory_id
+        self.session_id = None
+        logger.info(f"Initialized SessionManager with memory_id: {memory_id}")
     
-    def set_conversation_history(self, user_id: str, conversation_history: list, session_id: str = None) -> bool:
+    def initialize(self, agent: "Agent", session_id: str = None, **kwargs: Any) -> None:
         """
-        Store conversation history for a user session
+        Initialize/restore a session for the agent.
         
         Args:
-            user_id: Unique identifier for the user (actor_id)
-            conversation_history: List of messages to store
-            session_id: Optional session identifier (defaults to user_id)
-            
-        Returns:
-            True if successful, False otherwise
+            agent: The agent to initialize
+            session_id: Optional session identifier
+            **kwargs: Additional arguments
         """
-        if session_id is None:
-            session_id = user_id
+        session_id = session_id or "default"
         
-        if not self.memory_id:
-            logger.error("Memory ID not available")
-            return False
+        # Clear agent's messages when switching to a different session
+        if self.session_id != session_id:
+            logger.info(f"Switching from session '{self.session_id}' to '{session_id}' - clearing agent messages")
+            agent.messages.clear()
+        
+        self.session_id = session_id
+        logger.info(f"Initializing session: {self.session_id}")
+        
+        # Restore conversation history from AgentCore Memory
+        if self.memory_id:
+            try:
+                # Use get_last_k_turns to retrieve conversation history in order
+                # This returns turns (pairs of user/assistant exchanges)
+                turns = self.memory_client.get_last_k_turns(
+                    memory_id=self.memory_id,
+                    actor_id=self.session_id,
+                    session_id=self.session_id,
+                    k=50  # Retrieve last 50 turns (100 messages)
+                )
+                
+                # Flatten turns into messages and restore to agent
+                restored_count = 0
+                for turn in turns:
+                    # Each turn is a list of messages (user + assistant)
+                    for msg in turn:
+                        role = msg.get('role', 'user').lower()
+                        
+                        # Only restore user and assistant messages, skip tool messages
+                        if role not in ['user', 'assistant']:
+                            continue
+                        
+                        # Extract text content - handle both string and dict formats
+                        content_text = ""
+                        raw_content = msg.get('content', '')
+                        
+                        if isinstance(raw_content, str):
+                            content_text = raw_content
+                        elif isinstance(raw_content, list):
+                            # Content is already in the [{text: '...'}] format
+                            for item in raw_content:
+                                if isinstance(item, dict) and 'text' in item:
+                                    content_text = str(item['text'])
+                                    break
+                        elif isinstance(raw_content, dict):
+                            # Content is a dict, try to extract text
+                            content_text = str(raw_content.get('text', raw_content))
+                        
+                        if content_text:
+                            # Create message in Strands format
+                            message = {
+                                "role": role,
+                                "content": [{"text": content_text}]
+                            }
+                            agent.messages.append(message)
+                            restored_count += 1
+                
+                if restored_count > 0:
+                    logger.info(f"Restored {restored_count} messages from memory for session {self.session_id}")
+                    
+            except Exception as e:
+                logger.debug(f"No existing session to restore or error: {e}")
+    
+    def save_conversation(self, agent, session_id: str = None):
+        """
+        Save the current conversation to AgentCore Memory.
+        Only saves user and assistant messages, skipping tool calls.
+        
+        Args:
+            agent: The agent whose conversation to save
+            session_id: Optional session ID (uses stored session_id if not provided)
+        """
+        if session_id:
+            self.session_id = session_id
+            
+        if not self.memory_id or not self.session_id:
+            logger.warning("Cannot save - missing memory_id or session_id")
+            return
         
         try:
-            # Convert conversation history to messages format for create_event
-            messages = []
-            for msg in conversation_history:
-                text = msg.get('content', [{}])[0].get('text', '')
-                role = msg.get('role', 'USER').upper()
-                messages.append((text, role))
+            # Extract only user and assistant messages
+            messages_to_store = []
+            for msg in agent.messages:
+                role = msg.get('role', '').lower()
+                
+                # Only save user and assistant messages
+                if role not in ['user', 'assistant']:
+                    continue
+                
+                # Extract text content
+                content_text = ""
+                raw_content = msg.get('content', [])
+                
+                if isinstance(raw_content, list):
+                    for item in raw_content:
+                        if isinstance(item, dict) and 'text' in item:
+                            content_text = str(item['text'])
+                            break
+                
+                if content_text:
+                    messages_to_store.append((content_text, role.upper()))
             
-            # Store the conversation as an event
-            self.client.create_event(
-                memory_id=self.memory_id,
-                actor_id=user_id,
-                session_id=session_id,
-                messages=messages
-            )
-            
-            logger.info(f"Stored {len(conversation_history)} messages to memory")
-            return True
-            
+            # Store to AgentCore Memory if we have messages
+            if messages_to_store:
+                self.memory_client.create_event(
+                    memory_id=self.memory_id,
+                    actor_id=self.session_id,
+                    session_id=self.session_id,
+                    messages=messages_to_store
+                )
+                logger.info(f"Saved conversation with {len(messages_to_store)} messages to memory")
+                
         except Exception as e:
-            logger.error(f"Error storing memory: {e}")
-            return False
+            logger.error(f"Error saving conversation to memory: {e}")
+    
+    # Required abstract methods (not used in our implementation)
+    def append_message(self, message, agent, **kwargs: Any) -> None:
+        """Not used - we save manually instead of via hooks."""
+        pass
+    
+    def sync_agent(self, agent, **kwargs: Any) -> None:
+        """Not used - we save manually instead of via hooks."""
+        pass
+    
+    def redact_latest_message(self, redact_message, agent, **kwargs: Any) -> None:
+        """Not supported by AgentCore Memory."""
+        logger.warning("Message redaction not supported by AgentCore Memory")
