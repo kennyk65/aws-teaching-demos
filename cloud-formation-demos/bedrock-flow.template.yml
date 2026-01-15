@@ -1,0 +1,190 @@
+---
+Description: 'CloudFormation template to create an Amazon Bedrock Flow,ith input parameters'
+
+Parameters:
+  ModelId:
+    Type: String
+    Default: amazon.nova-micro-v1:0
+    Description: The foundational model to use for the agent.  
+
+Resources:
+  BedrockFlow:
+    Type: AWS::Bedrock::Flow
+    Properties:
+      Name: !Sub ${AWS::StackName}-CustomerFeedbackAnalyzer
+      Definition:
+        Connections:
+        - Type: Data
+          Name: InputToSummarizer
+          Source: FlowInputNode
+          Target: Summarizer
+          Configuration:
+            Data:
+              SourceOutput: document
+              TargetInput: feedback_text
+        - Type: Data
+          Name: InputToClassify
+          Source: FlowInputNode
+          Target: ClassifySentiment
+          Configuration:
+            Data:
+              SourceOutput: document
+              TargetInput: feedback_text
+        - Type: Data
+          Name: SummarizerToClassify
+          Source: Summarizer
+          Target: ClassifySentiment
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: summary_text
+        - Type: Data
+          Name: ClassifyToOutput
+          Source: ClassifySentiment
+          Target: FlowOutputNode
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: document
+        Nodes:
+        - Outputs:
+          - Type: String
+            Name: document
+          Type: Input
+          Configuration:
+            Input: {}
+          Inputs: []
+          Name: FlowInputNode
+        - Outputs:
+          - Type: String
+            Name: modelCompletion
+          Type: Prompt
+          Configuration:
+            Prompt:
+              SourceConfiguration:
+                Inline:
+                  InferenceConfiguration:
+                    Text:
+                      Temperature: 0.6
+                      TopP: 0.8
+                      StopSequences: []
+                      MaxTokens: 512
+                  TemplateConfiguration:
+                    Text:
+                      InputVariables:
+                      - Name: feedback_text
+                      Text: "Summarize the customer feedback in one concise sentence: {{feedback_text}}"
+                  TemplateType: TEXT
+                  ModelId: !Ref ModelId
+          Inputs:
+          - Expression: "$.data"
+            Type: String
+            Name: feedback_text
+          Name: Summarizer
+        - Outputs: []
+          Type: Output
+          Configuration:
+            Output: {}
+          Inputs:
+          - Expression: "$.data"
+            Type: String
+            Name: document
+          Name: FlowOutputNode
+        - Outputs:
+          - Type: String
+            Name: modelCompletion
+          Type: Prompt
+          Configuration:
+            Prompt:
+              SourceConfiguration:
+                Inline:
+                  InferenceConfiguration:
+                    Text:
+                      Temperature: 0.6
+                      TopP: 0.8
+                      StopSequences: []
+                      MaxTokens: 512
+                  TemplateConfiguration:
+                    Text:
+                      InputVariables:
+                      - Name: feedback_text
+                      - Name: summary_text
+                      Text: "You are a precise text analyst.\nUsing the original feedback\
+                        \ and its summary, return a compact JSON object.\nOriginal:\n\
+                        {{feedback_text}}\nSummary:\n{{summary_text}}\nReturn JSON\
+                        \ with this schema:\n{\"summary\": string, \"sentiment\":\
+                        \ \"positive\" | \"neutral\" | \"negative\"}"
+                  TemplateType: TEXT
+                  ModelId: !Ref ModelId
+          Inputs:
+          - Expression: "$.data"
+            Type: String
+            Name: feedback_text
+          - Expression: "$.data"
+            Type: String
+            Name: summary_text
+          Name: ClassifySentiment
+      ExecutionRoleArn: !GetAtt BedrockFlowsRole.Arn
+
+  # BedrockFlowVersionDRAFT:
+  #   Type: AWS::Bedrock::FlowVersion
+  #   Properties:
+  #     FlowArn:
+  #       Ref: BedrockFlow
+
+  # BedrockFlowAlias:
+  #   Type: AWS::Bedrock::FlowAlias
+  #   Properties:
+  #     Description: "TSTALIASID"
+  #     FlowArn:
+  #       Ref: BedrockFlow
+  #     RoutingConfiguration:
+  #     - FlowVersion: "DRAFT"
+  #     Tags: {}
+  #     Name: "TSTALIASID"
+
+
+  BedrockFlowsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/service-role/"
+      ManagedPolicyArns:
+      - Ref: BedrockFlowsPolicy
+      - Ref: FoundationModelPolicy
+      MaxSessionDuration: 3600
+      RoleName: !Sub ${AWS::StackName}-BedrockFlowsRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: bedrock.amazonaws.com
+
+  BedrockFlowsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${AWS::StackName}-BedrockFlowsPolicy
+      Path: "/service-role/"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action: bedrock:GetFlow
+          Resource: "*"
+ 
+  FoundationModelPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${AWS::StackName}-FoundationModelPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action: bedrock:InvokeModel
+          Resource: "*"
+
+Outputs:
+  FlowUrl:
+    Description: URL to access the flow in the Bedrock console
+    Value: !Sub https://console.aws.amazon.com/bedrock/home?region=${AWS::Region}#/flows/${BedrockFlow.Id}/builder
