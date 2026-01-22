@@ -4,7 +4,7 @@ Description: 'CloudFormation template to create an Amazon Bedrock Flow,ith input
 Parameters:
   ModelId:
     Type: String
-    Default: amazon.nova-micro-v1:0
+    Default: us.amazon.nova-micro-v1:0
     Description: The foundational model to use for the agent.  
 
 Resources:
