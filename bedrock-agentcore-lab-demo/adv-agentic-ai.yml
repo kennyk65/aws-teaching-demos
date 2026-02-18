@@ -1,0 +1,1130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  This is a minimal deployment creating a SageMaker Studio Domain which will default to JupyterLab spaces.
+
+Parameters:
+  UserProfileName:
+    Type: String
+    Description: The user profile name for the SageMaker workshop
+    Default: 'SageMakerStudioUser'
+  DomainName:
+    Type: String
+    Description: The domain name of the Sagemaker studio instance
+    Default: 'LabDomain'
+  SpaceName:
+    Type: String
+    Description: The space name of the Sagemaker studio JupyterLab instance
+    Default: 'LabSpace'
+
+Mappings: 
+  RegionMap:
+    us-east-1: 
+      jupyter: "arn:aws:sagemaker:us-east-1:081325390199:image/jupyter-server-3"
+      instance: "ml.m5.2xlarge"
+    us-west-2: 
+      jupyter: "arn:aws:sagemaker:us-west-2:236514542706:image/jupyter-server-3"
+      instance: "ml.m5.2xlarge"
+
+Resources:
+  LabVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      Tags:
+        - Key: Name
+          Value: Lab VPC
+        - Key: env
+          Value: aws-agentcore-lab
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: IGW
+        - Key: env
+          Value: aws-agentcore-lab
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+      Tags:
+        - Key: Name
+          Value: Public Subnet
+        - Key: env
+          Value: aws-agentcore-lab
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: PublicSubnet
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+        - Key: env
+          Value: aws-agentcore-lab
+
+  PublicRouteIGW:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PublicRouteIGW
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  ElasticIpForNatGateway:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: env
+          Value: aws-agentcore-lab
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: PublicRouteTableAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIpForNatGateway.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: NAT Gateway
+        - Key: env
+          Value: aws-agentcore-lab
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    DependsOn: NatGateway
+    Properties:
+      CidrBlock: 10.0.2.0/24
+      VpcId: !Ref LabVPC
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+      Tags:
+        - Key: Name
+          Value: Private Subnet
+        - Key: env
+          Value: aws-agentcore-lab
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: PrivateSubnet
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table
+        - Key: env
+          Value: aws-agentcore-lab
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateRoute
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  # IAM Role for SageMaker Studio with permissions for lab exercises
+  # SECURITY NOTE: This role uses broad permissions (Resource: "*") for lab simplicity.
+  # For production environments, follow the principle of least privilege:
+  # - Replace Resource: "*" with specific ARNs wherever possible
+  # - Limit actions to only what's required for your use case
+  # - Use condition keys to further restrict access
+  # - Regularly audit and remove unused permissions
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: env
+          Value: aws-agentcore-lab
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - sagemaker.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - bedrock.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - bedrock-agentcore.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Sub "${AWS::AccountId}"
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:bedrock-agentcore:*:${AWS::AccountId}:*"
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonSageMakerReadOnly"
+        - "arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonBedrockReadOnly"
+        - "arn:aws:iam::aws:policy/ReadOnlyAccess"
+      Policies: 
+        - PolicyName: sm-studio-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:UpdateSpace
+                  - sagemaker:DeleteSpace
+                  - sagemaker:DeleteApp
+                  - sagemaker:CreatePresignedNotebookInstanceUrl
+                  - sagemaker:UpdateAppImageConfig
+                  - sagemaker:CreateSpace
+                  - sagemaker:CreateStudioLifecycleConfig
+                  - sagemaker:DeleteStudioLifecycleConfig
+                  - sagemaker:CreatePresignedDomainUrl
+                  - sagemaker:DeleteAppImageConfig
+                  - sagemaker:CreateApp
+                  - sagemaker:AddTags
+                Resource: arn:aws:sagemaker:*:*:*
+        - PolicyName: s3-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:DeleteBucket
+                  - s3:PutEncryptionConfiguration
+                  - s3:PutLifecycleConfiguration
+                  - s3:PutBucketVersioning
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:DeleteBucketPolicy
+                  - s3:PutBucketPolicy
+                Resource: arn:aws:s3:::*
+        - PolicyName: s3-create-bucket-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                Resource:
+                  - arn:aws:s3:::*
+        # SECURITY BEST PRACTICE: Restrict IAM permissions to specific resources
+        # Production recommendation: Replace Resource: '*' with specific role/policy ARNs
+        # Example: Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/YourSpecificRole*'
+        - PolicyName: iam-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PutRolePolicy
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:CreatePolicy
+                  - iam:AttachRolePolicy
+                  - iam:CreateServiceLinkedRole
+                  - iam:DeleteRole
+                  - iam:DeletePolicy
+                  - iam:PassRole
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:TagRole
+                Resource: '*'
+        - PolicyName: bedrock-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:TagResource
+                  - bedrock:UntagResource
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "arn:aws:bedrock:*:*:*"
+        # Explicit deny for model customization to prevent unintended fine-tuning costs
+        - PolicyName: bedrock-deny
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Deny
+                Action:
+                  - bedrock:CreateModelCustomizationJob
+                  - bedrock:StopModelCustomizationJob
+                  - bedrock:GetModelCustomizationJob
+                  - bedrock:ListModelCustomizationJobs
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Limit Lambda permissions to specific functions
+        # Production recommendation: Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function/YourFunctionPrefix*'
+        - PolicyName: lambda-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:AddPermission
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:InvokeFunction
+                  - lambda:CreateEventSourceMapping
+                Resource: "*"
+        - PolicyName: dynamodb-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                Resource: "arn:aws:dynamodb:*:*:table/*"
+        - PolicyName: cfn-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DeleteStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateStack
+                Resource: "arn:aws:cloudformation:*:*:stack/*"
+        # SECURITY BEST PRACTICE: Restrict SSM and SNS access to specific parameters/topics
+        # Production recommendation: 
+        # - SSM: Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/YourPrefix/*'
+        # - SNS: Replace "sns:*" with specific actions and topic ARNs
+        - PolicyName: ssm-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - "sns:*"
+                Resource: "*"
+        - PolicyName: ecr-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:PutLifecyclePolicy
+                  - ecr:SetRepositoryPolicy
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:DeleteRepository
+                  - ecr:CreateRepository
+                Resource: "arn:aws:ecr:*:*:repository/*"
+        # SECURITY BEST PRACTICE: Avoid wildcard actions and resources
+        # Production recommendation: Specify exact SNS actions and topic ARNs needed
+        # Example: Action: ['sns:Publish', 'sns:Subscribe'] and specific topic ARNs
+        - PolicyName: sns-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sns:*"
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Limit CodeBuild access to specific projects
+        # Production recommendation: Resource: !Sub 'arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/YourProjectPrefix*'
+        - PolicyName: codebuild-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateProject
+                  - codebuild:StartBuild
+                  - codebuild:UpdateProject
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Restrict Cognito access to specific user pools
+        # Production recommendation: Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+        # Or even more specific: Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}'
+        - PolicyName: cognito-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:CreateResourceServer
+                  - cognito-idp:AdminSetUserPassword
+                  - cognito-idp:CreateUserPool
+                  - cognito-idp:CreateUserPoolClient
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:CreateUserPoolDomain
+                  - cognito-idp:DeleteUserPool
+                  - cognito-idp:AdminDeleteUser
+                  - cognito-idp:UpdateUserPoolClient
+                  - cognito-idp:DeleteUserPoolClient
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Limit Secrets Manager access to specific secrets
+        # Production recommendation: Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:YourSecretPrefix*'
+        - PolicyName: secret-manager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DeleteSecret
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Restrict AgentCore access to specific runtimes
+        # Production recommendation: Resource: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:agent-runtime/YourRuntimeName*'
+        - PolicyName: agentcore-runtime-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateAgentRuntime
+                  - bedrock-agentcore:UpdateAgentRuntime
+                  - bedrock-agentcore:CreateAgentRuntimeEndpoint
+                  - bedrock-agentcore:UpdateAgentRuntimeEndpoint
+                  - bedrock-agentcore:CreateWorkloadIdentity
+                  - bedrock-agentcore:UploadWorkloadIdentity
+                  - bedrock-agentcore:InvokeAgentRuntime
+                  - bedrock-agentcore:DeleteAgentRuntime
+                  - bedrock-agentcore:DeleteAgentRuntimeEndpoint
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Avoid wildcard actions (bedrock-agentcore:*)
+        # Production recommendation: 
+        # - Remove "bedrock-agentcore:*" and list only required actions
+        # - Restrict to specific gateway ARNs
+        - PolicyName: agentcore-gateway-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateGateway
+                  - bedrock-agentcore:UpdateGateway
+                  - bedrock-agentcore:DeleteGateway
+                  - bedrock-agentcore:CreateGatewayTarget
+                  - bedrock-agentcore:UpdateGatewayTarget
+                  - bedrock-agentcore:DeleteGatewayTarget
+                  - bedrock-agentcore:DeleteWorkloadIdentity
+                  - bedrock-agentcore:CreateApiKeyCredentialProvider
+                  - bedrock-agentcore:CreateTokenVault
+                  - bedrock-agentcore:SynchronizeGatewayTargets
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Restrict memory access to specific memory stores
+        # Production recommendation: Resource: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/YourMemoryId*'
+        - PolicyName: agentcore-memory-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateMemory
+                  - bedrock-agentcore:CreateEvent
+                  - bedrock-agentcore:DeleteMemory
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Limit tool access to specific interpreters/browsers
+        # Production recommendation: Restrict to specific code interpreter and browser session ARNs
+        - PolicyName: agentcore-tools-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateCodeInterpreter
+                  - bedrock-agentcore:StartCodeInterpreterSession
+                  - bedrock-agentcore:InvokeCodeInterpreter
+                  - bedrock-agentcore:StopCodeInterpreterSession
+                  - bedrock-agentcore:DeleteCodeInterpreter
+                  - bedrock-agentcore:CreateBrowser
+                  - bedrock-agentcore:DeleteBrowser
+                  - bedrock-agentcore:StartBrowserSession
+                  - bedrock-agentcore:ConnectBrowserAutomationStream
+                  - bedrock-agentcore:ConnectBrowserLiveViewStream
+                  - bedrock-agentcore:UpdateBrowserStream
+                  - bedrock-agentcore:StopBrowserSession
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Restrict observability access to specific log groups
+        # Production recommendation: 
+        # - CloudWatch Logs: Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/*'
+        # - X-Ray: Can remain "*" for tracing, but consider limiting if possible
+        - PolicyName: agentcore-observability-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - application-signals:StartDiscovery
+                  - logs:PutLogEvents
+                  - logs:FilterLogEvents
+                  - xray:PutTraceSegments
+                  - logs:PutDestination
+                  - xray:PutTelemetryRecords
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutResourcePolicy
+                  - logs:PutRetentionPolicy
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Restrict identity provider access to specific providers
+        # Production recommendation: Limit to specific credential provider and token vault ARNs
+        - PolicyName: agentcore-identity-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateApiKeyCredentialProvider
+                  - bedrock-agentcore:DeleteApiKeyCredentialProvider
+                  - bedrock-agentcore:UpdateApiKeyCredentialProvider
+                  - bedrock-agentcore:CreateOAuth2CredentialProvider
+                  - bedrock-agentcore:DeleteOAuth2CredentialProvider
+                  - bedrock-agentcore:UpdateOAuth2CredentialProvider
+                  - bedrock-agentcore:CreateTokenVault
+                  - bedrock-agentcore:SetTokenVaultCmk
+                  - bedrock-agentcore:GetResourceApiKey
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Limit Secrets Manager access to specific secrets
+        # Production recommendation: Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:YourSecretPrefix*'
+        - PolicyName: secretsmanager-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                Resource: "*"
+        # SECURITY BEST PRACTICE: Restrict guardrail access to specific guardrails
+        # Production recommendation: Resource: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/YourGuardrailId*'
+        - PolicyName: guardrail-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:ApplyGuardrail
+                  - bedrock:CreateGuardrail
+                  - bedrock:CreateGuardrailVersion
+                  - bedrock:DeleteGuardrail
+                  - bedrock:UpdateGuardrail
+                Resource: "*"
+        - PolicyName: cleanup-permissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              # CodeBuild cleanup permissions
+              - Effect: Allow
+                Action:
+                  - codebuild:ListProjects
+                  - codebuild:DeleteProject
+                  - codebuild:BatchGetProjects
+                Resource: "*"
+              
+              # IAM cleanup permissions for AgentCore roles
+              - Effect: Allow
+                Action:
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:DeleteRole
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/AmazonBedrockAgentCoreSDKRuntime-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/AmazonBedrockAgentCoreSDKCodeBuild-*"
+              
+              # S3 cleanup permissions (for emptying and deleting buckets)
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                  - s3:DeleteBucket
+                Resource:
+                  - "arn:aws:s3:::bedrock-agentcore-codebuild-sources-*"
+                  - "arn:aws:s3:::bedrock-agentcore-codebuild-sources-*/*"
+              
+              # CloudWatch Logs cleanup permissions
+              - Effect: Allow
+                Action:
+                  - logs:DeleteLogGroup
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/bedrock-agentcore-*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/AdvancedAgenticAI-Lab-*"
+              
+              # SageMaker cleanup permissions
+              - Effect: Allow
+                Action:
+                  - sagemaker:DeleteApp
+                  - sagemaker:DeleteSpace
+                  - sagemaker:DeleteUserProfile
+                  - sagemaker:DeleteDomain
+                Resource:
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:space/*"
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:app/*"
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:user-profile/*"
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:domain/*"
+              
+              # EFS cleanup permissions
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:DeleteMountTarget
+                  - elasticfilesystem:DeleteFileSystem
+                Resource: "*"
+              
+              # EC2 Network Interface cleanup (for EFS mount targets)
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteNetworkInterface
+                Resource: "*"        
+
+  StudioDomain:
+    Type: AWS::SageMaker::Domain
+    Properties: 
+      AppNetworkAccessType: PublicInternetOnly
+      AuthMode: IAM
+      DefaultUserSettings: 
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+        StudioWebPortal: ENABLED
+        StudioWebPortalSettings:
+          HiddenAppTypes:
+            - Canvas
+            - JupyterServer # Studio Classic
+            - RStudioServerPro
+            - TensorBoard
+            - DetailedProfiler
+          HiddenMlTools:
+            - FeatureStore
+            - EmrClusters
+      DomainName: !Ref DomainName
+      SubnetIds: 
+        - !Ref PublicSubnet
+      VpcId: !Ref LabVPC
+      DefaultSpaceSettings: 
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+      DomainSettings:
+        DockerSettings:
+          EnableDockerAccess: ENABLED
+      Tags:
+        - Key: env
+          Value: aws-agentcore-lab
+        - Key: version
+          Value: '1.0'
+
+  UserProfile:
+    Type: AWS::SageMaker::UserProfile
+    Properties: 
+      DomainId: !GetAtt StudioDomain.DomainId
+      UserProfileName: !Ref UserProfileName
+      UserSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+      Tags:
+        - Key: env
+          Value: aws-agentcore-lab
+        - Key: version
+          Value: '1.0'
+        - Key: user
+          Value: !Ref UserProfileName
+
+  JupyterLabSpace:
+    Type: AWS::SageMaker::Space
+    DependsOn:
+      - UserProfile
+    Properties:
+      DomainId: !GetAtt StudioDomain.DomainId
+      SpaceName: !Ref SpaceName
+      SpaceSettings:
+        AppType: JupyterLab
+        SpaceStorageSettings:
+          EbsStorageSettings: 
+            EbsVolumeSizeInGb: 100
+        JupyterLabAppSettings:
+          DefaultResourceSpec: 
+            InstanceType: !FindInMap
+              - RegionMap
+              - !Ref "AWS::Region"
+              - instance
+      SpaceSharingSettings:
+        SharingType: Private
+      OwnershipSettings:
+        OwnerUserProfileName: !Ref UserProfileName
+
+  ####################################################################################################################
+  #### LifeCycle Configuration to download notebooks
+  ####################################################################################################################
+
+  LifeCycleConfigLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Tags:
+        - Key: env
+          Value: aws-agentcore-lab
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Sub 'LifeCycleConfigLambdaPolicy-${AWS::StackName}'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sagemaker:CreateStudioLifecycleConfig'
+                  - 'sagemaker:DeleteStudioLifecycleConfig'
+                Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:studio-lifecycle-config/*'
+              - Effect: Allow
+                Action:
+                  - 'sagemaker:UpdateUserProfile'
+                  - 'sagemaker:DeleteUserProfile'
+                Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:user-profile/*'
+              # SECURITY BEST PRACTICE: Restrict S3 access to specific buckets
+              # Production recommendation: Resource: 'arn:aws:s3:::your-specific-bucket/*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LifeCycleConfigLambda:
+    Type: 'AWS::Lambda::Function'
+    DependsOn: 
+      - UserProfile
+      - LifeCycleConfigLambdaRole
+    Properties:
+      Tags:
+        - Key: env
+          Value: aws-agentcore-lab
+      Description: Add LifeCycle Configuration to copy NB files to Studio
+      Handler: index.lambda_handler
+      Role: !GetAtt LifeCycleConfigLambdaRole.Arn
+      Runtime: python3.12
+      Timeout: 60
+      Code:
+        ZipFile: !Join
+          - |+
+
+          - - 'import boto3'
+            - 'import base64'
+            - 'import cfnresponse'
+            - ''
+            - 'client = boto3.client(''sagemaker'')'
+            - 'lcc_up1 = ''\n''.join(('
+            - '    ''#!/bin/bash'','
+            - '    '''','
+            - '    ''set -ex'','
+            - '    '''','
+            - '    ''if [ ! -z "${SM_JOB_DEF_VERSION}" ]'','
+            - '    ''then'','
+            - '    ''   echo "Running in job mode, skip lcc"'','
+            - '    ''else'','
+            - '    ''   # Download lab materials from S3'','
+            - '    ''   S3_BUCKET="s3://aws-tc-largeobjects/ILT-TF-300-MLADAS-1/lab-1/lab-files/finance-personal-assistant/"'','
+            - '    ''   echo "Downloading lab materials from S3..."'','
+            - '    ''   '','
+            - '    ''   # Use AWS CLI to sync entire folder from S3 (preserves directory structure)'','
+            - '    ''   aws s3 sync ${S3_BUCKET} lab/ --no-sign-request --region us-west-2'','
+            - '    ''   '','
+            - '    ''   echo "Lab materials downloaded successfully from S3"'','
+            - '    ''   ls -la lab/'','
+            - '    ''fi'','
+            - '    '''','
+            - '))'
+            - ''
+            - !Sub 'lcc_name_up1 = "${AWS::StackName}-copy-notebooks"'
+            - !Sub 'up1 = "${UserProfile}"'
+            - ''
+            - 'def get_lcc_base64_string(lcc_string):'
+            - '    lcc_bytes = lcc_string.encode("ascii")'
+            - '    base64_lcc_bytes = base64.b64encode(lcc_bytes)'
+            - '    base64_lcc_string = base64_lcc_bytes.decode("ascii")'
+            - '    return base64_lcc_string'
+            - ''
+            - ''
+            - 'def apply_lcc_to_user_profile(base64_lcc_string, lcc_config_name, profile):'
+            - '    response = client.create_studio_lifecycle_config('
+            - '        StudioLifecycleConfigName=lcc_config_name,'
+            - '        StudioLifecycleConfigContent=base64_lcc_string,'
+            - '        StudioLifecycleConfigAppType="JupyterLab",'
+            - '   )'
+            - ''
+            - '    lcc_arn = response["StudioLifecycleConfigArn"]'
+            - '    update_up = client.update_user_profile('
+            - '        DomainId=profile.split("|")[1],'
+            - '        UserProfileName=profile.split("|")[0],'
+            - '        UserSettings={'
+            - '            "JupyterLabAppSettings": {'
+            - '                "DefaultResourceSpec": {"LifecycleConfigArn": lcc_arn},'
+            - '                "LifecycleConfigArns": [lcc_arn]'
+            - '            }'
+            - '        }'
+            - '    )'
+            - '    return update_up'
+            - ''
+            - ''
+            - 'def lambda_handler(event, context):'
+            - '    print(event)'
+            - '    try:'
+            - '        base64_lcc_up1_string = get_lcc_base64_string(lcc_up1)'
+            - '        updated_up1 = apply_lcc_to_user_profile('
+            - '            base64_lcc_up1_string,'
+            - '            lcc_name_up1,'
+            - '            up1'
+            - '        )'
+            - '        print("Response User Profile LCC update for UP1")'
+            - '        print(updated_up1)'
+            - ''
+            - '        response_value = 120'
+            - '        response_data = {"Data": response_value}'
+            - '        cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)'
+            - '    except Exception as e:'
+            - '        if "RequestType" in event:'
+            - '            if event["RequestType"] == "Delete":'
+            - '                try:'
+            - '                    response1 = client.delete_studio_lifecycle_config('
+            - '                        StudioLifecycleConfigName=lcc_name_up1'
+            - '                    )'
+            - '                    print(response1)'
+            - '                    response_data = {}'
+            - '                    cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)'
+            - '                    return'
+            - '                except Exception as e2:'
+            - '                    print(e2)'
+            - '                    response_data = e2'
+            - '                    cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)'
+            - '                    return'
+            - '        print(e)'
+            - '        response_data = {"Data": str(e)}'
+            - '        cfnresponse.send(event, context, cfnresponse.FAILED, response_data)'
+
+  LifeCycleConfigLambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt LifeCycleConfigLambda.Arn
+      StackName: !Ref "AWS::StackName"
+      DomainId: !GetAtt StudioDomain.DomainId
+      UserProfile: !Ref UserProfileName
+      ServiceTimeout: 5
+
+## Cleanup resources during CFN delete
+  CleanupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SageMakerCleanup
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:ListApps
+                  - sagemaker:DeleteApp
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:DescribeFileSystems
+                  - elasticfilesystem:DescribeMountTargets
+                  - elasticfilesystem:DeleteMountTarget
+                  - elasticfilesystem:DeleteFileSystem
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DeleteSecurityGroup
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupEgress
+                Resource: '*'
+  
+  CleanupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: index.handler
+      Role: !GetAtt CleanupLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          
+          sagemaker = boto3.client('sagemaker')
+          
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      domain_id = event['ResourceProperties']['DomainId']
+                      space_name = event['ResourceProperties'].get('SpaceName')
+                      user_profile = event['ResourceProperties'].get('UserProfileName')
+                      
+                      # Delete apps in space
+                      if space_name:
+                          apps = sagemaker.list_apps(DomainIdEquals=domain_id, SpaceNameEquals=space_name)
+                          for app in apps.get('Apps', []):
+                              if app['Status'] != 'Deleted':
+                                  sagemaker.delete_app(
+                                      DomainId=domain_id,
+                                      SpaceName=space_name,
+                                      AppType=app['AppType'],
+                                      AppName=app['AppName']
+                                  )
+                      
+                      # Delete apps in user profile
+                      if user_profile:
+                          apps = sagemaker.list_apps(DomainIdEquals=domain_id, UserProfileNameEquals=user_profile)
+                          for app in apps.get('Apps', []):
+                              if app['Status'] != 'Deleted':
+                                  sagemaker.delete_app(
+                                      DomainId=domain_id,
+                                      UserProfileName=user_profile,
+                                      AppType=app['AppType'],
+                                      AppName=app['AppName']
+                                  )
+                  
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+
+  UserProfileCleanup:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt CleanupLambda.Arn
+      DomainId: !GetAtt StudioDomain.DomainId
+      UserProfileName: !Ref UserProfileName
+    DependsOn: UserProfile
+  
+  SpaceCleanup:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt CleanupLambda.Arn
+      DomainId: !GetAtt StudioDomain.DomainId
+      SpaceName: !Ref SpaceName
+    DependsOn: JupyterLabSpace
+
+  EFSCleanupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: index.handler
+      Role: !GetAtt CleanupLambdaRole.Arn
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import time
+          
+          efs = boto3.client('efs')
+          ec2 = boto3.client('ec2')
+          
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      domain_arn = event['ResourceProperties']['DomainArn']
+                      region = event['ResourceProperties']['Region']
+                      
+                      print(f"Looking for EFS file system with tag ManagedByAmazonSageMakerResource={domain_arn}")
+                      
+                      # Find EFS file system by tag
+                      file_systems = efs.describe_file_systems()
+                      
+                      for fs in file_systems.get('FileSystems', []):
+                          fs_id = fs['FileSystemId']
+                          
+                          # Get tags for this file system
+                          try:
+                              tags_response = efs.describe_file_systems(FileSystemId=fs_id)
+                              tags = tags_response['FileSystems'][0].get('Tags', [])
+                              
+                              # Check if this EFS is managed by our SageMaker domain
+                              for tag in tags:
+                                  if (tag['Key'] == 'ManagedByAmazonSageMakerResource' and 
+                                      tag['Value'] == domain_arn):
+                                      
+                                      print(f"Found EFS file system: {fs_id}")
+                                      
+                                      # Delete all mount targets first
+                                      mount_targets = efs.describe_mount_targets(FileSystemId=fs_id)
+                                      for mt in mount_targets.get('MountTargets', []):
+                                          mt_id = mt['MountTargetId']
+                                          print(f"Deleting mount target: {mt_id}")
+                                          try:
+                                              efs.delete_mount_target(MountTargetId=mt_id)
+                                          except Exception as e:
+                                              print(f"Error deleting mount target {mt_id}: {e}")
+                                      
+                                      # Wait for mount targets to be deleted
+                                      print("Waiting for mount targets to be deleted...")
+                                      max_wait = 120  # 2 minutes
+                                      wait_interval = 5
+                                      elapsed = 0
+                                      
+                                      while elapsed < max_wait:
+                                          mount_targets = efs.describe_mount_targets(FileSystemId=fs_id)
+                                          if not mount_targets.get('MountTargets'):
+                                              break
+                                          time.sleep(wait_interval)
+                                          elapsed += wait_interval
+                                          print(f"Still waiting... ({elapsed}s)")
+                                      
+                                      # Delete the file system
+                                      print(f"Deleting EFS file system: {fs_id}")
+                                      try:
+                                          efs.delete_file_system(FileSystemId=fs_id)
+                                          print(f"Successfully deleted EFS file system: {fs_id}")
+                                      except Exception as e:
+                                          print(f"Error deleting file system {fs_id}: {e}")
+                                      
+                                      break
+                          except Exception as e:
+                              print(f"Error processing file system {fs_id}: {e}")
+                              continue
+                      
+                      # Clean up security groups with the same tag
+                      print(f"Looking for security groups with tag ManagedByAmazonSageMakerResource={domain_arn}")
+                      try:
+                          security_groups = ec2.describe_security_groups(
+                              Filters=[
+                                  {
+                                      'Name': 'tag:ManagedByAmazonSageMakerResource',
+                                      'Values': [domain_arn]
+                                  }
+                              ]
+                          )
+                          
+                          sg_ids = []
+                          
+                          # First pass: Revoke all rules from all security groups
+                          for sg in security_groups.get('SecurityGroups', []):
+                              sg_id = sg['GroupId']
+                              sg_name = sg.get('GroupName', 'Unknown')
+                              sg_ids.append(sg_id)
+                              
+                              print(f"Found security group: {sg_id} ({sg_name})")
+                              
+                              # Revoke all ingress rules first
+                              if sg.get('IpPermissions'):
+                                  print(f"Revoking ingress rules for {sg_id}")
+                                  try:
+                                      ec2.revoke_security_group_ingress(
+                                          GroupId=sg_id,
+                                          IpPermissions=sg['IpPermissions']
+                                      )
+                                  except Exception as e:
+                                      print(f"Error revoking ingress rules for {sg_id}: {e}")
+                              
+                              # Revoke all egress rules
+                              if sg.get('IpPermissionsEgress'):
+                                  print(f"Revoking egress rules for {sg_id}")
+                                  try:
+                                      ec2.revoke_security_group_egress(
+                                          GroupId=sg_id,
+                                          IpPermissions=sg['IpPermissionsEgress']
+                                      )
+                                  except Exception as e:
+                                      print(f"Error revoking egress rules for {sg_id}: {e}")
+                          
+                          # Wait for rule revocations to propagate
+                          if sg_ids:
+                              print("Waiting 15 seconds for security group rule revocations to propagate...")
+                              time.sleep(15)
+                          
+                          # Second pass: Delete all security groups
+                          for sg_id in sg_ids:
+                              print(f"Deleting security group: {sg_id}")
+                              max_retries = 3
+                              retry_delay = 10
+                              
+                              for attempt in range(max_retries):
+                                  try:
+                                      ec2.delete_security_group(GroupId=sg_id)
+                                      print(f"Successfully deleted security group: {sg_id}")
+                                      break
+                                  except Exception as e:
+                                      if attempt < max_retries - 1:
+                                          print(f"Attempt {attempt + 1} failed for {sg_id}: {e}. Retrying in {retry_delay}s...")
+                                          time.sleep(retry_delay)
+                                      else:
+                                          print(f"Failed to delete security group {sg_id} after {max_retries} attempts: {e}")
+                      
+                      except Exception as e:
+                          print(f"Error cleaning up security groups: {e}")
+                  
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error in EFS cleanup: {e}")
+                  # Don't fail the stack deletion if EFS cleanup fails
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  EFSCleanup:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt EFSCleanupLambda.Arn
+      DomainArn: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:domain/${StudioDomain.DomainId}'
+      Region: !Ref AWS::Region
+    DependsOn:
+      - JupyterLabSpace
+      - UserProfile
+      - StudioDomain
+
+   
