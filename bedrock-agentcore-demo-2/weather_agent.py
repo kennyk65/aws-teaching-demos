@@ -28,7 +28,7 @@ def celcius_to_farenheit(celcius):
     return (float(celcius) * 9/5) + 32
 
 
-model_id="us.amazon.nova-lite-v1:0"
+model_id="us.amazon.nova-micro-v1:0"
 logger.info(f"Defining custom model using: {model_id}")
 custom_model = BedrockModel(
     model_id=model_id,
@@ -57,12 +57,14 @@ app = BedrockAgentCoreApp()
 
 
 @app.entrypoint
-def invoke(payload: dict):
+def invoke(payload: dict, context):
+    logger.info(f"payload is: {payload}")
     assistant_response = ""
-    user_id = payload.get("user_id", "default")
+    actor_id = payload.get("actor_id", "default")
+    session_id = context.session_id or actor_id
     user_input = payload.get("prompt", "Hello")
-    session_id = payload.get("session_id", user_id)
-    
+    logger.info(f"actor_id is {actor_id} and session_id is {session_id} ") 
+
     try:
         # Initialize session to restore history
         session_manager.initialize(agent, session_id=session_id)
@@ -87,7 +89,7 @@ def invoke(payload: dict):
     return {
         "result": assistant_response,
         "session_id": session_id,
-        "user_id": user_id
+        "actor_id": actor_id
     }
 
 @app.on_event("startup")

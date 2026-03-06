@@ -40,24 +40,15 @@ Write-Host "The ECR Repository URI is $repo_uri"
 
 ### Demo
 
-#### Local Deployment (optional)
+#### Local Testing (optional)
 
-If you want to run the agent locally (no real reason to, other than to prove that it works), run this command:
+If you want to test the agent locally (no real reason to, other than to prove that it works), run the pytest command:
 ```
-python .\weather_agent.py
-```
-
-In a separate COMMAND shell, post this:
-```
-curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d "{\"user_id\": \"ken\", \"prompt\": \"What is the current temperature in Seattle, WA?  Use Farenheit temperature scale.\"}"
-
-```
-If you want to use POWERSHELL, post this:
-```
-Invoke-RestMethod -Uri "http://localhost:8080/invocations" -Method Post -ContentType "application/json" -Body '{"user_id": "ken", "prompt": "What is the current temperature in Seattle, WA? Use Farenheit temperature scale."}'
+python .\test_weather_agent.py
 ```
 
-Stop the python execution when done.
+...or in VSCode, right-click the test_weather_agent.py file and say "Run Test".
+
 
 #### AgentCore Runtime Deployment
 
@@ -73,6 +64,7 @@ agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_
 When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
 
 Then run these commands one at a time:
+**DO NOT USE POWERSHELL!!!!**
 ```
 
 # This simple command:
@@ -83,8 +75,12 @@ Then run these commands one at a time:
 agentcore launch --auto-update-on-conflict
 
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
-agentcore invoke '{"user_id":"ken","prompt":"What is the weather in Seattle, WA?"}' 
-agentcore invoke '{"user_id":"ken","prompt":"Do you think water will freeze there?"}' 
+agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"What is the weather in Seattle, WA?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+
+# To demonstrate that different sessions have access to different short term memory, repeat the last question with a different session; expect a puzzled response:
+agentcore invoke "{\"actor_id\":\"bob\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id bob-session-001-abcdefghijklmnopqrstuvwxyz123
+
 ```
 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
