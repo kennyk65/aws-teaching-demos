@@ -1,13 +1,14 @@
 """
 Memory module for Bedrock AgentCore
-Provides SessionManager implementation for Strands using AWS Bedrock AgentCore Memory
+Provides HookProvider implementation for Strands using AWS Bedrock AgentCore Memory
 """
 
 from bedrock_agentcore.memory import MemoryClient
-from strands.session import SessionManager
+from strands.hooks import HookProvider
 from typing import Any
 import logging
 import time
+import json
 
 logger = logging.getLogger("agent_activity")
 
@@ -114,166 +115,177 @@ class AgentCoreMemory:
                 time.sleep(10)
 
 
-class AgentCoreSessionManager(SessionManager):
+class AgentCoreMemoryHookProvider(HookProvider):
     """
-    SessionManager implementation for Strands that integrates with Bedrock AgentCore Memory.
-    
-    This class automatically persists conversation history and agent state to AgentCore Memory,
-    eliminating the need for manual memory management in agent code.
-    
-    Note: This implementation doesn't use the automatic hook-based persistence because
-    hooks fire on every message addition (including tool calls), which causes duplicates.
-    Instead, we manually save the conversation after each agent invocation.
+    HookProvider implementation for Strands + Bedrock AgentCore Memory.
+    Uses Strands lifecycle hooks to restore and persist short-term memory.
+    Note: This code is NOT threadsafe or session-safe. Any agent using it will also not be threadsafe or session-safe. 
     """
-    
-    def __init__(self, memory_client: MemoryClient, memory_id: str):
-        """
-        Initialize the session manager.
-        
-        Args:
-            memory_client: Initialized MemoryClient instance
-            memory_id: The AgentCore Memory ID to use for storage
-        """
-        # Don't call super().__init__() to avoid registering hooks
+
+    def __init__(
+        self,
+        memory_client: MemoryClient,
+        memory_id: str,
+        session_id: str,
+        actor_id: str,
+    ):
+        if not memory_id:
+            raise ValueError("memory_id is required for AgentCoreMemoryHookProvider")
+
         self.memory_client = memory_client
         self.memory_id = memory_id
-        self.session_id = None
-        logger.info(f"Initialized SessionManager with memory_id: {memory_id}")
-    
-    def initialize(self, agent: "Agent", session_id: str = None, **kwargs: Any) -> None:
-        """
-        Initialize/restore a session for the agent.
-        
-        Args:
-            agent: The agent to initialize
-            session_id: Optional session identifier
-            **kwargs: Additional arguments
-        """
-        session_id = session_id or "default"
-        
-        # Clear agent's messages when switching to a different session
-        if self.session_id != session_id:
-            logger.info(f"Switching from session '{self.session_id}' to '{session_id}' - clearing agent messages")
-            agent.messages.clear()
-        
-        self.session_id = session_id
-        logger.info(f"Initializing session: {self.session_id}")
-        
-        # Restore conversation history from AgentCore Memory
-        if self.memory_id:
-            try:
-                # Use get_last_k_turns to retrieve conversation history in order
-                # This returns turns (pairs of user/assistant exchanges)
-                turns = self.memory_client.get_last_k_turns(
-                    memory_id=self.memory_id,
-                    actor_id=self.session_id,
-                    session_id=self.session_id,
-                    k=50  # Retrieve last 50 turns (100 messages)
-                )
-                
-                # Flatten turns into messages and restore to agent
-                restored_count = 0
-                for turn in turns:
-                    # Each turn is a list of messages (user + assistant)
-                    for msg in turn:
-                        role = msg.get('role', 'user').lower()
-                        
-                        # Only restore user and assistant messages, skip tool messages
-                        if role not in ['user', 'assistant']:
-                            continue
-                        
-                        # Extract text content - handle both string and dict formats
-                        content_text = ""
-                        raw_content = msg.get('content', '')
-                        
-                        if isinstance(raw_content, str):
-                            content_text = raw_content
-                        elif isinstance(raw_content, list):
-                            # Content is already in the [{text: '...'}] format
-                            for item in raw_content:
-                                if isinstance(item, dict) and 'text' in item:
-                                    content_text = str(item['text'])
-                                    break
-                        elif isinstance(raw_content, dict):
-                            # Content is a dict, try to extract text
-                            content_text = str(raw_content.get('text', raw_content))
-                        
-                        if content_text:
-                            # Create message in Strands format
-                            message = {
-                                "role": role,
-                                "content": [{"text": content_text}]
-                            }
-                            agent.messages.append(message)
-                            restored_count += 1
-                
-                if restored_count > 0:
-                    logger.info(f"Restored {restored_count} messages from memory for session {self.session_id}")
-                    
-            except Exception as e:
-                logger.debug(f"No existing session to restore or error: {e}")
-    
-    def save_conversation(self, agent, session_id: str = None):
-        """
-        Save the current conversation to AgentCore Memory.
-        Only saves user and assistant messages, skipping tool calls.
-        
-        Args:
-            agent: The agent whose conversation to save
-            session_id: Optional session ID (uses stored session_id if not provided)
-        """
-        if session_id:
-            self.session_id = session_id
-            
-        if not self.memory_id or not self.session_id:
-            logger.warning("Cannot save - missing memory_id or session_id")
-            return
-        
-        try:
-            # Extract only user and assistant messages
-            messages_to_store = []
-            for msg in agent.messages:
-                role = msg.get('role', '').lower()
-                
-                # Only save user and assistant messages
-                if role not in ['user', 'assistant']:
+        self.session_id = session_id or "default"
+        self.actor_id = actor_id or self.session_id
+        self._baseline_message_count = 0
+        logger.info(f"Initialized HookProvider with memory_id: {memory_id}")
+
+    def _event_matches_scope(self, event: dict) -> bool:
+        """Fail-closed scope check to prevent cross-session/user contamination."""
+        event_actor = (
+            event.get("actor_id")
+            or event.get("actorId")
+            or event.get("actor")
+        )
+        event_session = (
+            event.get("session_id")
+            or event.get("sessionId")
+            or event.get("session")
+        )
+
+        # Fail-closed: if scope metadata is missing, do not trust this event.
+        if event_actor is None or event_session is None:
+            return False
+
+        return str(event_actor) == self.actor_id and str(event_session) == self.session_id
+
+    def _normalize_role(self, role: Any) -> str:
+        role_text = str(role or "assistant").strip()
+        return role_text.upper() if role_text else "ASSISTANT"
+
+    def _content_to_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, dict):
+            if "text" in content:
+                return str(content["text"])
+            return json.dumps(content, ensure_ascii=False)
+
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict) and "text" in item:
+                    text_parts.append(str(item["text"]))
+                elif isinstance(item, (dict, list)):
+                    text_parts.append(json.dumps(item, ensure_ascii=False))
+                else:
+                    text_parts.append(str(item))
+            return "\n".join(part for part in text_parts if part)
+
+        if content is None:
+            return ""
+
+        return str(content)
+
+    def _get_full_session_messages(self) -> list[dict]:
+        collected: list[dict] = []
+        next_token = None
+
+        while True:
+            params = {
+                "memory_id": self.memory_id,
+                "actor_id": self.actor_id,
+                "session_id": self.session_id,
+            }
+            if next_token:
+                params["next_token"] = next_token
+
+            response = self.memory_client.list_events(**params)
+
+            if isinstance(response, dict):
+                events = response.get("events", [])
+            elif isinstance(response, list):
+                events = response
+            else:
+                events = []
+
+            for event in events:
+                if not isinstance(event, dict):
                     continue
-                
-                # Extract text content
-                content_text = ""
-                raw_content = msg.get('content', [])
-                
-                if isinstance(raw_content, list):
-                    for item in raw_content:
-                        if isinstance(item, dict) and 'text' in item:
-                            content_text = str(item['text'])
-                            break
-                
+
+                if not self._event_matches_scope(event):
+                    continue
+
+                for msg in event.get("messages", []):
+                    if isinstance(msg, dict):
+                        collected.append(msg)
+
+            if isinstance(response, dict):
+                next_token = response.get("next_token") or response.get("nextToken")
+            else:
+                next_token = None
+
+            if not next_token:
+                break
+
+        return collected
+
+    def before_agent_invoke(self, agent, **kwargs: Any) -> None:
+        """Hook: restore full conversation history into the agent before invocation."""
+        self._baseline_message_count = 0
+
+        agent.messages.clear()
+
+        logger.info(f"Initializing session: {self.session_id}")
+        try:
+            messages = self._get_full_session_messages()
+            restored_count = 0
+
+            for msg in messages:
+                role = str(msg.get("role", "assistant")).lower()
+                content_text = self._content_to_text(msg.get("content", ""))
+
+                if not content_text:
+                    continue
+
+                agent.messages.append({
+                    "role": role,
+                    "content": [{"text": content_text}]
+                })
+                restored_count += 1
+
+            if restored_count > 0:
+                logger.info(f"Restored {restored_count} messages from memory for session {self.session_id}")
+
+            self._baseline_message_count = len(agent.messages)
+
+        except Exception as e:
+            logger.debug(f"No existing session to restore or error: {e}")
+
+    def after_agent_invoke(self, agent, **kwargs: Any) -> None:
+        """Hook: persist only net-new messages after invocation."""
+
+        try:
+            new_messages = agent.messages[self._baseline_message_count:]
+            payload_messages: list[tuple[str, str]] = []
+
+            for message in new_messages:
+                role = self._normalize_role(message.get("role"))
+                content_text = self._content_to_text(message.get("content", ""))
                 if content_text:
-                    messages_to_store.append((content_text, role.upper()))
-            
-            # Store to AgentCore Memory if we have messages
-            if messages_to_store:
+                    payload_messages.append((content_text, role))
+
+            if payload_messages:
                 self.memory_client.create_event(
                     memory_id=self.memory_id,
-                    actor_id=self.session_id,
+                    actor_id=self.actor_id,
                     session_id=self.session_id,
-                    messages=messages_to_store
+                    messages=payload_messages
                 )
-                logger.info(f"Saved conversation with {len(messages_to_store)} messages to memory")
-                
+
         except Exception as e:
-            logger.error(f"Error saving conversation to memory: {e}")
-    
-    # Required abstract methods (not used in our implementation)
-    def append_message(self, message, agent, **kwargs: Any) -> None:
-        """Not used - we save manually instead of via hooks."""
-        pass
-    
-    def sync_agent(self, agent, **kwargs: Any) -> None:
-        """Not used - we save manually instead of via hooks."""
-        pass
-    
-    def redact_latest_message(self, redact_message, agent, **kwargs: Any) -> None:
-        """Not supported by AgentCore Memory."""
-        logger.warning("Message redaction not supported by AgentCore Memory")
+            logger.error(f"Error persisting messages via hook: {e}")
+
+
+# Backward-compatible alias
+AgentCoreHookSessionManager = AgentCoreMemoryHookProvider

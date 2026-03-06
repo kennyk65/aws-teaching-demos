@@ -4,7 +4,7 @@ Description: AgentCore Hello World stack - Execution Role + ECR Repo
 Parameters:
   AgentName:
     Type: String
-    Default: weather-agent
+    Default: weather_agent
     Description: Agent name used for resources
   MemoryName:
     Type: String
@@ -15,7 +15,7 @@ Resources:
   AgentCoreExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub BedrockAgentCoreExec-${AgentName}
+      RoleName: !Sub BedrockAgentCoreExec_${AgentName}
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -88,7 +88,7 @@ Resources:
   AgentCoreECRRepo:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Sub bedrock-agentcore-${AgentName}
+      RepositoryName: !Sub bedrock_agentcore_${AgentName}
       ImageScanningConfiguration:
         scanOnPush: true
       LifecyclePolicy:

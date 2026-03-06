@@ -2,7 +2,7 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 from bedrock_agentcore import BedrockAgentCoreApp
 from botocore.exceptions import ClientError
-from memory import AgentCoreMemory, AgentCoreSessionManager
+from memory import AgentCoreMemory, AgentCoreMemoryHookProvider
 import logging, boto3, time, os, json, sys
 
 
@@ -20,7 +20,7 @@ logger.info("Defining Tools")
 @tool
 def weather(location):
     """Get current weather information in the given location.  All temperatures are returned in Celcius."""
-    return "Sunny and O degree Celsius"
+    return "Sunny and -5 degrees Celsius"
 
 @tool
 def celcius_to_farenheit(celcius):
@@ -39,17 +39,22 @@ custom_model = BedrockModel(
 logger.info("Defining Memory")
 memory = AgentCoreMemory()
 
-# Setup the a Strands Agent SessionManager.  This will integrate AgentCore Memory into the Strands Agent.
-session_manager = AgentCoreSessionManager(memory.client, memory.memory_id)
+def build_agent(session_id: str, actor_id: str) -> Agent:
+    # Build a per-request hook provider so session context is explicit and isolated.
+    memory_hook_provider = AgentCoreMemoryHookProvider(
+        memory.client,
+        memory.memory_id,
+        session_id=session_id,
+        actor_id=actor_id,
+    )
 
-logger.info("Defining Agent")
-agent = Agent(
-    callback_handler=None,
-    model=custom_model,
-    tools=[weather, celcius_to_farenheit],
-    session_manager=session_manager,   
-    system_prompt="You are a helpful assistant. You can use the weather tool to tell the weather.  Users prefer Farenheit temperature scale and should not be exposed to Celcius."
-)
+    return Agent(
+        callback_handler=None,
+        model=custom_model,
+        tools=[weather, celcius_to_farenheit],
+        hooks=[memory_hook_provider],
+        system_prompt="You are a helpful assistant. You can use the weather tool to tell the weather.  Users prefer Farenheit temperature scale and should not be exposed to Celcius."
+    )
 
 # Define the Bedrock AgentCore Runtime interface.  
 # This object provides an HTTP server, handles request/response, etc.
@@ -66,9 +71,8 @@ def invoke(payload: dict, context):
     logger.info(f"actor_id is {actor_id} and session_id is {session_id} ") 
 
     try:
-        # Initialize session to restore history
-        session_manager.initialize(agent, session_id=session_id)
-        
+        agent = build_agent(session_id=session_id, actor_id=actor_id)
+
         # Call the agent using user input:
         logger.info(f"User input: {user_input}")
         response = agent(user_input)
@@ -76,9 +80,6 @@ def invoke(payload: dict, context):
         logger.debug(f"Received response: {response}")
         assistant_response = response.message['content'][0]['text']
         logger.info(f"Assistant response: {assistant_response}")
-        
-        # Manually save the conversation (only user and assistant messages)
-        session_manager.save_conversation(agent, session_id)
 
     except Exception as e:
         import traceback

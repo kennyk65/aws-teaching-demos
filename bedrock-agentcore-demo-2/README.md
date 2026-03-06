@@ -44,7 +44,12 @@ Write-Host "The ECR Repository URI is $repo_uri"
 
 If you want to test the agent locally (no real reason to, other than to prove that it works), run the pytest command:
 ```
-python .\test_weather_agent.py
+pytest .\test_weather_agent.py
+```
+
+If you want to see `print()` output while running pytest:
+```
+pytest -s .\test_weather_agent.py
 ```
 
 ...or in VSCode, right-click the test_weather_agent.py file and say "Run Test".
@@ -63,10 +68,8 @@ agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_
 ```
 When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
 
-Then run these commands one at a time:
-**DO NOT USE POWERSHELL!!!!**
+Then run:
 ```
-
 # This simple command:
 # - builds a Docker container (using CodeBuild),
 # - pushes an image to our ECR repository,
@@ -74,6 +77,11 @@ Then run these commands one at a time:
 # - creates an endpoint:
 agentcore launch --auto-update-on-conflict
 
+```
+
+Then run these commands one at a time:
+**DO NOT USE POWERSHELL!!!!  Use a normal command prompt.**
+```
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
 agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"What is the weather in Seattle, WA?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
