@@ -6,10 +6,11 @@ Parameters:
     Type: String
     Default: weather_agent
     Description: Agent name used for resources
+    
   MemoryName:
     Type: String
     Default: weather_memory
-    Description: Name for the Bedrock AgentCore Memory resource
+    Description: Name for the Bedrock AgentCore Memory resource.  Must align with the name used in the agent code.
 
 Resources:
   AgentCoreExecutionRole:

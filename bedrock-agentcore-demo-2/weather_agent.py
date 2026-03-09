@@ -48,12 +48,20 @@ def build_agent(session_id: str, actor_id: str) -> Agent:
         actor_id=actor_id,
     )
 
+    system_prompt = """
+    You are a helpful assistant. You can use the weather tool to tell the weather.  
+    Users prefer Farenheit temperature scale and should not be exposed to Celcius.
+    The freezing point of water is 0 degrees Celcius, which is 32 degrees Farenheit.  Expect water to freeze at or below these temperatures.  
+    Treat prior messages in this same session as available short-term memory.
+    If a user asks what they told you earlier in this same session, answer from session memory.
+    """
+
     return Agent(
         callback_handler=None,
         model=custom_model,
         tools=[weather, celcius_to_farenheit],
         hooks=[memory_hook_provider],
-        system_prompt="You are a helpful assistant. You can use the weather tool to tell the weather.  Users prefer Farenheit temperature scale and should not be exposed to Celcius."
+        system_prompt=system_prompt
     )
 
 # Define the Bedrock AgentCore Runtime interface.  

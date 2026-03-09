@@ -1,0 +1,30 @@
+default_agent: weather_agent
+agents:
+  weather_agent:
+    name: weather_agent
+    entrypoint: weather_agent.py
+    platform: linux/arm64
+    container_runtime: docker
+    aws:
+      execution_role: arn:aws:iam::011673140073:role/BedrockAgentCoreExec_weather_agent
+      execution_role_auto_create: true
+      account: '011673140073'
+      region: us-west-2
+      ecr_repository: 011673140073.dkr.ecr.us-west-2.amazonaws.com/bedrock_agentcore_weather_agent
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+    bedrock_agentcore:
+      agent_id: weather_agent-Q27PZT60Yy
+      agent_arn: arn:aws:bedrock-agentcore:us-west-2:011673140073:runtime/weather_agent-Q27PZT60Yy
+      agent_session_id: bob-session-001-abcdefghijklmnopqrstuvwxyz123
+    codebuild:
+      project_name: bedrock-agentcore-weather_agent-builder
+      execution_role: arn:aws:iam::011673140073:role/AmazonBedrockAgentCoreSDKCodeBuild-us-west-2-425e274c35
+      source_bucket: bedrock-agentcore-codebuild-sources-011673140073-us-west-2
+    authorizer_configuration: null
+    oauth_configuration: null
