@@ -1,6 +1,5 @@
-# AID-VPC-FirewallProtectedNatGWEgress-f1551
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Setup Lambdas, Cognito, SSM Parameters, etc. to support the Building Agentic AI with Amazon Bedrock AgentCore lab
+Description: Setup Lambdas, Cognito, SSM Parameters, etc. to support the Building Agentic AI with Amazon Bedrock AgentCore lab
 
 Resources:
 
@@ -165,7 +164,7 @@ Resources:
                               'store_location': 'New York - 5th Avenue'
                           }
                       ]
-                      
+
                       # Insert customer data
                       with customer_table.batch_writer() as batch:
                           for item in customer_data:
@@ -292,8 +291,10 @@ Resources:
       LayerName: "ddgs-layer"
       Description: 'DDGS package for Lambda functions'
       Content:
-        S3Bucket: !Sub "${AWS::Region}-tcprod"
-        S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/ddgs-layer.zip"
+        # S3Bucket: !Sub "${AWS::Region}-tcprod"
+        # S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/ddgs-layer.zip"
+        S3Bucket: kk-uploads-oregon
+        S3Key: aws/demos/building_agentic_ai_with_amazon_bedrock_agentcore/lab_1/ddgs-layer.zip 
       CompatibleRuntimes:
         - python3.12
       CompatibleArchitectures:
@@ -307,8 +308,10 @@ Resources:
       Description: 'Lambda function for Customer Support Assistant'
       Handler: lambda_function.lambda_handler
       Code:
-        S3Bucket: !Sub "${AWS::Region}-tcprod"
-        S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/lambda.zip"
+        # S3Bucket: !Sub "${AWS::Region}-tcprod"
+        # S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/lambda.zip"
+        S3Bucket: kk-uploads-oregon
+        S3Key: aws/demos/building_agentic_ai_with_amazon_bedrock_agentcore/lab_1/ddgs-layer.zip 
       Role: !GetAtt CustomerSupportLambdaRole.Arn
       Runtime: python3.12
       PackageType: Zip
