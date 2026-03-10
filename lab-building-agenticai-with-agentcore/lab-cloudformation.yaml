@@ -1,0 +1,644 @@
+# AID-VPC-FirewallProtectedNatGWEgress-f1551
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Setup Lambdas, Cognito, SSM Parameters, etc. to support the Building Agentic AI with Amazon Bedrock AgentCore lab
+
+Resources:
+
+  # AgentCore Gateway IAM Role - NEEDED FOR TASK 3
+  GatewayAgentCoreRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock-agentcore.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: BedrockAgentPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: InvokeFunction
+                Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt CustomerSupportLambda.Arn
+
+  # DynamoDB Table for Warranty Information - NEEDED FOR TASK 3 (WARRANTY CHECK)
+  WarrantyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: serial_number
+          AttributeType: S
+        - AttributeName: customer_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: serial_number
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: customer-index
+          KeySchema:
+            - AttributeName: customer_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: CustomerSupport
+        - Key: CostCenter
+          Value: CustomerSupport
+
+  # DynamoDB Table for Customer Profiles - NEEDED FOR TASK 3 (WARRANTY CHECK)
+  CustomerProfileTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: customer_id
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: phone
+          AttributeType: S
+      KeySchema:
+        - AttributeName: customer_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: phone-index
+          KeySchema:
+            - AttributeName: phone
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: CustomerSupport
+        - Key: CostCenter
+          Value: CustomerSupport
+
+  # Lambda function to populate synthetic data - NEEDED FOR TASK 3 (WARRANTY CHECK)
+  PopulateDataFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt PopulateDataRole.Arn
+      Timeout: 120
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import cfnresponse
+          from datetime import datetime, timedelta
+          import random
+          import uuid
+          from decimal import Decimal
+
+          def lambda_handler(event, context):
+              try:
+                  if event['RequestType'] == 'Create':
+                      dynamodb = boto3.resource('dynamodb')
+                      warranty_table_name = event['ResourceProperties']['WarrantyTableName']
+                      customer_table_name = event['ResourceProperties']['CustomerTableName']
+                      
+                      warranty_table = dynamodb.Table(warranty_table_name)
+                      customer_table = dynamodb.Table(customer_table_name)
+                      
+                      # Customer profile data
+                      customer_data = [
+                          {
+                              'customer_id': 'CUST001',
+                              'first_name': 'John',
+                              'last_name': 'Smith',
+                              'email': 'john.smith@email.com',
+                              'phone': '+1-555-0101',
+                              'address': {
+                                  'street': '123 Main Street',
+                                  'city': 'New York',
+                                  'state': 'NY',
+                                  'zip_code': '10001',
+                                  'country': 'USA'
+                              },
+                              'date_of_birth': '1985-03-15',
+                              'registration_date': '2022-11-20',
+                              'tier': 'Premium',
+                              'communication_preferences': {
+                                  'email': True,
+                                  'sms': True,
+                                  'phone': False
+                              },
+                              'support_cases_count': 2,
+                              'total_purchases': 3,
+                              'lifetime_value': 2850.00,
+                              'notes': 'VIP customer, prefers email communication'
+                          }
+                      ]
+                      
+                      # Warranty data with customer_id references
+                      warranty_data = [
+                          {
+                              'serial_number': 'ABC12345678',
+                              'customer_id': 'CUST001',
+                              'product_name': 'SmartPhone Pro Max 128GB',
+                              'purchase_date': '2023-01-15',
+                              'warranty_end_date': '2025-01-15',
+                              'warranty_type': 'Extended Warranty',
+                              'coverage_details': 'Full coverage including accidental damage, water damage, and manufacturer defects',
+                              'purchase_price': 1299.99,
+                              'store_location': 'New York - 5th Avenue'
+                          }
+                      ]
+                      
+                      # Insert customer data
+                      with customer_table.batch_writer() as batch:
+                          for item in customer_data:
+                              item = json.loads(json.dumps(item), parse_float=Decimal)
+                              batch.put_item(Item=item)
+                      
+                      # Insert warranty data
+                      with warranty_table.batch_writer() as batch:
+                          for item in warranty_data:
+                              item = json.loads(json.dumps(item), parse_float=Decimal)
+                              batch.put_item(Item=item)
+                      
+                      print(f"Successfully populated {len(customer_data)} customer profiles")
+                      print(f"Successfully populated {len(warranty_data)} warranty records")
+                      
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+
+  # IAM Role for Lambda function - NEEDED FOR TASK 3
+  PopulateDataRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBWritePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt WarrantyTable.Arn
+                  - !GetAtt CustomerProfileTable.Arn
+        - PolicyName: AllowBasicLogs
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*PopulateData*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*PopulateData*:*"
+
+  # Custom resource to trigger Lambda function - NEEDED FOR TASK 3
+  PopulateData:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt PopulateDataFunction.Arn
+      WarrantyTableName: !Ref WarrantyTable
+      CustomerTableName: !Ref CustomerProfileTable
+    DependsOn:
+      - WarrantyTable
+      - CustomerProfileTable
+
+  # Lambda target - NEEDED FOR TASK 3 (GATEWAY INTEGRATION)
+  CustomerSupportLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /service-role/
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      Policies:
+        - PolicyName: CustomerProfileAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowReadCustomerTableNameFromSSM
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${CustomerProfileTableNameParameter}
+              - Sid: AllowReadCustomerProfileTable
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:DescribeTable
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CustomerProfileTable}
+              - Sid: AllowReadCustomerTableIndexes
+                Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CustomerProfileTable}/index/*
+        - PolicyName: WarrantyCheckAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowReadWarrantyTableNameFromSSM
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${WarrantyTableNameParameter}
+              - Sid: AllowReadWarrantyTable
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:DescribeTable
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${WarrantyTable}
+
+  # DDGS Layer - NEEDED FOR TASK 3 (WEB SEARCH)
+  DDGSLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: "ddgs-layer"
+      Description: 'DDGS package for Lambda functions'
+      Content:
+        S3Bucket: !Sub "${AWS::Region}-tcprod"
+        S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/ddgs-layer.zip"
+      CompatibleRuntimes:
+        - python3.12
+      CompatibleArchitectures:
+        - x86_64
+
+  # Customer Support Lambda - NEEDED FOR TASK 3 (GATEWAY INTEGRATION)
+  CustomerSupportLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 5
+      Description: 'Lambda function for Customer Support Assistant'
+      Handler: lambda_function.lambda_handler
+      Code:
+        S3Bucket: !Sub "${AWS::Region}-tcprod"
+        S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/lambda.zip"
+      Role: !GetAtt CustomerSupportLambdaRole.Arn
+      Runtime: python3.12
+      PackageType: Zip
+      Architectures:
+        - x86_64
+      Layers:
+        - !Ref DDGSLayer
+      ReservedConcurrentExecutions: 1  # CKV_AWS_115
+      Environment:
+        Variables:
+          PYTHONPATH: /opt/python
+
+  # Cognito User Pool - NEEDED FOR TASK 3 (GATEWAY AUTHENTICATION)
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: CustomerSupportGatewayPool
+      MfaConfiguration: 'OFF'
+      UsernameConfiguration:
+        CaseSensitive: false
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      Description: Administrator group
+      UserPoolId: !Ref UserPool
+      Precedence: 1
+
+  CustomerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: customer
+      Description: Regular customer group
+      UserPoolId: !Ref UserPool
+      Precedence: 2
+
+  WebUserPoolClient:
+    DependsOn: ResourceServer
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: CustomerSupportWebClient
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - !Join
+          - ''
+          - - 'default-m2m-resource-server-'
+            - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+            - '/read'
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - http://localhost:8501/
+        - https://example.com/auth/callback
+      LogoutURLs:
+        - http://localhost:8501/
+      SupportedIdentityProviders:
+        - COGNITO
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      EnableTokenRevocation: true
+
+  MachineUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: CustomerSupportMachineClient
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+      RefreshTokenValidity: 1
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - !Join
+          - ''
+          - - 'default-m2m-resource-server-'
+            - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+            - '/read'
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders:
+        - COGNITO
+      EnableTokenRevocation: true
+
+  ResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: !Join
+        - '-'
+        - - 'default-m2m-resource-server'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+      Name: !Join
+        - '-'
+        - - 'Default M2M Resource Server '
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+      Scopes:
+        - ScopeName: 'read'
+          ScopeDescription: 'An example scope created by Amazon Cognito quick start'
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+
+  PostSignupFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowBasicLogs
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*PostSignup*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*PostSignup*:*"
+        - PolicyName: Cognito
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminAddUserToGroup
+                Resource:
+                  - !Sub "arn:aws:cognito-idp:*:*:userpool/${UserPool}"
+
+  PostSignupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Runtime: python3.13
+      Role: !GetAtt PostSignupFunctionRole.Arn
+      ReservedConcurrentExecutions: 1  # CKV_AWS_115
+      Timeout: 10
+      Code:
+        ZipFile: |
+          import boto3
+          
+          def lambda_handler(event, context):
+              user_pool_id = event['userPoolId']
+              username = event['userName']
+              
+              client = boto3.client('cognito-idp')
+              
+              # Add user to 'customer' group
+              try:
+                  client.admin_add_user_to_group(
+                      UserPoolId=user_pool_id,
+                      Username=username,
+                      GroupName='customer'
+                  )
+                  print(f"User {username} added to 'customer' group.")
+              except Exception as e:
+                  print(f"Error adding user to group: {e}")
+              
+              return event
+
+  # SSM Parameters - NEEDED FOR LAB-COMBINED-2-3
+  WarrantyTableNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/dynamodb/warranty_table_name
+      Type: String
+      Value: !Ref WarrantyTable
+      Description: DynamoDB table name for warranty information
+      Tags:
+        Application: CustomerSupport
+
+  CustomerProfileTableNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/dynamodb/customer_profile_table_name
+      Type: String
+      Value: !Ref CustomerProfileTable
+      Description: DynamoDB table name for customer profiles
+      Tags:
+        Application: CustomerSupport
+
+  GatewayAgentcoreIAMRoleParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/gateway_iam_role
+      Type: String
+      Value: !GetAtt GatewayAgentCoreRole.Arn
+      Description: agentcore IAM role to assume
+      Tags:
+        Application: CustomerSupport
+
+  LambdaArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/lambda_arn
+      Type: String
+      Value: !GetAtt CustomerSupportLambda.Arn
+      Description: ARN of the lambda that integrates with agentcore
+      Tags:
+        Application: CustomerSupport
+
+  CognitoMachineClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/machine_client_id
+      Type: String
+      Value: !Ref MachineUserPoolClient
+      Description: Machine Cognito client ID
+      Tags:
+        Application: CustomerSupport
+
+  CognitoWebClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/web_client_id
+      Type: String
+      Value: !Ref WebUserPoolClient
+      Description: Cognito client ID for web app
+      Tags:
+        Application: CustomerSupport
+
+  UserPoolIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/userpool_id
+      Type: String
+      Value: !Ref UserPool
+      Description: Cognito client ID
+      Tags:
+        Application: CustomerSupport
+
+  CognitoAuthScopeParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_auth_scope
+      Type: String
+      Value: !Join
+        - ''
+        - - 'default-m2m-resource-server-'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - '/read'
+      Description: OAuth2 scope for Cognito auth
+      Tags:
+        Application: CustomerSupport
+
+  CognitoDiscoveryURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_discovery_url
+      Type: String
+      Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/openid-configuration'
+      Description: OAuth2 Discovery URL
+      Tags:
+        Application: CustomerSupport
+
+  CognitoTokenURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_token_url
+      Type: String
+      Value: !Join
+        - ''
+        - - !Sub 'https://${AWS::Region}'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - !Sub '.auth.${AWS::Region}.amazoncognito.com/oauth2/token'
+      Description: OAuth2 Token URL
+      Tags:
+        Application: CustomerSupport
+
+  CognitoAuthorizeURLParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_auth_url
+      Type: String
+      Value: !Join
+        - ''
+        - - !Sub 'https://${AWS::Region}'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - !Sub '.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize'
+      Description: OAuth2 Token URL
+      Tags:
+        Application: CustomerSupport
+
+  CognitoDomainParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/customersupport/agentcore/cognito_domain
+      Type: String
+      Value: !Join
+        - ''
+        - - !Sub 'https://${AWS::Region}'
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
+          - !Sub '.auth.${AWS::Region}.amazoncognito.com'
+      Description: Cognito hosted domain for OAuth2
+      Tags:
+        Application: CustomerSupport
+
