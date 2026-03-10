@@ -8,10 +8,9 @@ This is the Lab/Demo that accompanies the _Building Agentic AI with Amazon Bedro
 The final architecture looks like this: 
 ![alt text](images/overview.png)
 
-* You can run this on your own account.  
-* TODO - NEED TO RUN A CF TEMPLATE TO SETUP A LAMBDA I THINK.
-* Must be run in us-west-2.  I'm not sure why.  I have removed a few cases of (unnecessary) hard-coding.
-* The initial Python imports from Task 1 take over 5 minutes to run. Do these first.
+* You can run this on your own account. Charges are minimal: some Lambda, DynamoDB, AC Memory, Cognito...
+* Should be run in us-west-2.  Not tested in other regions.  Lambda code is downloaded from a bucket in us-west-2, so this becomes a constraint.
+* To complete task 1.3, you will need to create a CloudFormation stack using `lab-setup.template.yaml`.
 
 ## Task 1.1
 This is just setting up imports, running a simply 'Hello World' agent.
@@ -20,6 +19,7 @@ General introduction to Strands / Bedrock with single agent.  NO usage of AgentC
 * You'll need to run `pip install -r requirements.txt` the first time.
 
 ![alt text](images/architecture_lab1_strands.png)
+
 
 ## Task 1.2 - Add basic memory
 The Memory Hook provider is added here.
@@ -38,27 +38,19 @@ The Memory Hook provider is added here.
 ![alt text](images/architecture_lab2_memory.png)
 
 ## Task 1.3
-This task deploys our multi-agent system to AgentCore Runtime
+This task adds Gateway, external tools, and AuthN / AuthZ.  
 
-* The multi-agent _monolith_ is only slightly modified from Task 2, mainly to use AgentCore Runtime & Memory.
-  * See the line that defines the `app = BedrockAgentCoreApp()` and `@app.entrypoint`.  These are the main concessions to AgentCore Runtime.
-  * The `@tool`s are still inline - no use of AgentCore Gateway.
-  * The use of AgentCore Memory is very low-level and manual; they are not using the newer memory hook.  This is not necessarily a mistake, note how the implementation embellishes the system prompt with key facts discovered from previous invocations.
-* It will use a Cognito User-pool based identity, providing the OIDC token for AuthN.
-* The AgentCore Runtime deployment process is demonstrated.
-* It deploys it as a single MONOLITH.
-* You can ignore the panic about "IMPORTANT: SAVE THESE CREDENTIALS NOW!".  The notebook logic captures what is needed.
-* The observed behavior is no different from Task 2.  The relevant points are WHERE the agent is running, and HOW the memory is managed.
+* You will need to create a CloudFormation stack using `lab-setup.template.yaml`.
+* A Cognito User Pool will serve as an OIDC server.  We establish an OIDC client within it.  This code uses SSM parameters to read the URL and client ID.
+* You might look at the `gateway_client.create_gateway()` code.
+* On the API spec - I think it is odd, but they have implemented two different tools in a single Lambda function.
+* Our Agent will get an MCPClient injected into it.  It will point to the Gateway.
+* Notice the agent receives only one list of tools, containing local and remote tools.
 
-![alt text](images/task3-image.png)
+
+![alt text](images/architecture_lab3_gateway.png)
 
 
 ## Cleanup 
-This is important to cleanup the various artifacts installed in your AWS account, including:
-* Cognito User Pool
-* AgentCore Memory instance 
-* AgentCore Runtime instance
-* Bedrock Guardrails
-* ECR repo, CodeBuild project.
-* S3
-* etc.
+* Delete the cloudformation stack.
+* You will need to cleanup the Gateway and Memory resources as they were created in the notebook.  See the final cell in the notebook.
