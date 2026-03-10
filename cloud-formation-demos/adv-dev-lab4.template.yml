@@ -2,8 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 
 # Re-creates lab 4 from Advanced Developer.
 # Access the web application via the Website URL output of your stack.
-# TODO: HAVE THIS TEMPLATE DOWNLOAD CODE FROM ORIGINAL SOURCE RATHER THAN MY BUCKET
-# TODO: WHY IS SNS TO SQS GETTING 403S.
+
 
 Parameters:
 
@@ -15,7 +14,7 @@ Parameters:
   InputWebCode:
     Description:  URL of the source web code to be downloaded and adjusted
     Type: String
-    Default:  https://kk-courses.s3.us-east-1.amazonaws.com/aws/demos/messaging-demo.zip
+    Default: https://kk-uploads-oregon.s3.us-west-2.amazonaws.com/aws/demos/messaging-demo.zip
 
 Resources:
 
