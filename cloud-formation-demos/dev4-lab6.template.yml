@@ -7,11 +7,11 @@ Parameters:
   S3Bucket:
     Type: String
     Description: The S3 Bucket containing the api.zip and web.zip.  
-    Default: kk-courses
+    Default: kk-uploads-oregon
   S3ObjectPrefix:
     Type: String
     Description: The S3 object prefix for api.zip and web.zip.  
-    Default: aws-dev-4/demo_code/
+    Default: aws/demos/pollynotes/
   tableName:
     Type: String
     Default: Notes
@@ -308,7 +308,7 @@ Resources:
       Code:
         S3:
           Bucket: !Ref S3Bucket
-          Key: !Sub ${S3ObjectPrefix}api.zip
+          Key: !Sub ${S3ObjectPrefix}pollynotes-api.zip
   webRepo:
     Type: AWS::CodeCommit::Repository
     Properties:
@@ -317,7 +317,7 @@ Resources:
       Code:
         S3:
           Bucket: !Ref S3Bucket
-          Key: !Sub ${S3ObjectPrefix}web.zip
+          Key: !Sub ${S3ObjectPrefix}pollynotes-web.zip
 
 
   # SAM roles
