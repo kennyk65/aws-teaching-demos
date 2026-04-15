@@ -11,7 +11,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
   FoundationalModel:
     Type: String
-    Default: us.anthropic.claude-sonnet-4-20250514-v1:0
+    # Default: us.anthropic.claude-sonnet-4-20250514-v1:0
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
     Description: The foundational model to use for the agent.  Make sure it is enabled.
 
 Resources:
