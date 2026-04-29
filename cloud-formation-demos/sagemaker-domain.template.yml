@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cohesive SageMaker Domain for Classroom Demos (Canvas & Studio)'
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: demo
+    Description: Unique name for the SageMaker Domain.  May be used for multiple demos.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: 'Subnet ID where SageMaker will launch (must have internet access for Canvas)'
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'VPC ID for the Domain'
+
+Resources:
+  # 1. Execution Role for the Domain/Users
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerCanvasFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  # 2. The SageMaker Domain
+  ClassroomDomain:
+    Type: AWS::SageMaker::Domain
+    Properties:
+      DomainName: !Ref DomainName
+      AuthMode: IAM
+      VpcId: !Ref VpcId
+      SubnetIds: 
+        - !Ref SubnetId
+      DefaultUserSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+      AppNetworkAccessType: PublicInternetOnly
+
+  # 3. A Default User Profile (Your Instructor Account)
+  InstructorUserProfile:
+    Type: AWS::SageMaker::UserProfile
+    Properties:
+      DomainId: !Ref ClassroomDomain
+      UserProfileName: 'Instructor-Ken'
+      UserSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+
+Outputs:
+  DomainId:
+    Value: !Ref ClassroomDomain
+  UserProfile:
+    Value: !Ref InstructorUserProfile
