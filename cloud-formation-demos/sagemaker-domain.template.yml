@@ -52,6 +52,124 @@ Resources:
       UserSettings:
         ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
 
+# CLEANUP: Use of the Sagemaker domain usually results in all kinds of orphaned "apps" that
+# burn cash if you leave them running.  The custom resource / lambda will delete them.
+  CleanupTrigger:
+    Type: Custom::SageMakerAppCleanup
+    Properties:
+      ServiceToken: !GetAtt SageMakerCleanupFunction.Arn
+      DomainId: !Ref ClassroomDomain
+      UserProfileName: !Ref InstructorUserProfile
+
+  SageMakerCleanupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt SageMakerCleanupFunctionRole.Arn
+      Runtime: python3.11
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import time
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              sm = boto3.client('sagemaker')
+              # Extract properties from the Custom Resource
+              props = event.get('ResourceProperties', {})
+              domain_id = props.get('DomainId')
+              # Safeguard: Ensure we only have the name, not 'Name|DomainID'
+              user_profile = props.get('UserProfileName')
+              user_profile = user_profile.split('|')[0]
+
+
+              status = cfnresponse.SUCCESS
+              reason = "Cleanup successful"
+
+              if event['RequestType'] == 'Delete':
+                  try:
+                      logger.info(f"STARTING CLEANUP: Domain={domain_id}, User={user_profile}")
+                      
+                      # 1. Identify and delete active apps
+                      apps_resp = sm.list_apps(DomainIdEquals=domain_id, UserProfileNameEquals=user_profile)
+                      active_apps_list = [a for a in apps_resp['Apps'] if a['Status'] not in ['Deleted', 'Deleting']]
+                      
+                      if not active_apps_list:
+                          logger.info("No active apps found to delete.")
+                      
+                      for app in active_apps_list:
+                          app_name = app['AppName']
+                          app_type = app['AppType']
+                          # LOG: Clear identification of the target
+                          print(f"DELETING APP: Name='{app_name}', Type='{app_type}'")
+                          
+                          sm.delete_app(
+                              DomainId=domain_id,
+                              UserProfileName=user_profile,
+                              AppType=app_type,
+                              AppName=app_name
+                          )
+                      
+                      # 2. Wait for confirmation
+                      # 25 attempts * 10 seconds = ~4 mins (safely under 5 min Lambda timeout)
+                      for i in range(25):
+                          check_resp = sm.list_apps(DomainIdEquals=domain_id, UserProfileNameEquals=user_profile)
+                          still_running = [a for a in check_resp['Apps'] if a['Status'] != 'Deleted']
+                          
+                          if not still_running:
+                              logger.info("VERIFIED: All apps have been fully deleted.")
+                              break
+                          
+                          # LOG: Specific identification of what we are waiting for
+                          waiting_on = [f"{a['AppType']}({a['AppName']}) Status={a['Status']}" for a in still_running]
+                          print(f"WAITING: Attempt {i+1}/25. Still deleting: {', '.join(waiting_on)}")
+                          
+                          time.sleep(10)
+                      else:
+                          # If the loop finishes without breaking
+                          error_msg = f"TIMEOUT: Apps failed to delete within 4 mins: {waiting_on}"
+                          print(error_msg)
+                          raise Exception(error_msg)
+                          
+                  except Exception as e:
+                      logger.error(f"CLEANUP FAILED: {str(e)}")
+                      reason = str(e)
+                      status = cfnresponse.FAILED
+              
+              # Return response to CloudFormation
+              cfnresponse.send(event, context, status, {"Message": reason})
+
+  SageMakerCleanupFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SageMakerAppCleanupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:ListApps
+                  - sagemaker:DeleteApp
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+
+
 Outputs:
   DomainId:
     Value: !Ref ClassroomDomain
