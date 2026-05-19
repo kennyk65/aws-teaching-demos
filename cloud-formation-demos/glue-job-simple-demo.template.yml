@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Deploys a Glue Job to process Home Sales data.'
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: kk-uploads-oregon
+    Description: 'S3 bucket for script and data storage'
+  InputKey:
+    Type: String
+    Default: aws/demos/glue/home_sales_demo_data.csv
+  OutputKey:
+    Type: String
+    Default: aws/demos/glue/home_sales_demo_data_output.csv
+  ScriptKey:
+    Type: String
+    Default: aws/demos/glue/script.py
+
+
+
+Resources:
+  # 1. IAM Role for Glue Service
+  GlueJobRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [glue.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3DataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['s3:GetObject', 's3:PutObject', 's3:ListBucket']
+                Resource: 
+                  - !Sub 'arn:aws:s3:::${S3BucketName}'
+                  - !Sub 'arn:aws:s3:::${S3BucketName}/*'
+
+  # 2. Glue Job Definition
+  HomeSalesTransformJob:
+    Type: 'AWS::Glue::Job'
+    Properties:
+      Name: !Sub '${AWS::StackName}-HomeSalesTransform'
+      Role: !GetAtt GlueJobRole.Arn
+      GlueVersion: '4.0'
+      WorkerType: G.1X
+      NumberOfWorkers: 2
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub 's3://${S3BucketName}/${ScriptKey}'
+        PythonVersion: '3'
+      DefaultArguments:
+        '--job-language': 'python'
+        '--S3_INPUT_PATH': !Sub 's3://${S3BucketName}/${InputKey}'
+        '--S3_OUTPUT_PATH': !Sub 's3://${S3BucketName}/${OutputKey}'
