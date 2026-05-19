@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infrastructure as Code: SageMaker Pipeline for Home Sales Data Processing'
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: kk-uploads-oregon
+    Description: 'S3 bucket for script and data storage'
+  InputKey:
+    Type: String
+    Default: aws/demos/glue/home_sales_demo_data.csv
+  OutputKey:
+    Type: String
+    Default: aws/demos/glue/home_sales_demo_data_output.csv
+  ScriptKey:
+    Type: String
+    Default: aws/demos/glue/script.py
+
+Resources:
+  # 1. IAM Role for SageMaker Execution
+  SageMakerPipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [sagemaker.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:ListBucket'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${S3BucketName}'
+                  - !Sub 'arn:aws:s3:::${S3BucketName}/*'
+
+  # 2. SageMaker Pipeline Definition
+  HomeSalesDataPipeline:
+    Type: 'AWS::SageMaker::Pipeline'
+    Properties:
+      PipelineName: !Sub '${AWS::StackName}-HomeSalesProcessing'
+      PipelineDescription: 'Orchestrates the cleaning and feature engineering of home sales data.'
+      RoleArn: !GetAtt SageMakerPipelineRole.Arn
+      PipelineDefinition:
+        PipelineDefinitionBody: !Sub |
+          {
+            "Version": "2020-12-01",
+            "Parameters": [],
+            "Steps": [
+              {
+                "Name": "HomeSalesProcessingStep",
+                "Type": "Processing",
+                "Arguments": {
+                  "ProcessingResources": {
+                    "ClusterConfig": {
+                      "InstanceCount": 1,
+                      "InstanceType": "ml.t3.medium",
+                      "VolumeSizeInGB": 10
+                    }
+                  },
+                  "AppSpecification": {
+                    "ImageUri": "683313684715.dkr.ecr.us-east-1.amazonaws.com/sagemaker-scikit-learn:1.2-1-cpu-py3",
+                    "ContainerEntrypoint": ["python3", "/opt/ml/processing/code/script.py"]
+                  },
+                  "ProcessingInputs": [
+                    {
+                      "InputName": "input_data",
+                      "S3Input": {
+                        "S3Uri": "s3://${S3BucketName}/${InputKey}",
+                        "LocalPath": "/opt/ml/processing/input",
+                        "S3DataType": "S3Prefix",
+                        "S3InputMode": "File"
+                      }
+                    },
+                    {
+                      "InputName": "code",
+                      "S3Input": {
+                        "S3Uri": "s3://${S3BucketName}/${ScriptKey}",
+                        "LocalPath": "/opt/ml/processing/code",
+                        "S3DataType": "S3Prefix",
+                        "S3InputMode": "File"
+                      }
+                    }
+                  ],
+                  "ProcessingOutputConfig": {
+                    "Outputs": [
+                      {
+                        "OutputName": "processed_output",
+                        "S3Output": {
+                          "S3Uri": "s3://${S3BucketName}/${OutputKey}",
+                          "LocalPath": "/opt/ml/processing/output",
+                          "S3UploadMode": "EndOfJob"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+
+Outputs:
+  PipelineArn:
+    Description: 'The ARN of the SageMaker Pipeline'
+    Value: !Ref HomeSalesDataPipeline
+  ExecutionRoleArn:
+    Description: 'The ARN of the IAM Role'
+    Value: !GetAtt SageMakerPipelineRole.Arn
