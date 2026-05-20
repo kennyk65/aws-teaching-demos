@@ -15,7 +15,7 @@ logger.addHandler(logging.StreamHandler(sys.stdout))
 bedrock = boto3.client("bedrock-runtime")
 
 
-logger.info("Defining Tools")
+logger.info("Defining Tools...")
 
 @tool
 def weather(location):
@@ -28,15 +28,15 @@ def celcius_to_farenheit(celcius):
     return (float(celcius) * 9/5) + 32
 
 
-model_id="us.amazon.nova-micro-v1:0"
-logger.info(f"Defining custom model using: {model_id}")
+model_id="us.anthropic.claude-sonnet-4-6"
+logger.info(f"Defining custom model using: {model_id}...")
 custom_model = BedrockModel(
     model_id=model_id,
     temperature=0.3  # Lower temperature = more consistent responses
 )
 
 # Initialize Bedrock AgentCore Memory
-logger.info("Defining Memory")
+logger.info("Defining Memory...")
 memory = AgentCoreMemory()
 
 def build_agent(session_id: str, actor_id: str) -> Agent:
@@ -101,15 +101,9 @@ def invoke(payload: dict, context):
         "actor_id": actor_id
     }
 
-@app.on_event("startup")
-def startup_handler():
-    logger.info("=" * 60)
-    logger.info("Agent startup complete - ready for requests")
-    logger.info("=" * 60)
-
 
 
 if __name__ == "__main__":
-    logger.info("Starting Agent...")
+    logger.info("Agent is starting...")
     app.run()
 

@@ -23,7 +23,7 @@ You will need:
 1.  Clone / Copy `https://github.com/kennyk65/aws-teaching-demos`.
 2.  `CD` into the `/bedrock-agentcore-demo-2` folder.
 
-Run the following from this folder to set everything up:
+Run the following from this folder to set everything up (powershell).  (It takes a few minutes to create AgentCore Memory):
 
 ```bash
 aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM
@@ -85,28 +85,38 @@ Then run these commands one at a time:
 # Invoke multiple times to demonstrate memory (using IAM for authentication)
 agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"What is the weather in Seattle, WA?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
-
-# To demonstrate that different sessions have access to different short term memory, repeat the last question with a different session; expect a puzzled response:
+```
+* To demonstrate that different sessions have access to different short term memory, repeat the last question with a different session; expect a puzzled response:
+```
 agentcore invoke "{\"actor_id\":\"bob\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id bob-session-001-abcdefghijklmnopqrstuvwxyz123
 
 ```
 
 * Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
+* Find the *Endpoints* list.  Click the **Logs** and **Observability** links - used in the next sections.
 
-* **Observability:** Open the CloudWatch GenAI Observability: https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#/gen-ai-observability/agent-core/agents, (again, assuming you are running in us-west-2.)
+#### Logging
+* Make sure you have opened the link above to see the agent running, and have opened the *Logs* link. 
+    * This takes you to CloudWatch Logs with the correct log group open.
+    >Note: The open telemetry logs are nearly impossible to follow, but they work great with Log Insights.
+* Click **View in Logs Insights**
+* Enter the following query:
+    ```
+    fields @timestamp, body
+    | filter scope.name = "agent_activity"
+    | sort @timestamp desc
+    | limit 200
+    ```
+* Scroll down and **Run Query**.  Scroll down even further to see the results.  They are in reverse order.
 
-* With the "Agents" tab selected, you can: 
-
-    * Expand "view details" and see "Agent metrics".  Basic.
-
+#### Observability: 
+* Make sure you have opened the link above to see the agent running, and have opened the *Observability* link. 
+    * This takes you to the new *CloudWatch GenAI Observability* section.
+    * In the *Overview* section, note that there are separate sections for evaluation, agent, and runtime metrics.
+    * Expand "Agent metrics".  Basic.
     * Expand "Runtime metrics" and see better metrics.  (no idea why they are separated).
-
-    * **Traces** Down in the list of Agents, click the **DEFAULT** link.  
-
-        * Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
-
+    * **Traces** Find the "Traces" tab.  Click on one of the traces.  Two fun things you can see in here
             * Click the "Timeline" tab, show the order of events
-
             * Expand "Trajectory" and see a call graph. 
 
 ---
@@ -119,7 +129,3 @@ agentcore destroy -a weather_agent --force
 
 aws cloudformation delete-stack --stack-name agentcore-weather-demo
 ```
-
-* **IMPORTANT!! ⚠️ EXPENSIVE!!! ⚠️** Disable CloudWatch Signal Spans:
-    * Go to the console for X-Ray settings at https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#xray:settings/transaction-search (us-west-2 assumed). 
-    * Find ‘Transaction Search’, click edit, and disable it. Give this a few minutes. (TODO - FIND CLI EQUIVALENT WHEN AVAILABLE)

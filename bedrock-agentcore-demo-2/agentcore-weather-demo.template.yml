@@ -84,6 +84,7 @@ Resources:
                   - bedrock-agentcore:*Memory
                   - bedrock-agentcore:*Memories
                   - bedrock-agentcore:*Events
+                  - bedrock-agentcore:*Event
                 Resource: "*"
 
   AgentCoreECRRepo:
