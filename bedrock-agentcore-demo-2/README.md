@@ -25,15 +25,16 @@ You will need:
 
 Run the following from this folder to set everything up (powershell).  (It takes a few minutes to create AgentCore Memory):
 
+(Mac/Linux):
 ```bash
 aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM
-$outputs = aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
-$role_arn = ($outputs | Where-Object OutputKey -eq 'RoleArn').OutputValue
-$repo_uri = ($outputs | Where-Object OutputKey -eq 'RepositoryUri').OutputValue
-Write-Host "The role is $role_arn"
-Write-Host "The ECR Repository URI is $repo_uri"
-```
 
+role_arn=$(aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs[?OutputKey=='RoleArn'].OutputValue | [0]" --output text)
+repo_uri=$(aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue | [0]" --output text)
+
+echo "The role is $role_arn"
+echo "The ECR Repository URI is $repo_uri"
+```
 * This establishes the Role, ECR repository, and environment variables needed later.
 
 ---
@@ -66,7 +67,9 @@ Assuming you are still in the same folder as before, run these commands one at a
 # ECR repository to use. However, it does not actually build / start the agent.
 agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
 ```
-When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
+- When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
+- If asked about *Configure request header allowlist? (yes/no) [no]*, just enter.
+- If asked to select memory, choose the only option available, otherwise it will create a new one.
 
 Then run:
 ```
@@ -79,16 +82,14 @@ agentcore launch --auto-update-on-conflict
 
 ```
 
-Then run these commands one at a time:
-**DO NOT USE POWERSHELL!!!!  Use a normal command prompt.**
+Then run these commands one at a time (Linux/Mac):
 ```
-# Invoke multiple times to demonstrate memory (using IAM for authentication)
-agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"What is the weather in Seattle, WA?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
-agentcore invoke "{\"actor_id\":\"ken\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke '{"actor_id":"ken","prompt":"Do you think water will freeze there?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 ```
 * To demonstrate that different sessions have access to different short term memory, repeat the last question with a different session; expect a puzzled response:
 ```
-agentcore invoke "{\"actor_id\":\"bob\",\"prompt\":\"Do you think water will freeze there?\"}" --session-id bob-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke '{\"actor_id\":\"bob\",\"prompt\":\"Do you think water will freeze there?\"}' --session-id bob-session-001-abcdefghijklmnopqrstuvwxyz123
 
 ```
 
