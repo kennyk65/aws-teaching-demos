@@ -124,6 +124,7 @@ Resources:
             - dynamodb:DeleteItem
             - cognito-idp:CreateUserPool
             - cognito-idp:DeleteUser
+            - cognito-idp:*
             Resource:
             - '*'
       - PolicyName: lab-CB-policy-2
