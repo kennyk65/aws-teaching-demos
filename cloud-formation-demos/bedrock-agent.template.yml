@@ -28,32 +28,68 @@ Resources:
       Code:
         ZipFile: |
           import json
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          def _build_response(action_group, function, message, message_version):
+              return {
+                  'response': {
+                      'actionGroup': action_group,
+                      'function': function,
+                      'functionResponse': {
+                          'responseBody': {
+                              'TEXT': {
+                                  'body': message
+                              }
+                          }
+                      }
+                  },
+                  'messageVersion': message_version
+              }
+
+          def _lookup_stock_price(symbol):
+              # Uses Nasdaq's public quote API via the standard library only.
+              url = 'https://api.nasdaq.com/api/quote/{}/info?assetclass=stocks'.format(
+                  urllib.parse.quote(symbol)
+              )
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'User-Agent': 'Mozilla/5.0',
+                      'Accept': 'application/json, text/plain, */*',
+                      'Origin': 'https://www.nasdaq.com',
+                      'Referer': 'https://www.nasdaq.com/'
+                  }
+              )
+
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+
+              data = payload.get('data', {})
+              primary_data = data.get('primaryData', {})
+              last_sale_price = primary_data.get('lastSalePrice')
+              currency = primary_data.get('currency') or 'USD'
+
+              if not last_sale_price:
+                  raise ValueError('Nasdaq response did not include a market price for {}'.format(symbol))
+
+              return last_sale_price.replace('$', '').replace(',', '').strip(), currency
+
           def lambda_handler(event, context):
-              agent = event['agent']
-              actionGroup = event['actionGroup']
-              function = event['function']
-              parameters = event.get('parameters', [])
+              try:
+                  stock_symbol = next((parameter.get('value') for parameter in event.get('parameters', []) if parameter.get('name') == 'stockSymbol'), None)
+                  if not stock_symbol:
+                      raise ValueError('Missing required parameter: stockSymbol.')
 
-              # Execute your business logic here. For more information, refer to: https://docs.aws.amazon.com/bedrock/latest/userguide/agents-lambda.html
-              stockPrice = 100 # Hard-coded example.
-              
-              responseBody =  {
-                  "TEXT": {
-                      "body": "The function {} was called successfully!  The stock price is {}.".format(function,stockPrice)
-                  }
-              }
+                  stock_price, currency = _lookup_stock_price(stock_symbol.upper())
+                  message = 'The function {} was called successfully!  The current stock price for {} is {} {}.'.format(event['function'], stock_symbol.upper(), stock_price, currency)
+              except Exception as error:
+                  message = 'Error: {}'.format(error)
 
-              action_response = {
-                  'actionGroup': actionGroup,
-                  'function': function,
-                  'functionResponse': {
-                      'responseBody': responseBody
-                  }
-              }
-
-              dummy_function_response = {'response': action_response, 'messageVersion': event['messageVersion']}
-              print("Response: {}".format(dummy_function_response))
-              return dummy_function_response              
+              dummy_function_response = _build_response(event['actionGroup'], event['function'], message, event['messageVersion'])
+              print('Response: {}'.format(dummy_function_response))
+              return dummy_function_response
 
   # Create an IAM Role for the Lambda function
   LambdaExecutionRole:
@@ -108,6 +144,29 @@ Resources:
                 Action:
                   - bedrock:*
                 Resource: '*'
+
+  # Create a simple Bedrock Guardrail to block medical-topic requests
+  MedicalTopicGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub ${AWS::StackName}-MedicalTopicGuardrail
+      Description: Blocks prompts or responses that discuss medical topics.
+      BlockedInputMessaging: I cannot discuss medical topics in this demo.
+      BlockedOutputsMessaging: I cannot provide medical-topic responses in this demo.
+      TopicPolicyConfig:
+        TopicsConfig:
+          - Name: Medical Topics
+            Definition: Requests seeking medical advice, diagnosis, treatment, medication guidance, or other healthcare guidance.
+            Examples:
+              - What are symptoms of diabetes?
+              - Which medication should I take for chest pain?
+              - Diagnose this rash from my description.
+              - Should I increase my blood pressure medicine dose?
+            Type: DENY
+            InputEnabled: true
+            InputAction: BLOCK
+            OutputEnabled: true
+            OutputAction: BLOCK
                 
   # Create an AWS Bedrock Agent
   BedrockAgent:
@@ -116,6 +175,9 @@ Resources:
       AgentName: !Sub ${AWS::StackName}-StockLookupAgent
       AgentResourceRoleArn: !GetAtt BedrockAgentRole.Arn
       FoundationModel: !Ref FoundationalModel
+      GuardrailConfiguration:
+        GuardrailIdentifier: !GetAtt MedicalTopicGuardrail.GuardrailId
+        GuardrailVersion: DRAFT
       Instruction: |
         You are a helpful agent for finding information on stocks. To respond to current information, use the action group.
       ActionGroups:
