@@ -45,12 +45,12 @@ echo "The ECR Repository URI is $repo_uri"
 
 If you want to test the agent locally (no real reason to, other than to prove that it works), run the pytest command:
 ```
-pytest .\test_weather_agent.py
+pytest ./test_weather_agent.py
 ```
 
 If you want to see `print()` output while running pytest:
 ```
-pytest -s .\test_weather_agent.py
+pytest -s ./test_weather_agent.py
 ```
 
 ...or in VSCode, right-click the test_weather_agent.py file and say "Run Test".
