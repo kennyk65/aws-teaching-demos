@@ -12,53 +12,23 @@ Resources:
     Type: AWS::Bedrock::Flow
     Properties:
       Name: !Sub ${AWS::StackName}-CustomerFeedbackAnalyzer
+      ExecutionRoleArn: !GetAtt BedrockFlowsRole.Arn
       Definition:
-        Connections:
-        - Type: Data
-          Name: InputToSummarizer
-          Source: FlowInputNode
-          Target: Summarizer
-          Configuration:
-            Data:
-              SourceOutput: document
-              TargetInput: feedback_text
-        - Type: Data
-          Name: InputToClassify
-          Source: FlowInputNode
-          Target: ClassifySentiment
-          Configuration:
-            Data:
-              SourceOutput: document
-              TargetInput: feedback_text
-        - Type: Data
-          Name: SummarizerToClassify
-          Source: Summarizer
-          Target: ClassifySentiment
-          Configuration:
-            Data:
-              SourceOutput: modelCompletion
-              TargetInput: summary_text
-        - Type: Data
-          Name: ClassifyToOutput
-          Source: ClassifySentiment
-          Target: FlowOutputNode
-          Configuration:
-            Data:
-              SourceOutput: modelCompletion
-              TargetInput: document
         Nodes:
-        - Outputs:
-          - Type: String
-            Name: document
+        - Name: FlowInputNode
           Type: Input
+          Inputs: []
           Configuration:
             Input: {}
-          Inputs: []
-          Name: FlowInputNode
-        - Outputs:
+          Outputs:
           - Type: String
-            Name: modelCompletion
+            Name: document
+        - Name: Summarizer
           Type: Prompt
+          Inputs:
+          - Expression: "$.data"
+            Type: String
+            Name: feedback_text
           Configuration:
             Prompt:
               SourceConfiguration:
@@ -76,72 +46,225 @@ Resources:
                       Text: "Summarize the customer feedback in one concise sentence: {{feedback_text}}"
                   TemplateType: TEXT
                   ModelId: !Ref ModelId
-          Inputs:
-          - Expression: "$.data"
-            Type: String
-            Name: feedback_text
-          Name: Summarizer
-        - Outputs: []
+          Outputs:
+          - Type: String
+            Name: modelCompletion
+        - Name: FlowOutputNode
           Type: Output
-          Configuration:
-            Output: {}
           Inputs:
           - Expression: "$.data"
             Type: String
             Name: document
-          Name: FlowOutputNode
-        - Outputs:
-          - Type: String
-            Name: modelCompletion
+          Configuration:
+            Output: {}
+          Outputs: []
+        - Name: ClassifySentiment
           Type: Prompt
+          Inputs:
+          - Expression: "$.data"
+            Type: String
+            Name: feedback_text
           Configuration:
             Prompt:
               SourceConfiguration:
                 Inline:
                   InferenceConfiguration:
                     Text:
-                      Temperature: 0.6
+                      Temperature: 0.3
                       TopP: 0.8
                       StopSequences: []
-                      MaxTokens: 512
+                      MaxTokens: 32
                   TemplateConfiguration:
                     Text:
                       InputVariables:
                       - Name: feedback_text
-                      - Name: summary_text
-                      Text: "You are a precise text analyst.\nUsing the original feedback\
-                        \ and its summary, return a compact JSON object.\nOriginal:\n\
-                        {{feedback_text}}\nSummary:\n{{summary_text}}\nReturn JSON\
-                        \ with this schema:\n{\"summary\": string, \"sentiment\":\
-                        \ \"positive\" | \"neutral\" | \"negative\"}"
+                      Text: "Classify customer sentiment from the original feedback.\nOriginal:\n{{feedback_text}}\nReturn exactly one token: positive, neutral, or negative.\nDo not return JSON. Do not return explanations."
                   TemplateType: TEXT
                   ModelId: !Ref ModelId
+          Outputs:
+          - Type: String
+            Name: modelCompletion
+        - Name: ClassifyIntent
+          Type: Prompt
           Inputs:
           - Expression: "$.data"
             Type: String
             Name: feedback_text
+          Configuration:
+            Prompt:
+              SourceConfiguration:
+                Inline:
+                  InferenceConfiguration:
+                    Text:
+                      Temperature: 0.3
+                      TopP: 0.8
+                      StopSequences: []
+                      MaxTokens: 64
+                  TemplateConfiguration:
+                    Text:
+                      InputVariables:
+                      - Name: feedback_text
+                      Text: "Classify customer intent from the original feedback.\nOriginal:\n{{feedback_text}}\nReturn exactly one token from this set:\nbilling_issue, bug_report, feature_request, cancellation_risk, praise, other\nDo not return JSON. Do not return explanations."
+                  TemplateType: TEXT
+                  ModelId: !Ref ModelId
+          Outputs:
+          - Type: String
+            Name: modelCompletion
+        - Name: ClassifyUrgency
+          Type: Prompt
+          Inputs:
           - Expression: "$.data"
             Type: String
             Name: summary_text
-          Name: ClassifySentiment
-      ExecutionRoleArn: !GetAtt BedrockFlowsRole.Arn
+          - Expression: "$.data"
+            Type: String
+            Name: sentiment_value
+          - Expression: "$.data"
+            Type: String
+            Name: intent_value
+          Configuration:
+            Prompt:
+              SourceConfiguration:
+                Inline:
+                  InferenceConfiguration:
+                    Text:
+                      Temperature: 0.3
+                      TopP: 0.8
+                      StopSequences: []
+                      MaxTokens: 32
+                  TemplateConfiguration:
+                    Text:
+                      InputVariables:
+                      - Name: summary_text
+                      - Name: sentiment_value
+                      - Name: intent_value
+                      Text: "Classify urgency using summary, sentiment, and intent.\nSummary:\n{{summary_text}}\nSentiment:\n{{sentiment_value}}\nIntent:\n{{intent_value}}\nReturn exactly one token: low, medium, or high.\nDo not return JSON. Do not return explanations."
+                  TemplateType: TEXT
+                  ModelId: !Ref ModelId
+          Outputs:
+          - Type: String
+            Name: modelCompletion
+        - Name: BuildJson
+          Type: InlineCode
+          Inputs:
+          - Expression: "$.data"
+            Type: String
+            Name: summary_text
+          - Expression: "$.data"
+            Type: String
+            Name: sentiment_value
+          - Expression: "$.data"
+            Type: String
+            Name: intent_value
+          - Expression: "$.data"
+            Type: String
+            Name: urgency_value
+          Configuration:
+            InlineCode:
+              Language: Python_3
+              Code: |
+                import json
 
-  # BedrockFlowVersionDRAFT:
-  #   Type: AWS::Bedrock::FlowVersion
-  #   Properties:
-  #     FlowArn:
-  #       Ref: BedrockFlow
+                result = {
+                    "summary": str(summary_text).strip(),
+                "sentiment": str(sentiment_value).strip().lower(),
+                "intent": str(intent_value).strip().lower(),
+                "urgency": str(urgency_value).strip().lower(),
+                }
 
-  # BedrockFlowAlias:
-  #   Type: AWS::Bedrock::FlowAlias
-  #   Properties:
-  #     Description: "TSTALIASID"
-  #     FlowArn:
-  #       Ref: BedrockFlow
-  #     RoutingConfiguration:
-  #     - FlowVersion: "DRAFT"
-  #     Tags: {}
-  #     Name: "TSTALIASID"
+                json.dumps(result)
+          Outputs:
+          - Type: String
+            Name: response
+        Connections:
+        - Name: InputToSummarizer
+          Type: Data
+          Source: FlowInputNode
+          Target: Summarizer
+          Configuration:
+            Data:
+              SourceOutput: document
+              TargetInput: feedback_text
+        - Name: InputToSentiment
+          Type: Data
+          Source: FlowInputNode
+          Target: ClassifySentiment
+          Configuration:
+            Data:
+              SourceOutput: document
+              TargetInput: feedback_text
+        - Name: InputToIntent
+          Type: Data
+          Source: FlowInputNode
+          Target: ClassifyIntent
+          Configuration:
+            Data:
+              SourceOutput: document
+              TargetInput: feedback_text
+        - Name: SummarizerToUrgency
+          Type: Data
+          Source: Summarizer
+          Target: ClassifyUrgency
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: summary_text
+        - Name: SentimentToUrgency
+          Type: Data
+          Source: ClassifySentiment
+          Target: ClassifyUrgency
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: sentiment_value
+        - Name: IntentToUrgency
+          Type: Data
+          Source: ClassifyIntent
+          Target: ClassifyUrgency
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: intent_value
+        - Name: SummarizerToBuildJson
+          Type: Data
+          Source: Summarizer
+          Target: BuildJson
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: summary_text
+        - Name: SentimentToBuildJson
+          Type: Data
+          Source: ClassifySentiment
+          Target: BuildJson
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: sentiment_value
+        - Name: IntentToBuildJson
+          Type: Data
+          Source: ClassifyIntent
+          Target: BuildJson
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: intent_value
+        - Name: UrgencyToBuildJson
+          Type: Data
+          Source: ClassifyUrgency
+          Target: BuildJson
+          Configuration:
+            Data:
+              SourceOutput: modelCompletion
+              TargetInput: urgency_value
+        - Name: BuildJsonToOutput
+          Type: Data
+          Source: BuildJson
+          Target: FlowOutputNode
+          Configuration:
+            Data:
+              SourceOutput: response
+              TargetInput: document
 
 
   BedrockFlowsRole:
