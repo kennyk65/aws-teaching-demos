@@ -34,6 +34,7 @@ repo_uri=$(aws cloudformation describe-stacks --stack-name agentcore-weather-dem
 
 echo "The role is $role_arn"
 echo "The ECR Repository URI is $repo_uri"
+
 ```
 * This establishes the Role, ECR repository, and environment variables needed later.
 
@@ -66,6 +67,7 @@ Assuming you are still in the same folder as before, run these commands one at a
 # The name and source file are given, as well as the execution role and
 # ECR repository to use. However, it does not actually build / start the agent.
 agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+
 ```
 - When asked about *Configure OAuth authorizer instead? (yes/no)*, say no.
 - If asked about *Configure request header allowlist? (yes/no) [no]*, just enter.
@@ -86,6 +88,7 @@ Then run these commands one at a time (Linux/Mac):
 ```
 agentcore invoke '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 agentcore invoke '{"actor_id":"ken","prompt":"Do you think water will freeze there?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+
 ```
 * To demonstrate that different sessions have access to different short term memory, repeat the last question with a different session; expect a puzzled response:
 ```
@@ -129,4 +132,5 @@ Assuming you are still in the same folder as before, run these commands:
 agentcore destroy -a weather_agent --force
 
 aws cloudformation delete-stack --stack-name agentcore-weather-demo
+
 ```
