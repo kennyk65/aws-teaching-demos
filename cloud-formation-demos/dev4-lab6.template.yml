@@ -145,7 +145,7 @@ Resources:
             - cognito-idp:UpdateUserPoolClient
             - cognito-idp:AdminDeleteUser
             - cognito-idp:DeleteUserPool
-            - cognito-identity:*IdentityPool*
+            - cognito-identity:*
             Resource:
             - arn:aws:cloudformation:*:*:stack/polly-notes-api/*
             - arn:aws:cloudformation:*:aws:transform/Serverless-2016-10-31
