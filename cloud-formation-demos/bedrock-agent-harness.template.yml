@@ -223,7 +223,7 @@ Resources:
                         Description: Error message if the lookup failed.
 
   # ---------------------------------------------------------------------------
-  # AgentCore Harness
+  # AgentCore Harness, with memory
   # ---------------------------------------------------------------------------
 
   StockLookupHarnessExecutionRole:
@@ -263,7 +263,14 @@ Resources:
                   - bedrock-agentcore:GetEvent
                   - bedrock-agentcore:ListEvents
                   - bedrock-agentcore:RetrieveMemoryRecords
-                Resource: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/${AWS::StackName}_StockLookupHarness-*
+                Resource: !GetAtt StockLookupMemory.MemoryArn
+
+  StockLookupMemory:
+    Type: AWS::BedrockAgentCore::Memory
+    Properties:
+      Name: !Sub ${AWS::StackName}_StockLookupMemory
+      Description: Memory for the stock lookup Harness
+      EventExpiryDuration: 30
 
   StockLookupHarness:
     Type: AWS::BedrockAgentCore::Harness
@@ -284,6 +291,10 @@ Resources:
         - Text: |
             You are a helpful agent for finding information on stocks. To respond to current information, use the getStockPrice tool.
 
+      Memory:
+        AgentCoreMemoryConfiguration:
+          Arn: !GetAtt StockLookupMemory.MemoryArn
+
       Tools:
         - Type: agentcore_gateway
           Name: stock-lookup
@@ -294,6 +305,11 @@ Resources:
                 AwsIam: {}
 
 Outputs:
+
+  HarnessConsole:
+    Description: See this Harness in the console (assuming you are already logged in.)
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/bedrock-agentcore/harnesses/${StockLookupHarness.HarnessId}
+
   HarnessArn:
     Description: ARN of the AgentCore Harness.
     Value: !GetAtt StockLookupHarness.Arn
