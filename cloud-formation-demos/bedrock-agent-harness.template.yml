@@ -254,7 +254,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - bedrock-agentcore:InvokeGateway
-                Resource: !GetAtt StockLookupGateway.Arn
+                Resource: !GetAtt StockLookupGateway.GatewayArn
 
   StockLookupHarness:
     Type: AWS::BedrockAgentCore::Harness
@@ -280,7 +280,7 @@ Resources:
           Name: stock-lookup
           Config:
             AgentCoreGateway:
-              GatewayArn: !GetAtt StockLookupGateway.Arn
+              GatewayArn: !GetAtt StockLookupGateway.GatewayArn
               OutboundAuth:
                 AwsIam: {}
 
@@ -291,7 +291,7 @@ Outputs:
 
   GatewayArn:
     Description: ARN of the AgentCore Gateway.
-    Value: !GetAtt StockLookupGateway.Arn
+    Value: !GetAtt StockLookupGateway.GatewayArn
 
   LambdaArn:
     Description: ARN of the stock lookup Lambda function.
