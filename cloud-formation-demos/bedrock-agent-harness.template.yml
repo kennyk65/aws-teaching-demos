@@ -255,6 +255,15 @@ Resources:
                 Action:
                   - bedrock-agentcore:InvokeGateway
                 Resource: !GetAtt StockLookupGateway.GatewayArn
+              # The Harness adds a memory resource even if you don't ask it to.  These permissions are required to use it.
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateEvent
+                  - bedrock-agentcore:DeleteEvent
+                  - bedrock-agentcore:GetEvent
+                  - bedrock-agentcore:ListEvents
+                  - bedrock-agentcore:RetrieveMemoryRecords
+                Resource: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/${AWS::StackName}_StockLookupHarness-*
 
   StockLookupHarness:
     Type: AWS::BedrockAgentCore::Harness
