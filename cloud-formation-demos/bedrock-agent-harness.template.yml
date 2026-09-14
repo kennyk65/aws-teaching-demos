@@ -1,0 +1,299 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Simple Amazon Bedrock AgentCore Harness demo with an AgentCore Gateway
+  exposing a Lambda function as an MCP tool.
+  When you call the agent with a request like "what is the latest stock price for AAPL?", 
+  the agent will lookup the stock price from Yahoo finance.  The agent does this by
+  invoking a Lambda function that you provide.  The Lambda function is responsible for
+  executing the business logic to determine the stock price.
+
+
+Parameters:
+  FoundationalModel:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+    Description: The Bedrock model to use for the harness.
+
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # Lambda function
+  #
+  # The business logic is unchanged from the Bedrock Agents Classic example.
+  # The event/response wrapper is changed because AgentCore Gateway passes
+  # tool arguments directly in the event and expects a JSON response.
+  # ---------------------------------------------------------------------------
+
+  StockLookupLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-StockLookupFunction
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      Code:
+        ZipFile: |
+          import json
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          def _lookup_stock_price(symbol):
+              # Uses Nasdaq's public quote API via the standard library only.
+              url = 'https://api.nasdaq.com/api/quote/{}/info?assetclass=stocks'.format(
+                  urllib.parse.quote(symbol)
+              )
+
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'User-Agent': 'Mozilla/5.0',
+                      'Accept': 'application/json, text/plain, */*',
+                      'Origin': 'https://www.nasdaq.com',
+                      'Referer': 'https://www.nasdaq.com/'
+                  }
+              )
+
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+                  data = payload.get('data', {})
+                  primary_data = data.get('primaryData', {})
+
+                  last_sale_price = primary_data.get('lastSalePrice')
+                  currency = primary_data.get('currency') or 'USD'
+
+                  if not last_sale_price:
+                      raise ValueError(
+                          'Nasdaq response did not include a market price for {}'.format(symbol)
+                      )
+
+                  return last_sale_price.replace('$', '').replace(',', '').strip(), currency
+
+          def lambda_handler(event, context):
+              try:
+                  # AgentCore Gateway passes tool arguments directly in event.
+                  stock_symbol = event.get('stockSymbol')
+
+                  if not stock_symbol:
+                      raise ValueError('Missing required parameter: stockSymbol.')
+
+                  stock_price, currency = _lookup_stock_price(stock_symbol.upper())
+
+                  return {
+                      'message': 'The current stock price for {} is {} {}.'.format(
+                          stock_symbol.upper(), stock_price, currency
+                      ),
+                      'stockSymbol': stock_symbol.upper(),
+                      'stockPrice': stock_price,
+                      'currency': currency
+                  }
+
+              except Exception as error:
+                  return {
+                      'error': str(error)
+                  }
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-LambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-LambdaExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  # ---------------------------------------------------------------------------
+  # Bedrock Guardrail
+  # ---------------------------------------------------------------------------
+
+  MedicalTopicGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub ${AWS::StackName}-MedicalTopicGuardrail
+      Description: Blocks prompts or responses that discuss medical topics.
+      BlockedInputMessaging: I cannot discuss medical topics in this demo.
+      BlockedOutputsMessaging: I cannot provide medical-topic responses in this demo.
+      TopicPolicyConfig:
+        TopicsConfig:
+          - Name: Medical Topics
+            Definition: Requests seeking medical advice, diagnosis, treatment, medication guidance, or other healthcare guidance.
+            Examples:
+              - What are symptoms of diabetes?
+              - Which medication should I take for chest pain?
+              - Diagnose this rash from my description.
+              - Should I increase my blood pressure medicine dose?
+            Type: DENY
+            InputEnabled: true
+            InputAction: BLOCK
+            OutputEnabled: true
+            OutputAction: BLOCK
+
+  # ---------------------------------------------------------------------------
+  # AgentCore Gateway
+  #
+  # The Gateway is the MCP tool surface. It uses IAM authentication, and the
+  # Gateway service role is allowed to invoke the Lambda function.
+  # ---------------------------------------------------------------------------
+
+  GatewayExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-GatewayExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaInvokePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt StockLookupLambdaFunction.Arn
+
+  StockLookupGateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      Name: !Sub ${AWS::StackName}-StockLookupGateway
+      ProtocolType: MCP
+      AuthorizerType: AWS_IAM
+      RoleArn: !GetAtt GatewayExecutionRole.Arn
+
+  StockLookupGatewayTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      GatewayIdentifier: !Ref StockLookupGateway
+      Name: StockLookupTarget
+      Description: Gateway target exposing the stock lookup Lambda as an MCP tool.
+      CredentialProviderConfigurations:
+        - CredentialProviderType: GATEWAY_IAM_ROLE
+      TargetConfiguration:
+        Mcp:
+          Lambda:
+            LambdaArn: !GetAtt StockLookupLambdaFunction.Arn
+            ToolSchema:
+              InlinePayload:
+                - Name: getStockPrice
+                  Description: Get the current stock price for a given stock symbol.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      stockSymbol:
+                        Type: string
+                        Description: Stock ticker symbol to look up.
+                    Required:
+                      - stockSymbol
+                  OutputSchema:
+                    Type: object
+                    Properties:
+                      message:
+                        Type: string
+                        Description: Human-readable stock price result.
+                      stockSymbol:
+                        Type: string
+                        Description: Normalized stock ticker symbol.
+                      stockPrice:
+                        Type: string
+                        Description: Current stock price.
+                      currency:
+                        Type: string
+                        Description: Currency of the stock price.
+                      error:
+                        Type: string
+                        Description: Error message if the lookup failed.
+
+  # ---------------------------------------------------------------------------
+  # AgentCore Harness
+  # ---------------------------------------------------------------------------
+
+  StockLookupHarnessExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-HarnessExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: HarnessModelAndGatewayPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - bedrock:ApplyGuardrail
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/${MedicalTopicGuardrail.GuardrailId}
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeGateway
+                Resource: !GetAtt StockLookupGateway.Arn
+
+  StockLookupHarness:
+    Type: AWS::BedrockAgentCore::Harness
+    Properties:
+      HarnessName: !Sub ${AWS::StackName}_StockLookupHarness
+      ExecutionRoleArn: !GetAtt StockLookupHarnessExecutionRole.Arn
+
+      Model:
+        BedrockModelConfig:
+          ModelId: !Ref FoundationalModel
+          ApiFormat: converse_stream
+          AdditionalParams:
+            guardrailConfig:
+              guardrailIdentifier: !GetAtt MedicalTopicGuardrail.GuardrailId
+              guardrailVersion: DRAFT
+
+      SystemPrompt:
+        - Text: |
+            You are a helpful agent for finding information on stocks. To respond to current information, use the getStockPrice tool.
+
+      Tools:
+        - Type: agentcore_gateway
+          Name: stock-lookup
+          Config:
+            AgentCoreGateway:
+              GatewayArn: !GetAtt StockLookupGateway.Arn
+              OutboundAuth:
+                AwsIam: {}
+
+Outputs:
+  HarnessArn:
+    Description: ARN of the AgentCore Harness.
+    Value: !GetAtt StockLookupHarness.Arn
+
+  GatewayArn:
+    Description: ARN of the AgentCore Gateway.
+    Value: !GetAtt StockLookupGateway.Arn
+
+  LambdaArn:
+    Description: ARN of the stock lookup Lambda function.
+    Value: !GetAtt StockLookupLambdaFunction.Arn
+
