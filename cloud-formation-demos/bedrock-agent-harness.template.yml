@@ -255,7 +255,7 @@ Resources:
                 Action:
                   - bedrock-agentcore:InvokeGateway
                 Resource: !GetAtt StockLookupGateway.GatewayArn
-              # The Harness adds a memory resource even if you don't ask it to.  These permissions are required to use it.
+              # Required for reading and writing to memory.
               - Effect: Allow
                 Action:
                   - bedrock-agentcore:CreateEvent
@@ -264,6 +264,23 @@ Resources:
                   - bedrock-agentcore:ListEvents
                   - bedrock-agentcore:RetrieveMemoryRecords
                 Resource: !GetAtt StockLookupMemory.MemoryArn
+                # Required for X-Ray tracing spans
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                  - xray:GetSamplingStatisticSummaries
+                Resource: "*"
+              # Required for AgentCore CloudWatch Logs and Metrics
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - cloudwatch:PutMetricData
+                Resource: "*"
 
   StockLookupMemory:
     Type: AWS::BedrockAgentCore::Memory
