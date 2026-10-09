@@ -311,7 +311,7 @@ Resources:
         # S3Bucket: !Sub "${AWS::Region}-tcprod"
         # S3Key: "courses/ILT-TF-200-MLAGAC/v1.0.3.prod-a1dd1af5/lab-1/scripts/lambda.zip"
         S3Bucket: kk-uploads-oregon
-        S3Key: aws/demos/building_agentic_ai_with_amazon_bedrock_agentcore/lab_1/ddgs-layer.zip 
+        S3Key: aws/demos/building_agentic_ai_with_amazon_bedrock_agentcore/lab_1/lambda.zip 
       Role: !GetAtt CustomerSupportLambdaRole.Arn
       Runtime: python3.12
       PackageType: Zip
