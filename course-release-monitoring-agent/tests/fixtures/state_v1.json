@@ -1,0 +1,65 @@
+{
+  "scraped_at": "2026-09-01T12:00:00+00:00",
+  "courses": [
+    {
+      "name": "Advanced Architecting on AWS",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "3.10.0",
+      "version_sort": 3010000,
+      "released": "2026-05-01",
+      "sku": "ILT-TF-300-ADVARC-310-EN",
+      "notes": "Updated content for the previous major release.",
+      "latest_version_entry": {
+        "version": "3.10.0",
+        "released": "2026-05-01",
+        "notes": "Updated content for the previous major release."
+      }
+    },
+    {
+      "name": "Architecting on AWS",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "7.0.4",
+      "version_sort": 7000004,
+      "released": "2026-03-15",
+      "sku": "ILT-TF-300-ARCAWS-704-EN",
+      "notes": "Minor lab fixes and accessibility improvements.",
+      "latest_version_entry": {
+        "version": "7.0.4",
+        "released": "2026-03-15",
+        "notes": "Minor lab fixes and accessibility improvements."
+      }
+    },
+    {
+      "name": "Developing on AWS",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "4.2.1",
+      "version_sort": 4002001,
+      "released": "2026-04-10",
+      "sku": "ILT-TF-300-DEVAWS-42-EN",
+      "notes": "SDK examples updated for the latest API changes.",
+      "latest_version_entry": {
+        "version": "4.2.1",
+        "released": "2026-04-10",
+        "notes": "SDK examples updated for the latest API changes."
+      }
+    },
+    {
+      "name": "AWS Security Essentials",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "2.1.3",
+      "version_sort": 2001003,
+      "released": "2026-06-20",
+      "sku": "ILT-TF-200-SEKFND-213-EN",
+      "notes": "Updated IAM policy examples.",
+      "latest_version_entry": {
+        "version": "2.1.3",
+        "released": "2026-06-20",
+        "notes": "Updated IAM policy examples."
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# SAM CLI configuration file
+# Run `sam deploy --guided` to populate these values interactively on first deploy.
+# Subsequent deploys can use `sam deploy` (or `sam deploy --config-env default`).
+
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "course-release-monitoring-agent"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities       = "CAPABILITY_IAM"
+confirm_changeset  = true
+resolve_s3         = true
+region             = "us-east-2"
+
+# Override these with real values before deploying, or supply them interactively.
+parameter_overrides = "S3BucketName=\"kk-uploads-oregon\" S3ObjectPrefix=\"aws/course-release-monitor/\" NotificationEmail=\"kenkrueger65@gmail.com\" ScheduleExpression=\"cron(0 20 * * ? *)\" BedrockModelId=\"us.amazon.nova-lite-v1:0\""
+s3_prefix = "course-release-monitoring-agent"
+image_repositories = []
+
+[default.local_invoke.parameters]
+env_vars = "env.json"

@@ -1,0 +1,7 @@
+# Lambda runtime dependencies
+# These are bundled by `sam build` into the deployment package.
+
+beautifulsoup4==4.12.3
+requests==2.32.3
+boto3==1.34.120
+botocore==1.34.120

@@ -1,0 +1,80 @@
+{
+  "scraped_at": "2026-10-01T12:00:00+00:00",
+  "courses": [
+    {
+      "name": "Advanced Architecting on AWS",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "3.11.7",
+      "version_sort": 3011007,
+      "released": "2026-08-06",
+      "sku": "ILT-TF-300-ADVARC-311-EN",
+      "notes": "Lab-4: Updated permissions to resolve crawler issues.",
+      "latest_version_entry": {
+        "version": "3.11.7",
+        "released": "2026-08-06",
+        "notes": "Lab-4: Updated permissions to resolve crawler issues."
+      }
+    },
+    {
+      "name": "Architecting on AWS",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "7.0.5",
+      "version_sort": 7000005,
+      "released": "2026-09-10",
+      "sku": "ILT-TF-300-ARCAWS-705-EN",
+      "notes": "Patch update: fixed broken lab link in Module 3.",
+      "latest_version_entry": {
+        "version": "7.0.5",
+        "released": "2026-09-10",
+        "notes": "Patch update: fixed broken lab link in Module 3."
+      }
+    },
+    {
+      "name": "Developing on AWS",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "5.0.0",
+      "version_sort": 5000000,
+      "released": "2026-09-25",
+      "sku": "ILT-TF-300-DEVAWS-50-EN",
+      "notes": "Full course rewrite aligned to the latest AWS SDKs.",
+      "latest_version_entry": {
+        "version": "5.0.0",
+        "released": "2026-09-25",
+        "notes": "Full course rewrite aligned to the latest AWS SDKs."
+      }
+    },
+    {
+      "name": "AWS Security Essentials",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "2.1.3",
+      "version_sort": 2001003,
+      "released": "2026-06-20",
+      "sku": "ILT-TF-200-SEKFND-213-EN",
+      "notes": "Updated IAM policy examples.",
+      "latest_version_entry": {
+        "version": "2.1.3",
+        "released": "2026-06-20",
+        "notes": "Updated IAM policy examples."
+      }
+    },
+    {
+      "name": "Agentic AI Foundations",
+      "language": "EN",
+      "modality": "ILT",
+      "version": "1.1.9",
+      "version_sort": 1001009,
+      "released": "2026-09-30",
+      "sku": "ILT-TF-100-MLAGAF-119-EN",
+      "notes": "New hands-on lab added to Module 5 for implementing agentic AI frameworks.",
+      "latest_version_entry": {
+        "version": "1.1.9",
+        "released": "2026-09-30",
+        "notes": "New hands-on lab added to Module 5 for implementing agentic AI frameworks."
+      }
+    }
+  ]
+}

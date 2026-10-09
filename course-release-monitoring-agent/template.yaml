@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: AWS Course Release Monitoring Agent - monitors releases.awstc.com and sends Bedrock-summarized updates via SNS.
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the existing S3 bucket used for state storage.
+
+  S3ObjectPrefix:
+    Type: String
+    Default: "aws/course-release-monitor/"
+    Description: Object key prefix for storing the state.json file.
+
+  NotificationEmail:
+    Type: String
+    Default: "kenkrueger65@gmail.com"
+    Description: Email address to receive release alert notifications.
+
+  ScheduleExpression:
+    Type: String
+    Default: "cron(0 20 * * ? *)"
+    Description: EventBridge schedule expression (default daily at 8:00 PM UTC).
+
+  BedrockModelId:
+    Type: String
+    Default: "us.amazon.nova-lite-v1:0"
+    Description: Amazon Bedrock model ID used for summarization.
+
+  NotifyChangesOnly:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >
+      When "true" (default), an email is only sent when course changes are
+      detected. When "false", an email is sent on every run — useful for
+      verifying the end-to-end pipeline is working even when nothing has changed.
+
+# ---------------------------------------------------------------------------
+# Globals
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: python3.12
+    MemorySize: 512
+    Timeout: 180
+    Environment:
+      Variables:
+        S3_BUCKET: !Ref S3BucketName
+        S3_KEY: !Sub "${S3ObjectPrefix}state.json"
+        SNS_TOPIC_ARN: !Ref CourseReleaseAlertTopic
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        NOTIFY_CHANGES_ONLY: !Ref NotifyChangesOnly
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ── SNS Topic ────────────────────────────────────────────────────────────
+  CourseReleaseAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-course-release-alerts"
+      DisplayName: "AWS Course Release Alerts"
+
+  CourseReleaseEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref CourseReleaseAlertTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ── Lambda Function ───────────────────────────────────────────────────────
+  CourseReleaseMonitorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-monitor"
+      Handler: src/handler.lambda_handler
+      Description: Monitors AWS Training & Certification releases and sends diff summaries.
+      Policies:
+        # S3 CRUD scoped to the state object prefix
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        # Allow publishing to the alert SNS topic
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt CourseReleaseAlertTopic.TopicName
+        # Bedrock InvokeModel + Converse – covers foundation models AND
+        # cross-region inference profiles (e.g. us.amazon.nova-*-v1:0)
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                # Standard foundation models
+                - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/*"
+                # Cross-region inference profiles (us.*, eu.*, ap.*)
+                - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
+                # Application inference profiles (account-owned)
+                - !Sub "arn:aws:bedrock:*::foundation-model/*"
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Name: !Sub "${AWS::StackName}-daily-trigger"
+            Description: "Triggers the monitoring Lambda daily"
+            Schedule: !Ref ScheduleExpression
+            Enabled: true
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the monitoring Lambda function
+    Value: !GetAtt CourseReleaseMonitorFunction.Arn
+
+  SNSTopicArn:
+    Description: ARN of the SNS alert topic
+    Value: !Ref CourseReleaseAlertTopic
+
+  SNSTopicName:
+    Description: Name of the SNS alert topic
+    Value: !GetAtt CourseReleaseAlertTopic.TopicName

@@ -1,0 +1,127 @@
+{
+  "result": {
+    "data": {
+      "json": [
+        {
+          "name": "Advanced Architecting on AWS",
+          "language": "EN",
+          "modality": "ILT",
+          "version": "3.11.7",
+          "version_sort": 3011007,
+          "released": "2026-08-06T00:00:00.000Z",
+          "sku": "ILT-TF-300-ADVARC-311-EN",
+          "versions": [
+            {
+              "name": "Advanced Architecting on AWS",
+              "language": "EN",
+              "modality": "ILT",
+              "version": "3.11.7",
+              "version_sort": 3011007,
+              "released": "2026-08-06T00:00:00.000Z",
+              "sku": "ILT-TF-300-ADVARC-311-EN",
+              "notes": "Lab-4: Updated permissions to resolve crawler issues."
+            },
+            {
+              "name": "Advanced Architecting on AWS",
+              "language": "EN",
+              "modality": "ILT",
+              "version": "3.11.6",
+              "version_sort": 3011006,
+              "released": "2026-05-01T00:00:00.000Z",
+              "sku": "ILT-TF-300-ADVARC-311-EN",
+              "notes": "Updated lab environment to Amazon Linux 2023."
+            }
+          ]
+        },
+        {
+          "name": "Architecting on AWS",
+          "language": "EN",
+          "modality": "ILT",
+          "version": "7.0.5",
+          "version_sort": 7000005,
+          "released": "2026-09-10T00:00:00.000Z",
+          "sku": "ILT-TF-300-ARCAWS-70-EN",
+          "versions": [
+            {
+              "name": "Architecting on AWS",
+              "language": "EN",
+              "modality": "ILT",
+              "version": "7.0.5",
+              "version_sort": 7000005,
+              "released": "2026-09-10T00:00:00.000Z",
+              "sku": "ILT-TF-300-ARCAWS-70-EN",
+              "notes": "Patch update: fixed broken lab link in Module 3."
+            }
+          ]
+        },
+        {
+          "name": "Agentic AI Foundations",
+          "language": "EN",
+          "modality": "ILT",
+          "version": "1.1.9",
+          "version_sort": 1001009,
+          "released": "2026-09-30T00:00:00.000Z",
+          "sku": "ILT-TF-100-MLAGAF-11-EN",
+          "versions": [
+            {
+              "name": "Agentic AI Foundations",
+              "language": "EN",
+              "modality": "ILT",
+              "version": "1.1.9",
+              "version_sort": 1001009,
+              "released": "2026-09-30T00:00:00.000Z",
+              "sku": "ILT-TF-100-MLAGAF-11-EN",
+              "notes": "New hands-on lab added to Module 5 for implementing agentic AI frameworks."
+            },
+            {
+              "name": "Agentic AI Foundations",
+              "language": "EN",
+              "modality": "ILT",
+              "version": "1.0.0",
+              "version_sort": 1000000,
+              "released": "2025-08-18T00:00:00.000Z",
+              "sku": "ILT-TF-100-MLAGAF-10-EN",
+              "notes": "This is a new ILT course."
+            }
+          ]
+        },
+        {
+          "name": "Advanced Architecting on AWS",
+          "language": "JA",
+          "modality": "ILT",
+          "version": "3.10.0",
+          "version_sort": 3010000,
+          "released": "2026-06-01T00:00:00.000Z",
+          "sku": "ILT-TF-300-ADVARC-310-JA",
+          "versions": [
+            {
+              "name": "Advanced Architecting on AWS",
+              "language": "JA",
+              "modality": "ILT",
+              "version": "3.10.0",
+              "version_sort": 3010000,
+              "released": "2026-06-01T00:00:00.000Z",
+              "sku": "ILT-TF-300-ADVARC-310-JA",
+              "notes": "Japanese localisation of the 3.10.0 release."
+            }
+          ]
+        }
+      ],
+      "meta": {
+        "values": {
+          "0.released": ["Date"],
+          "0.versions.0.released": ["Date"],
+          "0.versions.1.released": ["Date"],
+          "1.released": ["Date"],
+          "1.versions.0.released": ["Date"],
+          "2.released": ["Date"],
+          "2.versions.0.released": ["Date"],
+          "2.versions.1.released": ["Date"],
+          "3.released": ["Date"],
+          "3.versions.0.released": ["Date"]
+        },
+        "v": 1
+      }
+    }
+  }
+}
