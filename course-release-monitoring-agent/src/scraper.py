@@ -1,66 +1,27 @@
 """
-scraper.py – Fetches course release data from the AWS T&C releases API.
+scraper.py – Fetches and filters course release data from the AWS T&C API.
 
-The page at https://releases.awstc.com is a JavaScript SPA; the actual data
-is served by a JSON endpoint:
+The page at https://releases.awstc.com is a JavaScript SPA; the data is served
+by a JSON endpoint:
 
-  GET https://releases.awstc.com/backend/courses.list
-      ?input={"json":null,"meta":{"values":["undefined"],"v":1}}
+  GET https://releases.awstc.com/backend/courses.list?language=EN
 
-Response shape (abbreviated):
+This module performs ALL code-side filtering (spec §4.1), producing the
+"filtered list" that is sent to the model:
+
+  1. Keep only English (`language = "EN"`) courses.
+  2. Keep only courses whose latest release date is within the recency window
+     (on or after  current_utc_date − LOOKBACK_DAYS).
+  3. Trim each retained course to its latest two versions, so the current and
+     immediately-previous version can be compared by the model.
+
+Each entry in the returned filtered list has:
 {
-  "result": {
-    "data": {
-      "json": [
-        {
-          "name":         "Advanced Architecting on AWS",
-          "language":     "EN",
-          "modality":     "ILT",
-          "version":      "3.11.7",
-          "version_sort": 3011007,
-          "released":     "2026-08-06T00:00:00.000Z",
-          "sku":          "ILT-TF-300-ADVARC-311-EN",
-          "versions": [           # full version history, index 0 = latest
-            {
-              "name":         "...",
-              "language":     "EN",
-              "modality":     "ILT",
-              "version":      "3.11.7",
-              "version_sort": 3011007,
-              "released":     "2026-08-06T00:00:00.000Z",
-              "sku":          "...",
-              "notes":        "Lab-4: Updated permissions ..."
-            },
-            ...
-          ]
-        },
-        ...
-      ]
-    }
-  }
-}
-
-Returns a catalog dict:
-{
-    "scraped_at": "<ISO-8601 timestamp>",
-    "courses": [
-        {
-            "name":         "Course Title",
-            "language":     "EN",
-            "modality":     "ILT",
-            "version":      "3.11.7",
-            "version_sort": 3011007,
-            "released":     "2026-08-06",
-            "sku":          "ILT-TF-300-ADVARC-311-EN",
-            "notes":        "Release notes for the current version.",
-            "latest_version_entry": {
-                "version":  "3.11.7",
-                "released": "2026-08-06",
-                "notes":    "Full release notes text for versions[0]."
-            }
-        },
-        ...
-    ]
+    "name":             "Advanced Architecting on AWS",
+    "version":          "3.11.7",      # current (versions[0])
+    "previous_version": "3.11.6",      # versions[1].version, or "" if only one
+    "released":         "2026-08-06",  # current release date (YYYY-MM-DD)
+    "notes":            "Lab-4: ...",  # current release notes (versions[0])
 }
 """
 
@@ -68,7 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -89,23 +50,86 @@ DEFAULT_LANGUAGE = "EN"
 # Public API
 # ---------------------------------------------------------------------------
 
-def scrape_catalog(
+def get_filtered_releases(
+    lookback_days: int,
+    *,
     url: str = API_URL,
     language: str = DEFAULT_LANGUAGE,
-) -> dict[str, Any]:
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
     """
-    Fetch the releases API and return a structured catalog dict filtered to
-    *language* (default ``"EN"``).
+    Fetch the catalog and return the filtered list (spec §4.1).
+
+    Parameters
+    ----------
+    lookback_days : int
+        Recency window size in days.
+    url : str
+        API endpoint (overridable for tests).
+    language : str
+        Language filter (default ``"EN"``).
+    now : datetime, optional
+        Reference "current" time (defaults to UTC now). Injectable for tests.
+
+    Returns
+    -------
+    list of filtered course dicts (see module docstring).
     """
     raw_courses = _fetch_courses(url)
-    courses = _extract_courses(raw_courses, language=language)
-    logger.info(
-        "Scraped %d %s course entries from API.", len(courses), language
+    filtered = filter_courses(
+        raw_courses,
+        lookback_days=lookback_days,
+        language=language,
+        now=now,
     )
-    return {
-        "scraped_at": datetime.now(tz=timezone.utc).isoformat(),
-        "courses": courses,
-    }
+    logger.info(
+        "Filtered to %d %s course(s) released within the last %d day(s).",
+        len(filtered), language, lookback_days,
+    )
+    return filtered
+
+
+def filter_courses(
+    raw_courses: list[dict[str, Any]],
+    *,
+    lookback_days: int,
+    language: str = DEFAULT_LANGUAGE,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Apply language + recency + version-trim filtering to raw API courses.
+    Pure function (no network) so it is directly unit-testable.
+    """
+    reference = now or datetime.now(tz=timezone.utc)
+    cutoff = (reference - timedelta(days=lookback_days)).date()
+
+    result: list[dict[str, Any]] = []
+    for raw in raw_courses:
+        if raw.get("language", "").upper() != language.upper():
+            continue
+
+        versions: list[dict[str, Any]] = raw.get("versions", [])
+        if not versions:
+            continue
+
+        latest = versions[0]
+        released_str = _normalise_date(latest.get("released", raw.get("released", "")))
+        released_date = _parse_date(released_str)
+        if released_date is None or released_date < cutoff:
+            continue  # outside the recency window (or undatable)
+
+        # Trim to the latest two versions: current + immediately previous.
+        previous_version = versions[1].get("version", "") if len(versions) > 1 else ""
+
+        result.append({
+            "name":             raw.get("name", ""),
+            "version":          latest.get("version", raw.get("version", "")),
+            "previous_version": previous_version,
+            "released":         released_str,
+            "notes":            latest.get("notes", ""),
+        })
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -113,10 +137,7 @@ def scrape_catalog(
 # ---------------------------------------------------------------------------
 
 def _fetch_courses(url: str) -> list[dict[str, Any]]:
-    """
-    Call the JSON API and return the raw list of course objects.
-    Raises ``requests.HTTPError`` on non-2xx responses.
-    """
+    """Call the JSON API and return the raw list of course objects."""
     logger.info("Fetching courses from %s", url)
     response = requests.get(
         url,
@@ -140,51 +161,18 @@ def _fetch_courses(url: str) -> list[dict[str, Any]]:
     return courses
 
 
-def _extract_courses(
-    raw_courses: list[dict[str, Any]],
-    language: str,
-) -> list[dict[str, Any]]:
-    """
-    Filter to *language* and flatten each entry into a canonical course dict.
-
-    The ``notes`` field is taken from ``versions[0]`` (the current release)
-    because the top-level object does not carry it.
-    """
-    result: list[dict[str, Any]] = []
-    for raw in raw_courses:
-        if raw.get("language", "").upper() != language.upper():
-            continue
-
-        # versions[0] is always the current (latest) release entry.
-        # We store its full content as "latest_version_entry" so the diff
-        # output and notification can surface name / version / date / notes
-        # for exactly that entry without re-fetching the API.
-        versions: list[dict[str, Any]] = raw.get("versions", [])
-        latest = versions[0] if versions else {}
-        latest_version_entry = {
-            "version":  latest.get("version", raw.get("version", "")),
-            "released": _normalise_date(latest.get("released", "")),
-            "notes":    latest.get("notes", ""),
-        }
-
-        result.append({
-            "name":                 raw.get("name", ""),
-            "language":             raw.get("language", language),
-            "modality":             raw.get("modality", ""),
-            "version":              raw.get("version", ""),
-            "version_sort":         raw.get("version_sort", 0),
-            "released":             _normalise_date(raw.get("released", "")),
-            "sku":                  raw.get("sku", ""),
-            "notes":                latest_version_entry["notes"],
-            "latest_version_entry": latest_version_entry,
-        })
-
-    return result
-
-
 def _normalise_date(date_str: str) -> str:
     """Truncate an ISO-8601 datetime string to a YYYY-MM-DD date."""
     if not date_str:
         return ""
-    # e.g. "2026-08-06T00:00:00.000Z" → "2026-08-06"
     return date_str[:10]
+
+
+def _parse_date(date_str: str):
+    """Parse a YYYY-MM-DD string to a date, or None if unparseable."""
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None

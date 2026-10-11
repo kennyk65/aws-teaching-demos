@@ -1,194 +1,177 @@
 """
-test_parser.py – Unit tests for the API-based scraper module.
+test_parser.py – API retrieval & filtering tests (spec §4.1).
 
-The scraper no longer parses HTML; it calls the JSON API at
-  https://releases.awstc.com/backend/courses.list?input=...
-and returns a filtered, flattened catalog dict.
+Covers scraper.filter_courses (pure) and scraper.get_filtered_releases (HTTP
+mocked): EN language filter, recency window, latest-two-versions trim, and the
+shape of the emitted "filtered list".
 """
 
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-from src.scraper import (
-    _extract_courses,
-    _fetch_courses,
-    _normalise_date,
-    scrape_catalog,
-)
+from src.scraper import filter_courses, get_filtered_releases, _parse_date
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+# Reference "now" chosen so the 2026 fixture dates fall inside/outside windows
+# deterministically. Fixture latest-release dates:
+#   Advanced Architecting on AWS : 2026-08-06
+#   Architecting on AWS          : 2026-09-10
+#   Agentic AI Foundations       : 2026-09-30
+#   (JA) Advanced Architecting    : 2026-06-01  (excluded by language)
+NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def api_payload() -> dict:
-    return json.loads((FIXTURES_DIR / "sample_api_response.json").read_text(encoding="utf-8"))
-
-
-@pytest.fixture()
-def raw_courses(api_payload: dict) -> list[dict]:
-    return api_payload["result"]["data"]["json"]
+def raw_courses() -> list[dict]:
+    payload = json.loads((FIXTURES_DIR / "sample_api_response.json").read_text(encoding="utf-8"))
+    return payload["result"]["data"]["json"]
 
 
 # ---------------------------------------------------------------------------
-# _fetch_courses
+# Language filtering
 # ---------------------------------------------------------------------------
 
-class TestFetchCourses:
-    def test_returns_list_of_courses(self, api_payload: dict) -> None:
+class TestLanguageFilter:
+    def test_excludes_non_en(self, raw_courses: list[dict]) -> None:
+        # Wide window so only language filters anything out.
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        names_langs = {(c["name"]) for c in result}
+        # The JA "Advanced Architecting on AWS" must not appear as a JA entry;
+        # there is an EN one with the same name, so assert count of JA excluded
+        # by checking total EN courses == 3.
+        assert len(result) == 3
+
+    def test_only_en_versions_considered(self, raw_courses: list[dict]) -> None:
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        # The retained "Advanced Architecting on AWS" must be the EN 3.11.7 one.
+        adv = next(c for c in result if c["name"] == "Advanced Architecting on AWS")
+        assert adv["version"] == "3.11.7"
+
+
+# ---------------------------------------------------------------------------
+# Recency filtering
+# ---------------------------------------------------------------------------
+
+class TestRecencyFilter:
+    def test_keeps_within_window(self, raw_courses: list[dict]) -> None:
+        # 7-day window from 2026-10-01 → cutoff 2026-09-24.
+        # Only Agentic AI (2026-09-30) qualifies.
+        result = filter_courses(raw_courses, lookback_days=7, now=NOW)
+        names = {c["name"] for c in result}
+        assert names == {"Agentic AI Foundations"}
+
+    def test_wider_window_keeps_more(self, raw_courses: list[dict]) -> None:
+        # 30-day window from 2026-10-01 → cutoff 2026-09-01.
+        # Agentic AI (09-30) and Architecting (09-10) qualify; Advanced (08-06) does not.
+        result = filter_courses(raw_courses, lookback_days=30, now=NOW)
+        names = {c["name"] for c in result}
+        assert names == {"Agentic AI Foundations", "Architecting on AWS"}
+
+    def test_boundary_exactly_cutoff_is_kept(self) -> None:
+        raw = [{
+            "name": "Edge Course", "language": "EN", "version": "1.0.0",
+            "versions": [{"version": "1.0.0", "released": "2026-09-24T00:00:00.000Z", "notes": "n"}],
+        }]
+        # cutoff for 7-day window from 2026-10-01 is exactly 2026-09-24
+        result = filter_courses(raw, lookback_days=7, now=NOW)
+        assert len(result) == 1
+
+    def test_empty_when_nothing_recent(self, raw_courses: list[dict]) -> None:
+        # 0-day window from 2026-10-01 → cutoff 2026-10-01; newest release is
+        # 2026-09-30, so nothing qualifies.
+        result = filter_courses(raw_courses, lookback_days=0, now=NOW)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Version trimming / emitted shape
+# ---------------------------------------------------------------------------
+
+class TestVersionTrimAndShape:
+    def test_previous_version_from_versions_1(self, raw_courses: list[dict]) -> None:
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        agentic = next(c for c in result if c["name"] == "Agentic AI Foundations")
+        assert agentic["version"] == "1.1.9"
+        assert agentic["previous_version"] == "1.0.0"
+
+    def test_previous_version_empty_when_single_version(self, raw_courses: list[dict]) -> None:
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        arch = next(c for c in result if c["name"] == "Architecting on AWS")
+        assert arch["previous_version"] == ""
+
+    def test_entry_has_required_fields(self, raw_courses: list[dict]) -> None:
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        required = {"name", "version", "previous_version", "released", "notes"}
+        for c in result:
+            assert required == set(c.keys())
+
+    def test_released_is_normalised_date(self, raw_courses: list[dict]) -> None:
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        for c in result:
+            assert len(c["released"]) == 10
+            assert c["released"].count("-") == 2
+
+    def test_notes_from_latest_version(self, raw_courses: list[dict]) -> None:
+        result = filter_courses(raw_courses, lookback_days=100000, now=NOW)
+        adv = next(c for c in result if c["name"] == "Advanced Architecting on AWS")
+        assert adv["notes"] == "Lab-4: Updated permissions to resolve crawler issues."
+
+    def test_course_with_no_versions_skipped(self) -> None:
+        raw = [{"name": "Empty", "language": "EN", "versions": []}]
+        assert filter_courses(raw, lookback_days=100000, now=NOW) == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_date
+# ---------------------------------------------------------------------------
+
+class TestParseDate:
+    def test_valid(self) -> None:
+        assert _parse_date("2026-08-06").isoformat() == "2026-08-06"
+
+    def test_empty_returns_none(self) -> None:
+        assert _parse_date("") is None
+
+    def test_garbage_returns_none(self) -> None:
+        assert _parse_date("not-a-date") is None
+
+
+# ---------------------------------------------------------------------------
+# get_filtered_releases (HTTP mocked)
+# ---------------------------------------------------------------------------
+
+class TestGetFilteredReleases:
+    def test_fetches_and_filters(self, raw_courses: list[dict]) -> None:
+        payload = {"result": {"data": {"json": raw_courses}}}
         mock_resp = MagicMock()
-        mock_resp.json.return_value = api_payload
+        mock_resp.json.return_value = payload
         mock_resp.raise_for_status = MagicMock()
 
         with patch("src.scraper.requests.get", return_value=mock_resp):
-            courses = _fetch_courses("https://example.com")
+            result = get_filtered_releases(lookback_days=30, now=NOW)
 
-        assert isinstance(courses, list)
-        assert len(courses) == 4  # all languages in fixture
+        names = {c["name"] for c in result}
+        assert names == {"Agentic AI Foundations", "Architecting on AWS"}
 
     def test_raises_on_http_error(self) -> None:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("503")
-
         with patch("src.scraper.requests.get", return_value=mock_resp):
             with pytest.raises(requests.HTTPError):
-                _fetch_courses("https://example.com")
+                get_filtered_releases(lookback_days=7, now=NOW)
 
-    def test_raises_on_unexpected_response_shape(self) -> None:
+    def test_raises_on_unexpected_shape(self) -> None:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"unexpected": "shape"}
         mock_resp.raise_for_status = MagicMock()
-
         with patch("src.scraper.requests.get", return_value=mock_resp):
             with pytest.raises(ValueError, match="Unexpected API response structure"):
-                _fetch_courses("https://example.com")
-
-
-# ---------------------------------------------------------------------------
-# _extract_courses
-# ---------------------------------------------------------------------------
-
-class TestExtractCourses:
-    def test_filters_to_en_only(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        assert all(c["language"] == "EN" for c in en)
-
-    def test_correct_en_count(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        assert len(en) == 3  # fixture has 3 EN + 1 JA
-
-    def test_notes_taken_from_versions_0(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        adv = next(c for c in en if "Advanced Architecting" in c["name"])
-        assert adv["notes"] == "Lab-4: Updated permissions to resolve crawler issues."
-
-    def test_course_has_all_required_fields(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        required = {"name", "language", "modality", "version", "version_sort",
-                    "released", "sku", "notes", "latest_version_entry"}
-        for course in en:
-            assert required.issubset(course.keys()), f"Missing keys in {course}"
-
-    def test_latest_version_entry_has_required_fields(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        for course in en:
-            lv = course["latest_version_entry"]
-            assert {"version", "released", "notes"}.issubset(lv.keys())
-
-    def test_latest_version_entry_version_matches_top_level(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        for course in en:
-            assert course["latest_version_entry"]["version"] == course["version"]
-
-    def test_latest_version_entry_notes_matches_notes_field(self, raw_courses: list[dict]) -> None:
-        en = _extract_courses(raw_courses, language="EN")
-        adv = next(c for c in en if "Advanced Architecting" in c["name"])
-        assert adv["latest_version_entry"]["notes"] == adv["notes"]
-
-    def test_released_date_is_normalised(self, raw_courses: list[dict]) -> None:
-        """released should be YYYY-MM-DD, not a full ISO datetime."""
-        en = _extract_courses(raw_courses, language="EN")
-        for course in en:
-            assert len(course["released"]) == 10
-            assert course["released"].count("-") == 2
-
-    def test_ja_filter(self, raw_courses: list[dict]) -> None:
-        ja = _extract_courses(raw_courses, language="JA")
-        assert len(ja) == 1
-        assert ja[0]["language"] == "JA"
-
-    def test_empty_input_returns_empty_list(self) -> None:
-        assert _extract_courses([], language="EN") == []
-
-    def test_course_with_no_versions_has_empty_notes(self) -> None:
-        raw = [{"name": "Test", "language": "EN", "modality": "ILT",
-                "version": "1.0.0", "version_sort": 1000000,
-                "released": "2026-01-01T00:00:00.000Z",
-                "sku": "SKU-TEST", "versions": []}]
-        result = _extract_courses(raw, language="EN")
-        assert result[0]["notes"] == ""
-        assert result[0]["latest_version_entry"]["notes"] == ""
-
-
-# ---------------------------------------------------------------------------
-# _normalise_date
-# ---------------------------------------------------------------------------
-
-class TestNormaliseDate:
-    @pytest.mark.parametrize("raw,expected", [
-        ("2026-08-06T00:00:00.000Z", "2026-08-06"),
-        ("2024-01-15T00:00:00.000Z", "2024-01-15"),
-        ("2026-08-06",               "2026-08-06"),  # already short
-        ("",                         ""),
-    ])
-    def test_normalise(self, raw: str, expected: str) -> None:
-        assert _normalise_date(raw) == expected
-
-
-# ---------------------------------------------------------------------------
-# scrape_catalog (integration-style, HTTP mocked)
-# ---------------------------------------------------------------------------
-
-class TestScrapeCatalog:
-    def test_returns_dict_with_scraped_at_and_courses(self, api_payload: dict) -> None:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = api_payload
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("src.scraper.requests.get", return_value=mock_resp):
-            catalog = scrape_catalog()
-
-        assert "scraped_at" in catalog
-        assert "courses" in catalog
-        assert len(catalog["courses"]) == 3  # 3 EN entries in fixture
-
-    def test_scraped_at_is_iso_string(self, api_payload: dict) -> None:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = api_payload
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("src.scraper.requests.get", return_value=mock_resp):
-            catalog = scrape_catalog()
-
-        from datetime import datetime
-        datetime.fromisoformat(catalog["scraped_at"])
-
-    def test_language_filter_applied(self, api_payload: dict) -> None:
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = api_payload
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("src.scraper.requests.get", return_value=mock_resp):
-            catalog = scrape_catalog(language="JA")
-
-        assert len(catalog["courses"]) == 1
-        assert catalog["courses"][0]["language"] == "JA"
+                get_filtered_releases(lookback_days=7, now=NOW)

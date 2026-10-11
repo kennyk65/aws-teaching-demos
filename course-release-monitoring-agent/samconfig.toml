@@ -19,7 +19,7 @@ resolve_s3         = true
 region             = "us-east-2"
 
 # Override these with real values before deploying, or supply them interactively.
-parameter_overrides = "S3BucketName=\"kk-uploads-oregon\" S3ObjectPrefix=\"aws/course-release-monitor/\" NotificationEmail=\"kenkrueger65@gmail.com\" ScheduleExpression=\"cron(0 20 * * ? *)\" BedrockModelId=\"us.amazon.nova-lite-v1:0\""
+parameter_overrides = "NotificationEmail=\"kenkrueger65@gmail.com\" ScheduleExpression=\"cron(0 20 * * ? *)\" LookbackDays=\"7\" BedrockModelId=\"us.anthropic.claude-sonnet-4-6\" NotifyChangesOnly=\"true\""
 s3_prefix = "course-release-monitoring-agent"
 image_repositories = []
 

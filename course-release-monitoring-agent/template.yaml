@@ -1,20 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: AWS Course Release Monitoring Agent - monitors releases.awstc.com and sends Bedrock-summarized updates via SNS.
+Description: AWS Course Release Monitoring Agent - monitors releases.awstc.com and sends Bedrock-formatted release notifications via SNS.
 
 # ---------------------------------------------------------------------------
 # Parameters
 # ---------------------------------------------------------------------------
 Parameters:
-  S3BucketName:
-    Type: String
-    Description: Name of the existing S3 bucket used for state storage.
-
-  S3ObjectPrefix:
-    Type: String
-    Default: "aws/course-release-monitor/"
-    Description: Object key prefix for storing the state.json file.
-
   NotificationEmail:
     Type: String
     Default: "kenkrueger65@gmail.com"
@@ -25,10 +16,24 @@ Parameters:
     Default: "cron(0 20 * * ? *)"
     Description: EventBridge schedule expression (default daily at 8:00 PM UTC).
 
+  LookbackDays:
+    Type: Number
+    Default: 7
+    Description: >
+      Size of the recency window, in days. Courses whose latest release date is
+      older than this many days before the current run are filtered out (in
+      code) before anything is sent to the model.
+
   BedrockModelId:
     Type: String
-    Default: "us.amazon.nova-lite-v1:0"
-    Description: Amazon Bedrock model ID used for summarization.
+    Default: "us.anthropic.claude-sonnet-4-6"
+    Description: >
+      Amazon Bedrock model ID used for both model calls. A capable model is
+      recommended: the version-classification step benefits from reliable
+      reasoning. Smaller models (e.g. Nova Lite) proved unreliable at excluding
+      patch-only releases. A deterministic code-side filter now enforces
+      major/minor-only regardless of model, but a strong model still gives the
+      cleanest results.
 
   NotifyChangesOnly:
     Type: String
@@ -51,9 +56,8 @@ Globals:
     Timeout: 180
     Environment:
       Variables:
-        S3_BUCKET: !Ref S3BucketName
-        S3_KEY: !Sub "${S3ObjectPrefix}state.json"
         SNS_TOPIC_ARN: !Ref CourseReleaseAlertTopic
+        LOOKBACK_DAYS: !Ref LookbackDays
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         NOTIFY_CHANGES_ONLY: !Ref NotifyChangesOnly
 
@@ -82,11 +86,8 @@ Resources:
     Properties:
       FunctionName: !Sub "${AWS::StackName}-monitor"
       Handler: src/handler.lambda_handler
-      Description: Monitors AWS Training & Certification releases and sends diff summaries.
+      Description: Monitors AWS Training & Certification releases and sends formatted diff emails.
       Policies:
-        # S3 CRUD scoped to the state object prefix
-        - S3CrudPolicy:
-            BucketName: !Ref S3BucketName
         # Allow publishing to the alert SNS topic
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt CourseReleaseAlertTopic.TopicName
@@ -98,11 +99,8 @@ Resources:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
               Resource:
-                # Standard foundation models
                 - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/*"
-                # Cross-region inference profiles (us.*, eu.*, ap.*)
                 - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
-                # Application inference profiles (account-owned)
                 - !Sub "arn:aws:bedrock:*::foundation-model/*"
       Events:
         DailySchedule:

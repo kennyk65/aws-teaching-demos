@@ -1,0 +1,30 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AWS Training & Certification — Course Releases
+  October 8, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The following courses had a major or minor release in the last 7 days:
+
+
+▶ RECENT RELEASES
+──────────────────────────────────────────────────────
+
+  Developing on AWS                    v4.2.1 → v5.0.0
+  Released: 2026-09-25
+
+  Full course rewrite aligned to the latest AWS SDKs
+  and developer best practices. Updated lab environments
+  now use Amazon Linux 2023.
+
+  ·  ·  ·
+
+  Advanced Architecting on AWS         v3.10.8 → v3.11.0
+  Released: 2026-08-06
+
+  New module on multi-Region failover patterns and
+  updated Lab 4.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Sent by the AWS Course Release Monitoring Agent.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

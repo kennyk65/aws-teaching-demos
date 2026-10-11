@@ -2,7 +2,9 @@
 
 ## 1. Executive Summary
 
-The goal of this project is to build an automated, serverless agent hosted on AWS using the **AWS Serverless Application Model (SAM)** that daily checks the AWS Training & Certification release page (`https://releases.awstc.com/?language=EN`) for major and minor course updates. When changes are detected, the agent uses Amazon Bedrock to summarize the updates and notifies the user via an Amazon SNS email topic.
+The goal of this project is to build an automated, serverless agent hosted on AWS using the **AWS Serverless Application Model (SAM)** and **Bedrock** that periodically (daily) checks the AWS Training & Certification releases page (`https://releases.awstc.com/?course=FAV&language=EN`) (More specifically, the API used by that page: (`https://releases.awstc.com/backend/courses.list`)) for major and minor course updates.
+
+The agent filters the retrieved the current catalog /revision list, keeping only the courses whose latest release date falls within a configurable recent window (lookback days). That abbreviated list is processed by a foundational model to produce a list of only those courses having major or minor releases in the time period - patch releases will NOT be reported.  This filtered list is then send to a second model focused only on formatting the notification email body. The result is delivered via an Amazon SNS email topic.
 
 ## 2. Architecture & Tech Stack
 
@@ -14,9 +16,7 @@ The goal of this project is to build an automated, serverless agent hosted on AW
 
 * **Compute:** AWS Lambda (`AWS::Serverless::Function`) scheduled via Amazon EventBridge
 
-* **AI Model:** Amazon Bedrock (`anthropic.claude-3-5-sonnet-20240620-v1:0` or `amazon.titan-text-express-v1`)
-
-* **State Storage:** Amazon S3 (JSON state file)
+* **AI Model:** Amazon Bedrock (default: `us.amazon.nova-lite-v1:0`, but parameter driven) — two calls: (1) identify major/minor releases from the recent-release list, excluding patch-only releases; (2) format the email body
 
 * **Notifications:** Amazon SNS (`AWS::SNS::Topic` and `AWS::SNS::Subscription`)
 
@@ -26,44 +26,49 @@ The goal of this project is to build an automated, serverless agent hosted on AW
 
 ```
 ┌───────────────────┐
-│ EventBridge Cron  │ (Triggers daily at 12:00 UTC via SAM Schedule Event)
+
+│ EventBridge Cron  │ (Triggers daily at 20:00 UTC via SAM Schedule Event)
 └─────────┬─────────┘
           │
           ▼
-┌───────────────────┐     Reads state.json     ┌───────────────────┐
-│   AWS Lambda      │ ───────────────────────> │     Amazon S3     │
-│  (Python 3.12)    │ <─────────────────────── │  (State Storage)  │
-└─────────┬─────────┘    Previous catalog      └───────────────────┘
+┌───────────────────┐
+│   AWS Lambda      │  
+│  (Python 3.12)    │
+└─────────┬─────────┘
           │
-          ├─> Scrapes https://releases.awstc.com/?language=EN
-          ├─> Identifies new or modified course releases
+          ├─> Calls releases.awstc.com JSON API (EN language filter) to get current catalog
           │
-          ├───> [If updates found] ──> Invokes Bedrock to summarize release notes
-          ├───> [If updates found] ──> Dispatches formatted summary to SNS Topic
+          ├─> CODE: keep only courses whose latest release date is within the
+          │        last LOOKBACK_DAYS days (abbreviated "recent releases" list)
           │
-          └─> Overwrites updated catalog snapshot to S3 state.json
+          ├─> MODEL CALL #1: send the recent-releases list to Bedrock; it returns
+          │        ONLY the major and minor releases as JSON (patch-only excluded)
+          │
+          ├───> [If major/minor releases found] ──> MODEL CALL #2: Bedrock formats
+          │        the plain-text email body
+          ├───> [If none found] ──────────────────> Optionally prepare "no changes" message
+          │
+          └─> Send notification via SNS (when indicated)
 ```
 
 ## 3. Infrastructure & CloudFormation / SAM Requirements
 
-A single SAM Template (`template.yaml`) using Transform `AWS::Serverless-2016-10-31` must provision all required resources.
+A single SAM Template (`template.yaml`) must provision all required resources.
 
 ### Input Parameters
 
-1. `S3BucketName` (String, Required): Name of the existing or target S3 bucket used for state storage.
+1. `NotificationEmail` (String, Default: `kenkrueger65@gmail.com`): Email address to receive release alert notifications.
 
-2. `S3ObjectPrefix` (String, Default: `aws/course-release-monitor/`): Object key prefix for storing the `state.json` file.
+2. `ScheduleExpression` (String, Default: `cron(0 20 * * ? *)`): EventBridge schedule expression (default: daily at 8:00 PM UTC).
 
-3. `NotificationEmail` (String, Default: `kenkrueger65@gmail.com`): Email address to receive release alert notifications.
+3. `LookbackDays` (Number, Default: `7`): Size of the recency window, in days. Courses whose latest release date is older than this many days before the current run are filtered out (in code) before anything is sent to the model. This value is exposed to the Lambda as the `LOOKBACK_DAYS` environment variable.
 
-4. `ScheduleExpression` (String, Default: `cron(0 20 * * ? *)`): EventBridge schedule expression (default: daily at 8:00 PM UTC).
+4. `BedrockModelId` (String, Default: `us.amazon.nova-lite-v1:0`): Amazon Bedrock model ID used for both model calls. Supports foundation models and cross-region inference profiles (e.g. `us.amazon.nova-*`).
 
-5. `BedrockModelId` (String, Default: `us.amazon.nova-lite-v1:0`): Amazon Bedrock model ID for summarization. Supports foundation models and cross-region inference profiles (e.g. `us.amazon.nova-*`).
-
-6. `NotifyChangesOnly` (String, Default: `"true"`, AllowedValues: `"true"` | `"false"`): Controls notification behaviour when no course changes are detected.
-   - `"true"` (default): Silent run — no email sent when the catalog is unchanged.
-   - `"false"`: Always send an email on every run. When there are no changes the email subject reads `[AWS Course Updates] No Changes Detected - YYYY-MM-DD`, confirming the pipeline is operating normally. Useful for smoke-testing the end-to-end flow.
-
+5. `NotifyChangesOnly` (String, Default: `"true"`, AllowedValues: `"true"` | `"false"`): Controls notification behaviour when no major/minor releases are found in the window.
+   - `"true"` (default): Silent run — email sent only if major/minor releases are found.
+   - `"false"`: Always send an email on every run, whether releases are found or not.
+   
 ### SAM Resources to Provision
 
 * **Amazon SNS Topic & Email Subscription:**
@@ -82,21 +87,19 @@ A single SAM Template (`template.yaml`) using Transform `AWS::Serverless-2016-10
 
   * Timeout: 180 seconds
 
-  * Policies (SAM Policy Templates or IAM Role inline statements):
-
-    * `S3CrudPolicy` scoped strictly to `arn:aws:s3:::<S3BucketName>/<S3ObjectPrefix>*`
+  * Policies:
 
     * `SNSPublishMessagePolicy` for the created SNS Topic
 
-    * `bedrock:InvokeModel` IAM statement for the target Bedrock model
+    * `bedrock:InvokeModel` IAM statement covering foundation models and cross-region inference profiles
+
+    * (No S3 policy — the agent is stateless.)
 
   * Environment variables:
 
-    * `S3_BUCKET`: Ref to `S3BucketName`
-
-    * `S3_KEY`: `${S3ObjectPrefix}state.json`
-
     * `SNS_TOPIC_ARN`: Ref to SNS Topic
+
+    * `LOOKBACK_DAYS`: Ref to `LookbackDays`
 
     * `BEDROCK_MODEL_ID`: Ref to `BedrockModelId`
 
@@ -108,95 +111,159 @@ A single SAM Template (`template.yaml`) using Transform `AWS::Serverless-2016-10
 
 ## 4. Lambda Application Requirements
 
-### 4.1 Scraping & Data Extraction
+### 4.1 Data Retrieval
 
-* Fetch HTML from `https://releases.awstc.com/?language=EN` using standard HTTP libraries (`urllib3` or `requests` / `httpx`) and `BeautifulSoup4`.
+* The AWS T&C releases page (`https://releases.awstc.com`) is a JavaScript SPA. Course data is fetched directly from the underlying JSON API endpoint:
 
-* Extract structured data per course entry:
+  ```
+  GET https://releases.awstc.com/backend/courses.list?language=EN
+  ```
 
-  * Course Title
+* Filter results to `language = "EN"` only.
 
-  * Version / Release Type (Major / Minor)
+* Filter results by recency:  Include only the entries "released" greater than the Read the cutoff date, where the cutoff date = (current UTC date) − `LOOKBACK_DAYS` days.
 
-  * Release Date
+* Exclude unnecessary versions: for each course entry, include only the latest two versions, maximum.  This allows us to determine the previous release and the current release.
 
-  * Release Notes / Highlights link or description text.
+* The result of this filtering is the "filtered list".  Send this to the model for processing.
 
-### 4.2 State Comparison & Diff Logic
+* If this list is empty, see the instructions below if no changes are detected.
 
-* Retrieve previous state snapshot from `s3://<S3_BUCKET>/<S3_KEY>`.
+### 4.2 Release detection (Model Call #1)
 
-* If `state.json` does not exist (first run):
+* Send the recent-releases list to Bedrock and ask it to return **only the major
+  and minor releases**.
 
-  * Save current catalog snapshot to S3.
+* For each course, the model classifies the latest release by comparing the
+  current `version` against `previous_version`. Versions have the form
+  `MAJOR.MINOR.PATCH` (e.g. `3.11.7`):
 
-  * Exit cleanly without alerting or send an initial baseline setup notice.
+  * **MAJOR release** — the MAJOR (first) component changed (e.g. `4.2.1` → `5.0.0`). Report.
+  * **MINOR release** — the MAJOR is unchanged but the MINOR (second) component changed (e.g. `3.10.8` → `3.11.0`). Report.
+  * **PATCH release** — only the PATCH (third) component changed (e.g. `7.0.4` → `7.0.5`). **MUST NOT be reported.**
+  * If `previous_version` is absent (a brand-new course with a single version), treat it as a reportable release.
 
-* If `state.json` exists:
+* **Patch releases MUST be excluded.** This is the single most important rule of
+  the detection step. The prompt must state this explicitly, give worked
+  examples (including a patch case such as `7.0.4` → `7.0.5` that must be
+  omitted), and instruct the model to re-verify before answering.
 
-  * Compare current release entries against stored entries.
+* The model returns JSON only. The response is an object containing, for each
+  reported (major or minor) release:
 
-  * Identify **New Courses**, **Major Version Updates**, and **Minor Version Updates**.
+  * course name
+  * current version number
+  * previous version number
+  * release date
+  * latest revision note
 
-### 4.3 Bedrock Summarization Engine
+* If the resulting JSON is empty, indicating no major / minor releases in the time period,  see the instructions below if no changes are detected. 
 
-* If changes are detected, construct a prompt containing only the modified/new release items.
+### 4.3 Email Formatting (Model Call #2)
 
-* Invoke Bedrock API via `boto3.client('bedrock-runtime')`.
+* When major/minor releases are detected, the JSON result is
+  passed to Amazon Bedrock, which generates the plain-text email body.
 
-* Request output format:
+* The prompt instructs the model to produce the following structure exactly:
 
-  * **Executive Summary**: Brief 2-3 sentence overview.
+  ```
+  ━━━ AWS Training & Certification — Course Releases (date) ━━━
 
-  * **Major Changes**: Bullet points with course names and key updates.
+  The following courses had a major or minor release in the last X days:
 
-  * **Minor Changes**: Summary list of version updates.
+  ▶ RECENT RELEASES
+  ─────────────
+    Course Name                         v4.2.1 → v5.0.0
+    Released: YYYY-MM-DD
+    <latest revision note>
+
+    Course Name                         v3.10.0 → v3.11.7
+    Released: YYYY-MM-DD
+    <latest revision note>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Sent by the AWS Course Release Monitoring Agent.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ```
+
 
 ### 4.4 Notification Dispatch
 
-* When changes are detected, publish a formatted Markdown email payload to `SNS_TOPIC_ARN`.
+* When major/minor releases are found, publish the formatted email to `SNS_TOPIC_ARN`.
 
   * Subject line format: `[AWS Course Updates] New Releases Detected - YYYY-MM-DD`
 
-* When no changes are detected, behaviour is controlled by `NOTIFY_CHANGES_ONLY`:
+* When no major/minor releases are found (either the recency window was empty or
+  the model reported only patch/no releases), behaviour is controlled by
+  `NOTIFY_CHANGES_ONLY`:
 
   * `"true"` (default): No notification is sent.
 
-  * `"false"`: A confirmation email is published with subject `[AWS Course Updates] No Changes Detected - YYYY-MM-DD`, confirming the pipeline ran successfully.
+  * `"false"`: A plain-text confirmation email is published with subject `[AWS Course Updates] No Changes Detected - YYYY-MM-DD`, confirming the pipeline ran successfully. Useful for smoke-testing the end-to-end flow and confirming that the agent is still working.
+
 
 ## 5. Testing Requirements (`pytest`)
 
 The codebase must include a robust `pytest` suite in a `/tests` directory.
 
-### Test Coverage Focus Area
+### Test Coverage Focus Areas
 
-1. **HTML Parser Unit Tests (`test_parser.py`):**
+1. **API Retrieval & Filtering Tests (`test_parser.py`):**
 
-   * Test parsing against mock HTML fixtures representing `releases.awstc.com`.
+   * Test against a mock JSON API fixture (`sample_api_response.json`).
 
-   * Verify correct handling of empty pages, missing fields, or changed DOM structures.
+   * Verify `language = "EN"` filtering.
 
-2. **Diff Engine Tests (`test_diff.py`):**
+   * Verify recency filtering: only entries whose latest release date is on or after the cutoff (`current UTC date − LOOKBACK_DAYS`) are kept; older entries are discarded; a release exactly on the cutoff is kept; an empty result when nothing falls in the window.
 
-   * Test comparing two catalog states:
+   * Verify version trimming: each retained course keeps at most its latest two versions (current + immediately previous), so the previous and current release can be compared.
 
-     * Identical states (returns zero changes).
+   * Verify the "filtered list" entries carry: name, current version, previous version (absent when the course has only one version), release date, and latest revision note.
 
-     * Added courses.
+   * Verify date normalisation and error handling (malformed/empty API response).
 
-     * Updated version numbers for existing courses.
+2. **Detection Parsing Tests (`test_diff.py`):**
 
-3. **Bedrock Payload Formatting Tests (`test_bedrock_formatter.py`):**
+   * The model's detection JSON (Model Call #1 output) is parsed/normalised into the canonical structure.
 
-   * Verify prompt construction matches expected input structure.
+   * Each reported release carries: name, current version, previous version, release date, and latest revision note.
 
-   * Mock Bedrock API responses using `unittest.mock` / `botocore.stub.Stubber`.
+   * Tolerant extraction (markdown fences / surrounding prose) and fail-safe to "no releases" on malformed or empty output.
 
-4. **S3 & SNS Integration Handler Tests (`test_lambda_handler.py`):**
+3. **Email Formatter Tests (`test_formatter.py`):**
 
-   * Mock `boto3` calls for S3 (`get_object`, `put_object`) and SNS (`publish`).
+   * `wrap_body` adds the header (title + date) and the "last X days" intro line, and the footer, around the Bedrock-generated body.
 
-   * Test complete Lambda handler execution path end-to-end with mocked external calls.
+   * The output contains no counts/totals line and no modality (ILT) labels.
+
+   * No-changes email format verified.
+
+4. **Bedrock Prompt Tests (`test_bedrock_formatter.py`):**
+
+   * **Detection prompt (Model Call #1):** verify it supplies the filtered list (including each course's current and previous version) and instructs the model to classify by comparing current vs. previous version and return major/minor releases only, excluding patch releases — stated explicitly with worked examples (e.g. `7.0.4 → 7.0.5` is patch-only and MUST be omitted). Verify a brand-new course (no previous version) is treated as reportable.
+
+   * **Formatting prompt (Model Call #2):** verify it instructs a single `▶ RECENT RELEASES` section, renders each release as a version transition (`vX → vY`), and omits counts, executive summary, and modality labels.
+
+   * Mock Bedrock API responses (Claude, Titan, Converse) using `unittest.mock`.
+
+5. **Live Detection Integration Test (`test_detection_integration.py`, opt-in):**
+
+   * Opt-in via `RUN_BEDROCK_INTEGRATION=1`; skipped by default (marker `integration`).
+
+   * Sends a filtered-list fixture (`recent_releases.json`) containing a major, a minor, and a patch release to the real model.
+
+   * Asserts the output is valid JSON, reports exactly the major and minor releases, excludes the patch release, and that each reported entry carries the required fields (name, current version, previous version, release date, latest revision note).
+
+6. **Lambda Handler Tests (`test_lambda_handler.py`):**
+
+   * Mock the catalog fetch, both Bedrock calls, and SNS (`publish`); no S3 (the agent is stateless).
+
+   * Empty filtered list → no Model Call #1; no notification when `NOTIFY_CHANGES_ONLY=true`; confirmation email when `NOTIFY_CHANGES_ONLY=false`.
+
+   * Model Call #1 returns no major/minor releases → no notification when `NOTIFY_CHANGES_ONLY=true`; confirmation email when `NOTIFY_CHANGES_ONLY=false`.
+
+   * Major/minor releases found → both model calls invoked; notification sent with correct subject and the Bedrock-generated body wrapped by header/footer.
 
 ## 6. Project Directory Structure
 
@@ -206,23 +273,28 @@ The codebase must include a robust `pytest` suite in a `/tests` directory.
 ├── samconfig.toml           # SAM CLI deployment configurations
 ├── src/
 │   ├── __init__.py
-│   ├── handler.py           # Lambda entrypoint
-│   ├── scraper.py           # HTML fetching & parsing module
-│   ├── diff.py              # State comparison logic
-│   ├── bedrock_service.py   # Amazon Bedrock client wrapper
+│   ├── handler.py           # Lambda entrypoint (stateless)
+│   ├── scraper.py           # JSON API fetch + language/recency/version-trim filtering
+│   ├── diff.py              # Parses/normalises Model Call #1 detection JSON
+│   ├── bedrock_service.py   # Amazon Bedrock client wrapper (both model calls)
+│   ├── formatter.py         # Plain-text header/footer and no-changes email
 │   └── notifier.py          # SNS notification dispatcher
 ├── tests/
 │   ├── __init__.py
 │   ├── fixtures/
-│   │   ├── sample_releases.html
-│   │   ├── state_v1.json
-│   │   └── state_v2.json
+│   │   ├── sample_api_response.json
+│   │   └── recent_releases.json   # major + minor + patch sample for detection
 │   ├── test_parser.py
 │   ├── test_diff.py
+│   ├── test_formatter.py
 │   ├── test_bedrock_formatter.py
+│   ├── test_detection_integration.py
 │   └── test_lambda_handler.py
-├── requirements.txt         # Lambda dependencies (beautifulsoup4, requests, etc.)
-├── requirements-dev.txt     # Test dependencies (pytest, boto3-stubs, pytest-mock)
+├── docs/
+│   └── email_mockup.txt     # Sample formatted email output
+├── pytest.ini               # Registers the `integration` marker; excludes it by default
+├── requirements.txt         # Lambda dependencies (requests, etc.)
+├── requirements-dev.txt     # Test dependencies (pytest, pytest-mock)
 └── README.md                # SAM build, local testing, and deployment guide
 ```
 
@@ -230,10 +302,10 @@ The codebase must include a robust `pytest` suite in a `/tests` directory.
 
 1. `sam build` compiles dependencies and Lambda code cleanly.
 
-2. `sam deploy --guided` deploys the stack to AWS without errors.
+2. `sam deploy` deploys the stack to AWS without errors.
 
 3. EventBridge schedule triggers the Lambda function automatically.
 
 4. `pytest` test suite executes with 100% pass rate.
 
-5. SNS subscription email is confirmed, and alert notifications are dispatched upon course updates.
+5. SNS subscription email is confirmed, and alert notifications are dispatched when major/minor releases occur within the `LOOKBACK_DAYS` window (patch releases never trigger a notification).

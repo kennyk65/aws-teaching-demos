@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Developing on AWS",
+    "version": "5.0.0",
+    "previous_version": "4.2.1",
+    "released": "2026-09-25",
+    "notes": "Full course rewrite aligned to the latest AWS SDKs and developer best practices."
+  },
+  {
+    "name": "Advanced Architecting on AWS",
+    "version": "3.11.0",
+    "previous_version": "3.10.8",
+    "released": "2026-08-06",
+    "notes": "New module on multi-Region failover patterns and updated Lab 4."
+  },
+  {
+    "name": "Architecting on AWS",
+    "version": "7.0.5",
+    "previous_version": "7.0.4",
+    "released": "2026-09-10",
+    "notes": "Patch update: fixed broken lab link in Module 3."
+  }
+]
