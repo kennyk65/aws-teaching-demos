@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AgentCore Hello World stack - Execution Role + ECR Repo (Memory optional, off by default)
+
+Parameters:
+  AgentName:
+    Type: String
+    Default: weather_agent
+    Description: Agent name used for resources
+
+  MemoryName:
+    Type: String
+    Default: weather_memory
+    Description: Name for the Bedrock AgentCore Memory resource.  Only used when CreateMemory is true.  Must align with the name used in the agent code.
+
+  CreateMemory:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether to create an AgentCore Memory resource.  Defaults to false; this basic demo does not use Memory.
+
+Conditions:
+  ShouldCreateMemory: !Equals [!Ref CreateMemory, "true"]
+
+Resources:
+  AgentCoreExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub BedrockAgentCoreExec_${AgentName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: BedrockAgentCoreExecutionPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
+              - Effect: Allow
+                Action:
+                - logs:Describe*
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/${AgentName}-*
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:aws:bedrock:*::foundation-model/*
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+              # Memory permissions are retained so the execution role is ready for a
+              # future Memory demo.  They grant nothing while no Memory resource exists.
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:*Memory
+                  - bedrock-agentcore:*Memories
+                  - bedrock-agentcore:*Events
+                  - bedrock-agentcore:*Event
+                Resource: "*"
+
+  AgentCoreECRRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub bedrock_agentcore_${AgentName}
+      ImageScanningConfiguration:
+        scanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Expire untagged images after 14 days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  # Optional: only created when CreateMemory == "true".  A later, dedicated Memory
+  # demo can enable this by deploying with CreateMemory=true.
+  AgentCoreMemory:
+    Type: AWS::BedrockAgentCore::Memory
+    Condition: ShouldCreateMemory
+    Properties:
+      Name: !Ref MemoryName
+      Description: Weather agent conversation memory
+      EventExpiryDuration: 7
+
+Outputs:
+  RoleArn:
+    Description: Execution role ARN for AgentCore runtime
+    Value: !GetAtt AgentCoreExecutionRole.Arn
+  RoleName:
+    Description: Execution role name
+    Value: !Ref AgentCoreExecutionRole
+  RepositoryUri:
+    Description: URI of the ECR repository
+    Value: !GetAtt AgentCoreECRRepo.RepositoryUri
+  MemoryId:
+    Condition: ShouldCreateMemory
+    Description: ID of the Bedrock AgentCore Memory resource (only present when CreateMemory is true)
+    Value: !GetAtt AgentCoreMemory.MemoryId
