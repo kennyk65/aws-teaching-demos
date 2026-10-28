@@ -21,8 +21,8 @@ Resources:
     Properties: 
       FunctionName: MyLambda
       Description: Example Lambda from CloudFormation
-      MemorySize: 256
-      Timeout: 4
+      MemorySize: 512
+      Timeout: 8
       Role: !GetAtt LambdaFunctionRole.Arn
       Runtime: !Ref Runtime
       Handler: index.justatest

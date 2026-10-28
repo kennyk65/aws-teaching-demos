@@ -86,6 +86,10 @@ class TestBuildFormatPrompt:
     def test_includes_section_header(self) -> None:
         assert "▶ RECENT RELEASES" in build_format_prompt([_MAJOR])
 
+    def test_instructs_title_bullet_marker(self) -> None:
+        prompt = build_format_prompt([_MAJOR])
+        assert "▸ " in prompt
+
     def test_instructs_version_transition(self) -> None:
         prompt = build_format_prompt([_MAJOR])
         assert "previous_version" in prompt and "→" in prompt

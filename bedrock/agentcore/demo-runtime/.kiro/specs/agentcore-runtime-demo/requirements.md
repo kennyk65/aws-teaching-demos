@@ -2,13 +2,11 @@
 
 ## Introduction
 
-This feature delivers a minimal classroom demo of **Amazon Bedrock AgentCore Runtime**. It is a focused, stripped-down version of the existing [`bedrock-agentcore-demo-2`](https://github.com/kennyk65/aws-teaching-demos/tree/master/bedrock-agentcore-demo-2) demo.
+This feature delivers a minimal classroom demo of **Amazon Bedrock AgentCore Runtime**. 
 
-The existing demo bundles AgentCore Memory (short-term conversation memory, session isolation, lifecycle hooks). That adds setup time and conceptual overhead that distracts from the single idea this demo wants to teach first: how to build, deploy, and invoke a basic agent on AgentCore Runtime.
+The Memory infrastructure is made **conditional in the CloudFormation template and defaults to not being created**, so the demo stays deployable and cheap, while leaving a clean seam for a later, dedicated Memory demo. Subsequent demos will layer on Identity, Gateway, Memory, and Observability.
 
-The new demo keeps everything that makes the original work as a weather agent, but removes Memory from the default experience. Memory infrastructure is made **conditional in the CloudFormation template and defaults to not being created**, so the demo stays deployable and cheap, while leaving a clean seam for a later, dedicated Memory demo. Subsequent demos will layer on Identity, Gateway, Memory, and Observability.
-
-The agent is built with the Strands framework, backed by an Amazon Bedrock model, and answers simple weather questions.
+The agent is built with the Strands framework, backed by an Amazon Bedrock model, and answers simple weather questions. A second, parallel agent answers weather *forecast* questions, built the same way, to show how additional single-purpose agents are added to the demo.
 
 ## Requirements
 
@@ -66,6 +64,18 @@ The agent is built with the Strands framework, backed by an Amazon Bedrock model
 1. WHEN the test suite (`test_weather_agent.py`) is reviewed THEN it SHALL NOT include the memory-isolation test.
 2. WHEN `pytest ./test_weather_agent.py` is run THEN it SHALL exercise the weather/freezing-point behavior of the agent.
 3. WHEN the single-invocation weather test runs THEN it SHALL assert the agent returns a non-error response that addresses the requested location.
+
+### Requirement 7: Weather forecast agent
+
+**User Story:** As an instructor, I want a second agent focused on weather forecasts, so that I can show how additional single-purpose agents are modeled after the basic weather agent.
+
+#### Acceptance Criteria
+
+1. WHEN the forecast agent source (`forecast_agent.py`) is reviewed THEN it SHALL be modeled after `weather_agent.py`, using the Strands framework, the same Amazon Bedrock model, and the same memory-free, `callback_handler=None` agent construction.
+2. WHEN the forecast agent is defined THEN it SHALL use a system prompt similar to the weather agent but focused on providing a weather forecast for a given location.
+3. WHEN a user asks for the forecast in a location THEN the agent SHALL call a forecast tool that returns a hard-coded multi-day forecast and SHALL present temperatures to the user in Fahrenheit.
+4. WHEN the forecast agent handles a request THEN its entrypoint SHALL accept `prompt` and `actor_id` and return a `result` along with `session_id` and `actor_id`, matching the weather agent's contract, without relying on memory.
+5. WHEN a matching test (`test_forecast_agent.py`) is run THEN it SHALL be modeled after `test_weather_agent.py`, contain no memory-isolation test, and assert the agent returns a non-error forecast response that addresses the requested location.
 
 ### Requirement 6: Documentation without memory
 

@@ -174,13 +174,13 @@ Produce ONLY the body section as PLAIN TEXT, following these rules EXACTLY:
    ▶ RECENT RELEASES
    {rule_light}
 2. For each release, render:
-     <two-space indent><Course Name><spaces><version label>
-     <two-space indent>Released: <YYYY-MM-DD>
+     ▶ <two-space indent><Course Name><spaces><version label>
+     <four-space indent>Released: <YYYY-MM-DD>
      <blank line>
      <two-space indent><release notes, verbatim, wrapped to ~{_WIDTH} chars>
 3. The version label shows the transition: "v<previous_version> → v<version>".
    If previous_version is empty, show just "v<version>".
-4. Separate multiple releases with a line: "  ·  ·  ·"
+4. Separate multiple releases with three blank lines, then a short line of dashes: "  ------   "
 5. Do NOT include any counts or totals, an executive summary, a header banner,
    a footer, or a modality label (e.g. "ILT").
 6. Reproduce the release notes verbatim — do not summarise or rewrite them.
