@@ -1,6 +1,6 @@
-# Bedrock AgentCore Runtime - Basic Forecast Agent
+# Bedrock AgentCore Runtime - Basic Weather Agent
 
-This demo establishes a very simple Agent built with the Strands framework, utilizing an Amazon Bedrock model. The main purpose is to highlight **Amazon Bedrock AgentCore Runtime**. It shows the steps to create and deploy a basic agent which calls a model and answers simple questions about the weather forecast for a given location.
+This demo establishes a very simple Agent built with the Strands framework, utilizing an Amazon Bedrock model. The main purpose is to highlight **Amazon Bedrock AgentCore Runtime**. It shows the steps to create and deploy a basic agent which calls a model and answers simple questions about the weather.
 
 This is intentionally minimal. Later demos will layer on additional AgentCore capabilities such as Identity, Gateway, Memory, and Observability. This one focuses only on building, deploying, and invoking an agent on AgentCore Runtime.
 
@@ -43,16 +43,16 @@ This establishes the Role, ECR repository, and environment variables needed late
 If you want to test the agent locally (no real reason to, other than to prove that it works), run the pytest command:
 
 ```bash
-pytest ./test_forecast_agent.py
+pytest ./test_weather_agent.py
 ```
 
 If you want to see `print()` output while running pytest:
 
 ```bash
-pytest -s ./test_forecast_agent.py
+pytest -s ./test_weather_agent.py
 ```
 
-...or in VSCode, right-click the `test_forecast_agent.py` file and say "Run Test".
+...or in VSCode, right-click the `test_weather_agent.py` file and say "Run Test".
 
 ### AgentCore Runtime Deployment
 
@@ -62,7 +62,7 @@ Assuming you are still in the same folder as before, run these commands one at a
 # This establishes a new agent in AgentCore.
 # The name and source file are given, as well as the execution role and
 # ECR repository to use. However, it does not actually build / start the agent.
-agentcore configure -n forecast_agent -e forecast_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
 ```
 
 - When asked about `Configure OAuth authorizer instead? (yes/no)`, say `no`.
@@ -82,7 +82,7 @@ agentcore launch --auto-update-on-conflict
 Then invoke the agent:
 
 ```bash
-agentcore invoke '{"actor_id":"ken","prompt":"What is the weather forecast for Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 ```
 
 Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
@@ -93,7 +93,7 @@ Find the Endpoints list.
 Assuming you are still in the same folder as before, run these commands:
 
 ```bash
-agentcore destroy -a forecast_agent --force
+agentcore destroy -a weather_agent --force
 
 aws cloudformation delete-stack --stack-name agentcore-weather-demo
 ```
