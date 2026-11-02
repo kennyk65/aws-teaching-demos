@@ -90,6 +90,15 @@ Resources:
                 Resource:
                   - !Sub arn:aws:bedrock:*::foundation-model/*
                   - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+              # Lets the weather agent look up and invoke the forecast agent runtime.
+              - Effect: Allow
+                Action: bedrock-agentcore:ListAgentRuntimes
+                Resource: "*"
+              - Effect: Allow
+                Action: bedrock-agentcore:InvokeAgentRuntime
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*/runtime-endpoint/*
               # Memory permissions are retained so the execution role is ready for a
               # future Memory demo.  They grant nothing while no Memory resource exists.
               - Effect: Allow

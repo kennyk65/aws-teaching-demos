@@ -76,13 +76,13 @@ Then run:
 # - pushes an image to our ECR repository,
 # - launches the agent,
 # - creates an endpoint:
-agentcore launch --auto-update-on-conflict
+agentcore launch -a weather_agent --auto-update-on-conflict
 ```
 
 Then invoke the agent:
 
 ```bash
-agentcore invoke '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke -a weather_agent '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA right now and for the next few days?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 ```
 
 Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
