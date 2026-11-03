@@ -82,17 +82,47 @@ agentcore launch -a forecast_agent --auto-update-on-conflict
 Then invoke the agent:
 
 ```bash
-agentcore invoke '{"actor_id":"ken","prompt":"What is the weather forecast for Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke -a forecast_agent '{"actor_id":"ken","prompt":"What is the weather forecast for Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
 ```
 
 Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
 Find the Endpoints list.
+
+# AgentCore Identity Demo
+
+If you'd like to demonstrate one agent calling another, show the `weather_agent.py`.  Show the tool that gets the weather forecast by calling the other agent.
+
+Configure this agent:
+
+```bash
+agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+```
+
+- When asked about `Configure OAuth authorizer instead? (yes/no)`, say `no`.
+- If asked about `Configure request header allowlist? (yes/no) [no]`, just press enter.
+
+Then run:
+
+```bash
+agentcore launch -a weather_agent --auto-update-on-conflict
+```
+
+Then invoke the agent:
+
+```bash
+agentcore invoke -a weather_agent '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA right now and for the next few days?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+```
+
+Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
+
+
 
 ## Cleanup
 
 Assuming you are still in the same folder as before, run these commands:
 
 ```bash
+agentcore destroy -a weather_agent --force
 agentcore destroy -a forecast_agent --force
 
 aws cloudformation delete-stack --stack-name agentcore-weather-demo
