@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: AgentCore Hello World stack - Execution Role + ECR Repo (Memory optional, off by default)
+Transform: AWS::Serverless-2016-10-31
+Description: AgentCore weather demo - Runtime execution role, ECR repo, and optional Memory and Gateway
 
 Parameters:
   AgentName:
@@ -20,8 +21,17 @@ Parameters:
       - "false"
     Description: Whether to create an AgentCore Memory resource.  Defaults to false; this basic demo does not use Memory.
 
+  CreateGateway:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether to create the weather API, Lambda functions, and AgentCore Gateway.
+
 Conditions:
   ShouldCreateMemory: !Equals [!Ref CreateMemory, "true"]
+  ShouldCreateGateway: !Equals [!Ref CreateGateway, "true"]
 
 Resources:
   AgentCoreExecutionRole:
@@ -109,12 +119,228 @@ Resources:
                   - bedrock-agentcore:*Event
                 Resource: "*"
 
+  # Optional: API and AgentCore Gateway resources are created together when
+  # CreateGateway is true.
+  WeatherApi:
+    Type: AWS::Serverless::Api
+    Condition: ShouldCreateGateway
+    Properties:
+      Name: !Sub ${AgentName}-weather-api
+      Description: Weather and forecast tools for the AgentCore Gateway
+      StageName: prod
+      OpenApiVersion: 3.0.1
+      # Explicit integrations preserve response metadata for AgentCore discovery;
+      # the function events below still generate the Lambda permissions.
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: !Sub ${AgentName}-weather-api
+          version: "1.0"
+        paths:
+          /weather:
+            get:
+              parameters:
+                - name: location
+                  in: query
+                  required: true
+                  schema:
+                    type: string
+              responses:
+                "200":
+                  description: Current weather result
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WeatherFunction.Arn}/invocations
+          /forecast:
+            get:
+              parameters:
+                - name: location
+                  in: query
+                  required: true
+                  schema:
+                    type: string
+              responses:
+                "200":
+                  description: Multi-day forecast result
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ForecastFunction.Arn}/invocations
+          /celcius_to_farenheit:
+            get:
+              parameters:
+                - name: celcius
+                  in: query
+                  required: true
+                  schema:
+                    type: number
+              responses:
+                "200":
+                  description: Converted temperature result
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CelciusToFarenheitFunction.Arn}/invocations
+
+  WeatherFunction:
+    Type: AWS::Serverless::Function
+    Condition: ShouldCreateGateway
+    Properties:
+      FunctionName: !Sub ${AgentName}-weather-tool
+      Runtime: python3.12
+      Handler: index.handler
+      Events:
+        Weather:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WeatherApi
+            Path: /weather
+            Method: GET
+      InlineCode: |
+        import json
+
+        def handler(event, context):
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"result": "Sunny and -5 degrees Celsius"}),
+            }
+
+  ForecastFunction:
+    Type: AWS::Serverless::Function
+    Condition: ShouldCreateGateway
+    Properties:
+      FunctionName: !Sub ${AgentName}-forecast-tool
+      Runtime: python3.12
+      Handler: index.handler
+      Events:
+        Forecast:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WeatherApi
+            Path: /forecast
+            Method: GET
+      InlineCode: |
+        import json
+
+        def handler(event, context):
+            result = (
+                "5-day forecast: "
+                "Day 1: Sunny, high -2 degrees Celsius, low -8 degrees Celsius. "
+                "Day 2: Partly cloudy, high 0 degrees Celsius, low -6 degrees Celsius. "
+                "Day 3: Snow, high -3 degrees Celsius, low -9 degrees Celsius. "
+                "Day 4: Cloudy, high 1 degrees Celsius, low -4 degrees Celsius. "
+                "Day 5: Sunny, high 3 degrees Celsius, low -2 degrees Celsius."
+            )
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"result": result}),
+            }
+
+  CelciusToFarenheitFunction:
+    Type: AWS::Serverless::Function
+    Condition: ShouldCreateGateway
+    Properties:
+      FunctionName: !Sub ${AgentName}-celcius-to-farenheit-tool
+      Runtime: python3.12
+      Handler: index.handler
+      Events:
+        CelciusToFarenheit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WeatherApi
+            Path: /celcius_to_farenheit
+            Method: GET
+      InlineCode: |
+        import json
+
+        def handler(event, context):
+            params = event.get("queryStringParameters") or {}
+            result = (float(params["celcius"]) * 9 / 5) + 32
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"result": result}),
+            }
+
+  AgentCoreGatewayExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: ShouldCreateGateway
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: WeatherApiAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: execute-api:Invoke
+                Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WeatherApi}/prod/GET/*
+              - Effect: Allow
+                Action: apigateway:GET
+                Resource: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis/${WeatherApi}/stages/prod/exports/*
+
+  AgentCoreGateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Condition: ShouldCreateGateway
+    Properties:
+      Name: !Sub ${AWS::StackName}-gateway
+      Description: Weather tools exposed through the AgentCore Gateway
+      ProtocolType: MCP
+      AuthorizerType: NONE
+      RoleArn: !GetAtt AgentCoreGatewayExecutionRole.Arn
+
+  AgentCoreGatewayTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Condition: ShouldCreateGateway
+    DependsOn: WeatherApiprodStage
+    Properties:
+      GatewayIdentifier: !Ref AgentCoreGateway
+      Name: !Sub ${AWS::StackName}-weather-api
+      Description: API Gateway routes for current weather, forecast, and temperature conversion
+      TargetConfiguration:
+        Mcp:
+          ApiGateway:
+            RestApiId: !Ref WeatherApi
+            Stage: prod
+            ApiGatewayToolConfiguration:
+              ToolFilters:  # The path "/*" is assuming all routes should be included as tools.
+                - FilterPath: /*
+                  Methods:
+                    - GET
+              ToolOverrides:  # NOT REQUIRED but the description is helpful for the model to understand the tools purpose.
+                - Path: /weather
+                  Method: GET
+                  Name: weather
+                  Description: Get current weather information for a location.
+                - Path: /forecast
+                  Method: GET
+                  Name: forecast
+                  Description: Get a multi-day weather forecast for a location.
+                - Path: /celcius_to_farenheit
+                  Method: GET
+                  Name: celcius_to_farenheit
+                  Description: Convert a Celsius temperature into Fahrenheit.
+
   AgentCoreECRRepo:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub bedrock_agentcore_${AgentName}
       ImageScanningConfiguration:
-        scanOnPush: true
+          ScanOnPush: true
       LifecyclePolicy:
         LifecyclePolicyText: |
           {
@@ -157,3 +383,15 @@ Outputs:
     Condition: ShouldCreateMemory
     Description: ID of the Bedrock AgentCore Memory resource (only present when CreateMemory is true)
     Value: !GetAtt AgentCoreMemory.MemoryId
+  GatewayId:
+    Condition: ShouldCreateGateway
+    Description: ID of the AgentCore Gateway (only present when CreateGateway is true)
+    Value: !Ref AgentCoreGateway
+  WeatherApiId:
+    Condition: ShouldCreateGateway
+    Description: API Gateway REST API ID (only present when CreateGateway is true)
+    Value: !Ref WeatherApi
+  WeatherApiUrl:
+    Condition: ShouldCreateGateway
+    Description: Invoke URL for the weather API
+    Value: !Sub https://${WeatherApi}.execute-api.${AWS::Region}.amazonaws.com/prod
