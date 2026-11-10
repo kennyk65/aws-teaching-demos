@@ -92,20 +92,15 @@ Find the Endpoints list.
 
 If you'd like to demonstrate one agent calling another, show the `weather_agent.py`.  Show the tool that gets the weather forecast by calling the other agent.
 
-Configure this agent:
+Make a new weather agent:
 
 ```bash
 agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore launch -a weather_agent --auto-update-on-conflict
 ```
 
 - When asked about `Configure OAuth authorizer instead? (yes/no)`, say `no`.
 - If asked about `Configure request header allowlist? (yes/no) [no]`, just press enter.
-
-Then run:
-
-```bash
-agentcore launch -a weather_agent --auto-update-on-conflict
-```
 
 Then invoke the agent:
 
