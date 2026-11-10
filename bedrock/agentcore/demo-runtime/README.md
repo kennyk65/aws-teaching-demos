@@ -135,6 +135,30 @@ agentcore invoke -a weather_agent_gateway '{"actor_id":"ken","prompt":"What is t
     * Show the gateway at  https://us-west-2.console.aws.amazon.com/bedrock-agentcore/toolsAndGateways 
     * Observability shows tool use that uses the gateway: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/observability?region=us-west-2 
 
+# AgentCore Memory Demo
+
+This version uses the same Gateway tools and adds AgentCore short-term Memory.
+
+```bash
+aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM --parameter-overrides CreateGateway=true CreateMemory=true
+
+agentcore configure -n weather_agent_memory -e weather_agent_memory.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore launch -a weather_agent_memory --auto-update-on-conflict
+```
+
+Invoke the same actor and session twice. The second question relies on the
+temperature returned in the first answer:
+
+```bash
+agentcore invoke -a weather_agent_memory '{"actor_id":"ken","prompt":"What is the current temperature in Seattle, WA?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+agentcore invoke -a weather_agent_memory '{"actor_id":"ken","prompt":"Would water freeze at that temperature?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+```
+
+Demonstrate session isolation; if Bob asks about freezing water the result is confusion:
+
+```
+agentcore invoke -a weather_agent_memory '{"actor_id":"bob","prompt":"Would water freeze there?"}' --session-id bob-session-001-abcdefghijklmnopqrstuvwxyz123
+```
 
 
 ## Cleanup
@@ -144,6 +168,8 @@ Assuming you are still in the same folder as before, run these commands:
 ```bash
 agentcore destroy -a weather_agent --force
 agentcore destroy -a forecast_agent --force
+agentcore destroy -a weather_agent_gateway --force
+agentcore destroy -a weather_agent_memory --force
 
 aws cloudformation delete-stack --stack-name agentcore-weather-demo
 ```

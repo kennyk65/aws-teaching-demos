@@ -37,4 +37,4 @@ COPY . .
 
 # Use the full module path
 
-CMD ["opentelemetry-instrument", "python", "-m", "weather_agent_gateway"]
+CMD ["opentelemetry-instrument", "python", "-m", "weather_agent_memory"]

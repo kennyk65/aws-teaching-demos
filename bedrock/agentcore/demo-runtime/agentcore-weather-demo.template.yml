@@ -11,7 +11,7 @@ Parameters:
   MemoryName:
     Type: String
     Default: weather_memory
-    Description: Name for the Bedrock AgentCore Memory resource.  Only used when CreateMemory is true.  Must align with the name used in the agent code.
+    Description: Name for the Bedrock AgentCore Memory resource. Only used when CreateMemory is true.
 
   CreateMemory:
     Type: String
@@ -109,12 +109,12 @@ Resources:
                 Resource:
                   - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*
                   - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*/runtime-endpoint/*
-              # Lets the gateway-backed agent read its gateway URL.
+              # Lets the gateway and memory demos discover their resources.
               - Effect: Allow
                 Action: ssm:GetParameter
-                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/agentcore/${AgentName}/gateway-url
-              # Memory permissions are retained so the execution role is ready for a
-              # future Memory demo.  They grant nothing while no Memory resource exists.
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/agentcore/${AgentName}/*
+              # Memory permissions grant nothing while no Memory resource exists.
               - Effect: Allow
                 Action:
                   - bedrock-agentcore:*Memory
@@ -372,8 +372,7 @@ Resources:
             ]
           }
 
-  # Optional: only created when CreateMemory == "true".  A later, dedicated Memory
-  # demo can enable this by deploying with CreateMemory=true.
+  # Optional: only created when CreateMemory == "true".
   AgentCoreMemory:
     Type: AWS::BedrockAgentCore::Memory
     Condition: ShouldCreateMemory
@@ -381,6 +380,15 @@ Resources:
       Name: !Ref MemoryName
       Description: Weather agent conversation memory
       EventExpiryDuration: 7
+
+  MemoryIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: ShouldCreateMemory
+    Properties:
+      Name: !Sub /agentcore/${AgentName}/memory-id
+      Type: String
+      Value: !GetAtt AgentCoreMemory.MemoryId
+      Description: AgentCore Memory ID for the weather agent
 
 Outputs:
   RoleArn:
