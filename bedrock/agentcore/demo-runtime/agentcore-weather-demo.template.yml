@@ -109,6 +109,10 @@ Resources:
                 Resource:
                   - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*
                   - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*/runtime-endpoint/*
+              # Lets the gateway-backed agent read its gateway URL.
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/agentcore/${AgentName}/gateway-url
               # Memory permissions are retained so the execution role is ready for a
               # future Memory demo.  They grant nothing while no Memory resource exists.
               - Effect: Allow
@@ -302,6 +306,15 @@ Resources:
       ProtocolType: MCP
       AuthorizerType: NONE
       RoleArn: !GetAtt AgentCoreGatewayExecutionRole.Arn
+
+  GatewayUrlParameter:
+    Type: AWS::SSM::Parameter
+    Condition: ShouldCreateGateway
+    Properties:
+      Name: !Sub /agentcore/${AgentName}/gateway-url
+      Type: String
+      Value: !GetAtt AgentCoreGateway.GatewayUrl
+      Description: AgentCore Gateway MCP endpoint for the weather agent
 
   AgentCoreGatewayTarget:
     Type: AWS::BedrockAgentCore::GatewayTarget

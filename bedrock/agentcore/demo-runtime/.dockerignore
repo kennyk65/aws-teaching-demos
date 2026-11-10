@@ -59,6 +59,7 @@ docs/
 
 # Project specific
 tests/
+test/
 
 # Bedrock AgentCore specific - keep config but exclude runtime files
 .bedrock_agentcore.yaml

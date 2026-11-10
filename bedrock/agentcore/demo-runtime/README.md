@@ -43,13 +43,13 @@ This establishes the Role, ECR repository, and environment variables needed late
 If you want to test the agent locally (no real reason to, other than to prove that it works), run the pytest command:
 
 ```bash
-pytest ./test_forecast_agent.py
+pytest ./test/test_forecast_agent.py
 ```
 
 If you want to see `print()` output while running pytest:
 
 ```bash
-pytest -s ./test_forecast_agent.py
+pytest -s ./test/test_forecast_agent.py
 ```
 
 ...or in VSCode, right-click the `test_forecast_agent.py` file and say "Run Test".
@@ -109,6 +109,31 @@ agentcore invoke -a weather_agent '{"actor_id":"ken","prompt":"What is the weath
 ```
 
 Open the management console to see the agent running: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/agents (assuming you are running in us-west-2).
+
+# AgentCore Gateway Demo
+
+If you'd like to demo the AgentCore Gateway, we'll just need to create an API Gateway with some Lambdas to use as targets.  Update the stack with the CreateGateway=true tag.
+
+```
+aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM --parameter-overrides CreateGateway=true
+
+agentcore configure -n weather_agent_gateway -e weather_agent_gateway.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore launch -a weather_agent_gateway --auto-update-on-conflict
+```
+
+- When asked about `Configure OAuth authorizer instead? (yes/no)`, say `no`.
+- If asked about `Configure request header allowlist? (yes/no) [no]`, just press enter.
+
+Then invoke the agent:
+
+```bash
+agentcore invoke -a weather_agent_gateway '{"actor_id":"ken","prompt":"What is the weather in Seattle, WA right now and for the next few days?"}' --session-id ken-session-001-abcdefghijklmnopqrstuvwxyz123
+```
+
+* Things to demo:
+    * Show the 'defining tools' section of the code.
+    * Show the gateway at  https://us-west-2.console.aws.amazon.com/bedrock-agentcore/toolsAndGateways 
+    * Observability shows tool use that uses the gateway: https://us-west-2.console.aws.amazon.com/bedrock-agentcore/observability?region=us-west-2 
 
 
 
