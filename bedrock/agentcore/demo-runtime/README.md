@@ -13,6 +13,7 @@ You will need:
 - The agentcore CLI, installed by running `pip install amazon-bedrock-agentcore-cli`.
 - An IDE like VSCode works best, but is not required.
 - Ability to call the `us.anthropic.claude-sonnet-4-6` model.
+- AWS permissions to create and delete ECR repositories and manage their images.
 
 ## Setup
 
@@ -21,19 +22,21 @@ You will need:
 
 Run the following from this folder to set everything up.
 
+
 (Mac/Linux):
 
 ```bash
 aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM
 
 role_arn=$(aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs[?OutputKey=='RoleArn'].OutputValue | [0]" --output text)
-repo_uri=$(aws cloudformation describe-stacks --stack-name agentcore-weather-demo --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue | [0]" --output text)
 
 echo "The role is $role_arn"
-echo "The ECR Repository URI is $repo_uri"
 ```
 
-This establishes the Role, ECR repository, and environment variables needed later.
+This establishes the execution role and environment variable needed later.
+Each agent's ECR repository is created or reused by the CLI when the agent is
+launched. These repositories do not inherit the scan-on-push setting or
+untagged-image lifecycle policy from the old CloudFormation-managed repository.
 
 
 ## Demo
@@ -59,10 +62,9 @@ pytest -s ./test/test_forecast_agent.py
 Assuming you are still in the same folder as before, run these commands one at a time. See the comments for explanation on what each is doing:
 
 ```bash
-# This establishes a new agent in AgentCore.
-# The name and source file are given, as well as the execution role and
-# ECR repository to use. However, it does not actually build / start the agent.
-agentcore configure -n forecast_agent -e forecast_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+# Configure the agent's name, source file, execution role, and automatic ECR
+# repository creation. This does not actually build or start the agent.
+agentcore configure -n forecast_agent -e forecast_agent.py --execution-role $role_arn --ecr auto --requirements-file requirements.txt 
 ```
 
 - When asked about `Configure OAuth authorizer instead? (yes/no)`, say `no`.
@@ -73,7 +75,7 @@ Then run:
 ```bash
 # This simple command:
 # - builds a Docker container (using CodeBuild),
-# - pushes an image to our ECR repository,
+# - creates or reuses the agent's ECR repository and pushes an image to it,
 # - launches the agent,
 # - creates an endpoint:
 agentcore launch -a forecast_agent --auto-update-on-conflict
@@ -95,7 +97,7 @@ If you'd like to demonstrate one agent calling another, show the `weather_agent.
 Make a new weather agent:
 
 ```bash
-agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore configure -n weather_agent -e weather_agent.py --execution-role $role_arn --ecr auto --requirements-file requirements.txt
 agentcore launch -a weather_agent --auto-update-on-conflict
 ```
 
@@ -117,7 +119,7 @@ If you'd like to demo the AgentCore Gateway, we'll just need to create an API Ga
 ```
 aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM --parameter-overrides CreateGateway=true
 
-agentcore configure -n weather_agent_gateway -e weather_agent_gateway.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore configure -n weather_agent_gateway -e weather_agent_gateway.py --execution-role $role_arn --ecr auto --requirements-file requirements.txt
 agentcore launch -a weather_agent_gateway --auto-update-on-conflict
 ```
 
@@ -142,7 +144,7 @@ This version uses the same Gateway tools and adds AgentCore short-term Memory.
 ```bash
 aws cloudformation deploy --stack-name agentcore-weather-demo --template-file agentcore-weather-demo.template.yml --capabilities CAPABILITY_NAMED_IAM --parameter-overrides CreateGateway=true CreateMemory=true
 
-agentcore configure -n weather_agent_memory -e weather_agent_memory.py --execution-role $role_arn --ecr $repo_uri --requirements-file requirements.txt
+agentcore configure -n weather_agent_memory -e weather_agent_memory.py --execution-role $role_arn --ecr auto --requirements-file requirements.txt
 agentcore launch -a weather_agent_memory --auto-update-on-conflict
 ```
 
@@ -163,13 +165,16 @@ agentcore invoke -a weather_agent_memory '{"actor_id":"bob","prompt":"Would wate
 
 ## Cleanup
 
-Assuming you are still in the same folder as before, run these commands:
+Assuming you are still in the same folder as before, run these commands for the
+agents you deployed. The CLI deletes the images in each configured repository;
+`--delete-ecr-repo` also deletes the repository itself. Only use this option
+when the repository and all its images are safe to delete.
 
 ```bash
-agentcore destroy -a weather_agent --force
-agentcore destroy -a forecast_agent --force
-agentcore destroy -a weather_agent_gateway --force
-agentcore destroy -a weather_agent_memory --force
+agentcore destroy -a weather_agent --force --delete-ecr-repo
+agentcore destroy -a forecast_agent --force --delete-ecr-repo
+agentcore destroy -a weather_agent_gateway --force --delete-ecr-repo
+agentcore destroy -a weather_agent_memory --force --delete-ecr-repo
 
 aws cloudformation delete-stack --stack-name agentcore-weather-demo
 ```
