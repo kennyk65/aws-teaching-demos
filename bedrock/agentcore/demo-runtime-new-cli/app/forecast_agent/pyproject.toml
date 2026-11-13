@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling ~= 1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "forecast-agent"
+version = "0.1.0"
+description = "Forecast agent for the AgentCore Runtime demo"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "aws-opentelemetry-distro ~= 0.21.0",
+    "bedrock-agentcore[strands-agents] >= 1.18.1, < 2.0.0",
+    "botocore[crt] ~= 1.43.0",
+    "strands-agents >= 1.62.0, < 2.0.0",
+    "boto3 >= 1.43.0, < 2.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.agentcore]
+entrypoint = "forecast_agent.py"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

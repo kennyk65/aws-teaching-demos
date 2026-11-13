@@ -1,0 +1,25 @@
+{
+  "name": "WeatherRuntimeLesson",
+  "version": 2,
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "forecast_agent",
+      "build": "CodeZip",
+      "modelProvider": "Bedrock",
+      "entrypoint": "forecast_agent.py",
+      "codeLocation": "app/forecast_agent",
+      "runtimeVersion": "PYTHON_3_12",
+      "protocol": "HTTP"
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "harnesses": []
+}

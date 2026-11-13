@@ -10,5 +10,6 @@ agentcore/.cache/
 agentcore/cdk/cdk.out/
 agentcore/cdk/dist/
 agentcore/cdk/.cdk.staging/
+agentcore/cdk/README.md
 agentcore/aws-targets.json
 debug.log
