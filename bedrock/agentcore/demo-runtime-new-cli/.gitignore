@@ -1,0 +1,14 @@
+.env.local
+.env*.local
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+node_modules/
+agentcore/.cli/
+agentcore/.cache/
+agentcore/cdk/cdk.out/
+agentcore/cdk/dist/
+agentcore/cdk/.cdk.staging/
+agentcore/aws-targets.json
+debug.log
