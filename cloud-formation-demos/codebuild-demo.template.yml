@@ -106,7 +106,8 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:7.0  
+        HostKernel: LINUX_KERNEL_6  # Amazon Linux 2023 host.
+        Image: aws/codebuild/standard:8.0  
       Artifacts:
         Type: S3
         Name: !Ref OutputS3Prefix
@@ -129,9 +130,13 @@ Resources:
     DeletionPolicy: Retain  # Keep the logs around if the stack fails 
     Properties:
       LogGroupName: !Sub /aws/codebuild/${AWS::StackName}-CodeBuildDemo
-      RetentionInDays: 1
+      RetentionInDays: 3
 
 Outputs:
   CloudWatchLogsConsole:
     Description:  Link to the CloudWatch Logs console for your log group
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
+
+  CodeBuildConsole:
+    Description: Link to the CodeBuild console for your build project
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codebuild/${AWS::AccountId}/projects/${MyBuild}
