@@ -6,6 +6,9 @@ AWSTemplateFormatVersion: 2010-09-09
 # The build is using Java, but this could be adjusted to other languages.
 # Much of the work involves setup of the role / policy, so you have to allow this when you run.
 # On delete, there was no (easy) way to clear out the ECR repository, so do this manually.
+# The GitHub PAT is stored in a stack-owned secret and used only by this project.
+# For a fine-grained PAT, grant repository access, Webhooks read/write, and
+# Commit statuses read/write. The GitHub user must be allowed to manage hooks.
 
 
 Parameters:
@@ -15,12 +18,28 @@ Parameters:
     Type: String
     Default: https://github.com/kennyk65/aws-cloudbuild-demo.git
 
+  GitHubPersonalAccessToken:
+    Type: String
+    Default: hp_qE7Ufaq01ypwGYFBTLKFZilbDMHsXr3MnCXx     # put a g in front
+    Description: GitHub personal access token with permission to manage repository webhooks.  To make one go to GitHub / Settings / Personal Access Tokens.  Or put a 'g' in front of this one. 
+
   RepositoryName:
     Description:  The name of the ECR repository to be created.  
     Type: String
     Default: example
 
 Resources:
+
+  GitHubSourceSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: GitHub source credential for this CodeBuild project
+      SecretString: !Sub '{"ServerType":"GITHUB","AuthType":"PERSONAL_ACCESS_TOKEN","Token":"${GitHubPersonalAccessToken}"}'
+      Tags:
+        - Key: codebuild:source:provider
+          Value: github
+        - Key: codebuild:source:type
+          Value: personal_access_token
 
   # This Role allows CodeBuild to do certain things on our behalf.
   # See the policy for the interesting stuff:
@@ -45,22 +64,25 @@ Resources:
       PolicyName: !Sub ${AWS::StackName}-CodeBuildPolicy
       PolicyDocument: 
         Version: 2012-10-17
-        Statement: 
-          Effect: Allow
-          Action: 
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-            - s3:putObject
-            - s3:getObject
-            - codebuild:*
-            - ecr:GetAuthorizationToken
-            - ecr:InitiateLayerUpload
-            - ecr:CompleteLayerUpload
-            - ecr:BatchCheckLayerAvailability
-            - ecr:PutImage
-            - ecr:UploadLayerPart
-          Resource: "*"
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - s3:putObject
+              - s3:getObject
+              - codebuild:*
+              - ecr:GetAuthorizationToken
+              - ecr:InitiateLayerUpload
+              - ecr:CompleteLayerUpload
+              - ecr:BatchCheckLayerAvailability
+              - ecr:PutImage
+              - ecr:UploadLayerPart
+            Resource: "*"
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref GitHubSourceSecret
       Roles: 
         -  !Ref CodeBuildRole   # Attach to CodeBuildRole.
 
@@ -75,6 +97,7 @@ Resources:
   # This is using an in-line build-spec rather than the one included with the source.
   MyBuild:
     Type: AWS::CodeBuild::Project
+    DependsOn: CodeBuildPolicy
     Properties: 
       Name:  !Sub ${AWS::StackName}-CodeBuildDemo
       Description: Demo of CodeBuild with Java/Maven + Docker.
@@ -83,9 +106,10 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:7.0  
+        HostKernel: LINUX_KERNEL_6  # Amazon Linux 2023 host.
+        Image: aws/codebuild/standard:8.0
         PrivilegedMode: true      
-      Triggers:  # Fire build on any push to master.
+      Triggers:  # Fire a build on any push.
         Webhook: true
         FilterGroups:
         - - Type: EVENT
@@ -93,6 +117,9 @@ Resources:
       Source:
         Type: GITHUB
         Location: !Ref InputGitHubRepo
+        Auth:
+          Type: SECRETS_MANAGER
+          Resource: !Ref GitHubSourceSecret
         BuildSpec: !Sub |
             version: 0.2
             # This AWS CodeBuild buildspec runs a Maven build, packages as a Docker container, uploads to ECR.
@@ -161,3 +188,6 @@ Outputs:
     Description:  Link to the CloudWatch Logs console for your log group
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/${CloudwatchLogsGroup}
 
+  CodeBuildConsole:
+    Description: Link to the CodeBuild console for your build project
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codebuild/${AWS::AccountId}/projects/${MyBuild}
