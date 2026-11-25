@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Backend webhook for Amazon Quick Vendor SLA Breach & Escalation demo.
+  Exposes an HTTPS POST endpoint authenticated via X-Api-Key that invokes a
+  Python Lambda function to publish formatted breach alerts to Amazon SNS.
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Description: Email address subscribed to the SNS breach notification topic.
+    AllowedPattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$'
+    Default: kenkrueger65@gmail.com
+    ConstraintDescription: Must be a valid email address.
+
+  ApiSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 12
+    Default: 123456654321
+    Description: Shared secret sent by Amazon Quick in the X-Api-Key header.
+
+Resources:
+  SlaBreachAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: QuickVendorSlaBreachAlerts
+
+  SlaBreachEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SlaBreachAlertTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  SlaBreachApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+
+  SlaBreachAlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 15
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref SlaBreachAlertTopic
+          API_SHARED_SECRET: !Ref ApiSharedSecret
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt SlaBreachAlertTopic.TopicName
+      Events:
+        PostBreachAlert:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SlaBreachApi
+            Path: /breach-alert
+            Method: POST
+      InlineCode: |
+        import base64
+        import hmac
+        import json
+        import os
+        import boto3
+
+        sns = boto3.client("sns")
+        TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
+        EXPECTED_SECRET = os.environ["API_SHARED_SECRET"]
+
+        def _extract_header(headers, name):
+            if not headers:
+                return ""
+            target = name.lower()
+            for k, v in headers.items():
+                if k.lower() == target:
+                    return v or ""
+            return ""
+
+        def _parse_body(event):
+            raw = event.get("body") or "{}"
+            if event.get("isBase64Encoded"):
+                raw = base64.b64decode(raw).decode("utf-8")
+            try:
+                data = json.loads(raw)
+                return data if isinstance(data, dict) else {"raw_payload": data}
+            except json.JSONDecodeError:
+                return {"raw_payload": raw}
+
+        def handler(event, context):
+            provided_key = _extract_header(event.get("headers"), "x-api-key")
+            if not provided_key or not hmac.compare_digest(provided_key, EXPECTED_SECRET):
+                return {
+                    "statusCode": 401,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"error": "Unauthorized"}),
+                }
+
+            payload = _parse_body(event)
+            service_name = payload.get("service_name", "Unknown Service")
+            breach_date = payload.get("breach_date", "Unspecified Date")
+            metric_name = payload.get("metric_name", "SLA Metric")
+            actual_value = payload.get("actual_value", "N/A")
+            sla_target = payload.get("sla_target", "N/A")
+            summary = payload.get("summary", "SLA threshold violation detected by Amazon Quick.")
+
+            subject = f"SLA Breach Alert: {service_name} ({breach_date})"[:100]
+            message = (
+                f"Amazon Quick Policy Violation Alert\n"
+                f"------------------------------------\n"
+                f"Service      : {service_name}\n"
+                f"Breach Date  : {breach_date}\n"
+                f"Metric       : {metric_name}\n"
+                f"Actual Value : {actual_value}\n"
+                f"SLA Target   : {sla_target}\n\n"
+                f"Summary:\n{summary}\n"
+            )
+
+            resp = sns.publish(
+                TopicArn=TOPIC_ARN,
+                Subject=subject,
+                Message=message,
+            )
+
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "status": "published",
+                    "messageId": resp.get("MessageId"),
+                }),
+            }
+
+Outputs:
+  ApiEndpointUrl:
+    Description: HTTPS POST endpoint URL for Amazon Quick action registration
+    Value: !Sub "https://${SlaBreachApi}.execute-api.${AWS::Region}.amazonaws.com/breach-alert"
+
+  SnsTopicArn:
+    Description: SNS Topic ARN publishing SLA breach alerts
+    Value: !Ref SlaBreachAlertTopic
+
+  OpenApiSpecJson:
+    Description: OpenAPI 3.0.3 JSON specification for registering the Policy Violation action in Amazon Quick
+    Value: !Sub |
+      {"openapi":"3.0.3","info":{"title":"Vendor SLA Breach Action API","version":"1.0.0"},"servers":[{"url":"https://${SlaBreachApi}.execute-api.${AWS::Region}.amazonaws.com"}],"paths":{"/breach-alert":{"post":{"operationId":"sendPolicyViolationAlert","summary":"Send an SLA policy violation alert email","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["service_name","summary"],"properties":{"service_name":{"type":"string"},"breach_date":{"type":"string"},"metric_name":{"type":"string"},"actual_value":{"type":"string"},"sla_target":{"type":"string"},"summary":{"type":"string"}}}}}},"responses":{"200":{"description":"Alert sent"}}}}}}
