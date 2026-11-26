@@ -4,7 +4,7 @@ boto3==1.9.146
 botocore==1.12.180
 ec2-metadata==2.0.0
 Click==7.0
-Flask==1.0.3
+Flask==2.3.2
 itsdangerous==1.1.0
 Jinja2==2.11.3
 MarkupSafe==1.1.1
